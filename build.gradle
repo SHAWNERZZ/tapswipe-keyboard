@@ -248,7 +248,11 @@ android {
         debug {
             minifyEnabled false
             shrinkResources false
-            signingConfig signingConfigs.debug
+            // This fork publishes the unstable *debug* APK as its release artifact, so it must be
+            // signed with our own key rather than the shared keystore committed upstream. When
+            // keystore.properties is absent (any clone but the maintainer's) releaseSigning falls
+            // back to signingConfigs.debug, so this is identical to upstream behaviour there.
+            signingConfig releaseSigning
         }
         release {
             minifyEnabled true
