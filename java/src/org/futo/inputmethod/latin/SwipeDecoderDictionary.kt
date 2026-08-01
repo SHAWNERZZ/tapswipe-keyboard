@@ -268,14 +268,6 @@ val TapSwipeLegacyTapRunSetting = SettingsKey(intPreferencesKey("tapswipe_legacy
  */
 val TapSwipeMasterModeSetting = SettingsKey(booleanPreferencesKey("tapswipe_master_mode"), false)
 
-/**
- * Number of taps a swipe-free word needs before peck mode engages (no autocorrect, committed
- * verbatim, learned as a valid word).
- *
- * Short words are overwhelmingly ordinary typing rather than attempts to enter something the
- * dictionary doesn't know, and they are exactly where autocorrect earns its keep ("ti" to "to").
- */
-val TapSwipePeckMinTapsSetting = SettingsKey(intPreferencesKey("tapswipe_peck_min_taps"), 4)
 
 /**
  * How eagerly a finger movement is classified as a swipe rather than a tap.

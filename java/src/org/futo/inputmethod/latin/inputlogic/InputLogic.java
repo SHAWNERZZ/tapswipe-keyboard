@@ -51,6 +51,7 @@ import org.futo.inputmethod.latin.SwipeDecoderDictionaryKt;
 import org.futo.inputmethod.latin.WordComposer;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeDecodeInput;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeInputBuilder;
+import org.futo.inputmethod.latin.tapswipe.TapSwipeMasterMode;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeMode;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeSession;
@@ -203,11 +204,6 @@ public final class InputLogic {
      * Number of taps a swipe-free word needs before it is treated as a deliberate peck.
      * Tunable via TapSwipePeckMinTapsSetting; see its docs for the rationale.
      */
-    public int tapSwipePeckMinTaps() {
-        final Integer v = DataStoreHelper.getSetting(
-                SwipeDecoderDictionaryKt.getTapSwipePeckMinTapsSetting());
-        return (v == null || v < 1) ? 1 : v;
-    }
 
     public int tapSwipePeckCadenceMs() {
         final Integer v = DataStoreHelper.getSetting(
@@ -215,10 +211,11 @@ public final class InputLogic {
         return (v == null || v < 1) ? 1 : v;
     }
 
+    /** 0 disables legacy tap mode entirely. */
     public int tapSwipeLegacyTapRun() {
         final Integer v = DataStoreHelper.getSetting(
                 SwipeDecoderDictionaryKt.getTapSwipeLegacyTapRunSetting());
-        return (v == null || v < 1) ? 1 : v;
+        return (v == null || v < 0) ? 0 : v;
     }
 
     /**
@@ -260,8 +257,15 @@ public final class InputLogic {
         mTapSwipeLastTapMs = -1;
     }
 
+    /**
+     * Legacy tap only exists to bring the letters back for someone who is just typing, so it is
+     * meaningless unless Master Mode is hiding them - without Master Mode it is indistinguishable
+     * from ordinary typing. Setting the run to 0 turns it off.
+     */
     public boolean isTapSwipeLegacyTapActive() {
-        return isTapSwipeMode() && mTapSwipeFastTapRun >= tapSwipeLegacyTapRun();
+        if (!isTapSwipeMode() || !TapSwipeMasterMode.getEnabled()) return false;
+        final int run = tapSwipeLegacyTapRun();
+        return run > 0 && mTapSwipeFastTapRun >= run;
     }
 
     /**
@@ -284,17 +288,18 @@ public final class InputLogic {
 
         if (mTapSwipeSession.getLatchedMode() == TapSwipeMode.PECK) return TapSwipeMode.PECK;
 
-        if (mWordComposer.size() >= tapSwipePeckMinTaps()) {
-            final int gap = mTapSwipeSession.medianTapGapMs();
-            // gap < 0 means fewer than two taps, so there is no cadence to judge yet.
-            if (gap >= 0 && gap >= tapSwipePeckCadenceMs()) {
-                mTapSwipeSession.latchMode(TapSwipeMode.PECK);
-                if (DEBUG_TAPSWIPE) {
-                    Log.d(TAG, "tapswipe latched PECK (medianGap=" + gap + "ms threshold="
-                            + tapSwipePeckCadenceMs() + "ms size=" + mWordComposer.size() + ")");
-                }
-                return TapSwipeMode.PECK;
+        // Peck is decided purely on how deliberately the word is being tapped. A word-length gate
+        // used to sit here too, but cadence turned out to be the reliable signal on its own, and
+        // requiring length meant short words that were genuinely being spelled out never qualified.
+        // gap < 0 means fewer than two taps, so there is no cadence to judge yet.
+        final int gap = mTapSwipeSession.medianTapGapMs();
+        if (gap >= 0 && gap >= tapSwipePeckCadenceMs()) {
+            mTapSwipeSession.latchMode(TapSwipeMode.PECK);
+            if (DEBUG_TAPSWIPE) {
+                Log.d(TAG, "tapswipe latched PECK (medianGap=" + gap + "ms threshold="
+                        + tapSwipePeckCadenceMs() + "ms size=" + mWordComposer.size() + ")");
             }
+            return TapSwipeMode.PECK;
         }
 
         return isTapSwipeLegacyTapActive() ? TapSwipeMode.LEGACY_TAP : TapSwipeMode.UNDECIDED;

@@ -10,7 +10,6 @@ import org.futo.inputmethod.latin.TapSwipeLegacyTapRunSetting
 import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
-import org.futo.inputmethod.latin.TapSwipePeckMinTapsSetting
 import org.futo.inputmethod.latin.SwipeSensitivitySetting
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
 import org.futo.inputmethod.latin.uix.settings.UserSetting
@@ -36,22 +35,6 @@ val TapSwipeMenu = UserSettingsMenu(
         ),
 
         UserSetting(
-            name = R.string.tapswipe_settings_peck_threshold,
-            subtitle = R.string.tapswipe_settings_peck_threshold_subtitle,
-            visibilityCheck = { useDataStoreValue(TapSwipeModeSetting) }
-        ) {
-            SettingSlider(
-                title = stringResource(R.string.tapswipe_settings_peck_threshold),
-                subtitle = stringResource(R.string.tapswipe_settings_peck_threshold_subtitle),
-                setting = TapSwipePeckMinTapsSetting,
-                range = 1.0f..10.0f,
-                transform = { it.roundToInt() },
-                indicator = { "$it taps" },
-                steps = 8
-            )
-        },
-
-        UserSetting(
             name = R.string.tapswipe_settings_peck_cadence,
             subtitle = R.string.tapswipe_settings_peck_cadence_subtitle,
             visibilityCheck = { useDataStoreValue(TapSwipeModeSetting) }
@@ -70,16 +53,20 @@ val TapSwipeMenu = UserSettingsMenu(
         UserSetting(
             name = R.string.tapswipe_settings_legacy_run,
             subtitle = R.string.tapswipe_settings_legacy_run_subtitle,
-            visibilityCheck = { useDataStoreValue(TapSwipeModeSetting) }
+            // Only meaningful while Master Mode is hiding the letters - without it, legacy tap is
+            // indistinguishable from ordinary typing.
+            visibilityCheck = {
+                useDataStoreValue(TapSwipeModeSetting) && useDataStoreValue(TapSwipeMasterModeSetting)
+            }
         ) {
             SettingSlider(
                 title = stringResource(R.string.tapswipe_settings_legacy_run),
                 subtitle = stringResource(R.string.tapswipe_settings_legacy_run_subtitle),
                 setting = TapSwipeLegacyTapRunSetting,
-                range = 2.0f..15.0f,
+                range = 0.0f..15.0f,
                 transform = { it.roundToInt() },
-                indicator = { "$it quick taps" },
-                steps = 12
+                indicator = { if (it == 0) "Off" else "$it quick taps" },
+                steps = 14
             )
         },
 

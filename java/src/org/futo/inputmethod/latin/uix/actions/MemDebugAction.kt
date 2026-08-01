@@ -356,7 +356,7 @@ val MemoryDebugAction = Action(
                                     if (ime is GeneralIME) {
                                         val il = ime.inputLogicForDebug
                                         "tapSwipeMode=${il.isTapSwipeMode()} peck=${il.isTapSwipePeckWord()} " +
-                                            "verbatim=${il.isTapSwipeVerbatimWord()} minTaps=${il.tapSwipePeckMinTaps()}\n" +
+                                            "verbatim=${il.isTapSwipeVerbatimWord()} cadence=${il.tapSwipePeckCadenceMs()}ms legacyRun=${il.tapSwipeLegacyTapRun()}\n" +
                                         "uiMode=${TapSwipeUiState.mode} borders=${TapSwipeUiState.showBorders()} letters=${TapSwipeUiState.showLetters()} " +
                                             "userKeyBorders=${DataStoreHelper.getSetting(KeyBordersSetting)}\n" +
                                         il.mTapSwipeSession.describe()
