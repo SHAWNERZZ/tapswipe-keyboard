@@ -77,6 +77,13 @@ val HomeScreenLite = UserSettingsMenu(
         ),
 
         userSettingNavigationItem(
+            title = TapSwipeMenu.title,
+            style = NavigationItemStyle.HomePrimary,
+            navigateTo = TapSwipeMenu.navPath,
+            icon = R.drawable.swipe_icon
+        ),
+
+        userSettingNavigationItem(
             title = R.string.prediction_settings_title,
             style = NavigationItemStyle.HomeTertiary,
             navigateTo = PredictiveTextMenu.navPath,

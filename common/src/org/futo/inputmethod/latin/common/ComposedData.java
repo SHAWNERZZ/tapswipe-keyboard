@@ -30,15 +30,15 @@ public class ComposedData {
     public final String mTypedWord;
 
     /**
-     * Nintype word-session evidence to decode, or null when the Nintype input model is inactive.
-     * When non-null this supersedes {@link #mInputPointers} for swipe decoding, because a Nintype
+     * TapSwipe word-session evidence to decode, or null when the TapSwipe input model is inactive.
+     * When non-null this supersedes {@link #mInputPointers} for swipe decoding, because a TapSwipe
      * word accumulates strokes across finger lifts rather than being bound to a single batch.
      *
      * Typed as Object to keep the common module free of a dependency on the swipe library;
-     * consumers cast to {@code org.futo.inputmethod.latin.nintype.NintypeDecodeInput}.
+     * consumers cast to {@code org.futo.inputmethod.latin.tapswipe.TapSwipeDecodeInput}.
      */
     @Nullable
-    public final Object mNintypeInput;
+    public final Object mTapSwipeInput;
 
     public ComposedData(@Nonnull final InputPointers inputPointers, final boolean isBatchMode,
             @Nonnull final String typedWord) {
@@ -46,11 +46,11 @@ public class ComposedData {
     }
 
     public ComposedData(@Nonnull final InputPointers inputPointers, final boolean isBatchMode,
-            @Nonnull final String typedWord, @Nullable final Object nintypeInput) {
+            @Nonnull final String typedWord, @Nullable final Object tapSwipeInput) {
         mInputPointers = inputPointers;
         mIsBatchMode = isBatchMode;
         mTypedWord = typedWord;
-        mNintypeInput = nintypeInput;
+        mTapSwipeInput = tapSwipeInput;
     }
 
     /**

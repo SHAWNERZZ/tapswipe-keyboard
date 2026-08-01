@@ -1,4 +1,4 @@
-package org.futo.inputmethod.latin.nintype
+package org.futo.inputmethod.latin.tapswipe
 
 /**
  * Transient "peck mode is active" flag, used to show key borders while a word is being pecked out
@@ -13,7 +13,7 @@ package org.futo.inputmethod.latin.nintype
  * Only meaningful when the user's key-borders preference is *off*; with borders already on there is
  * nothing to force and the flag has no effect.
  */
-object NintypePeckIndicator {
+object TapSwipePeckIndicator {
     /** Read on the UI thread during drawing, written on the UI thread from InputLogic. */
     @JvmStatic
     @Volatile

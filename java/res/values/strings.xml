@@ -277,4 +277,17 @@ mobile devices. [CHAR LIMIT=25] -->
          This resource is copied from packages/apps/Settings/res/values/strings.xml -->
     <!-- This resource is corresponding to msgid="5433275485499039199" -->
     <string name="user_dict_fast_scroll_alphabet">\u0020ABCDEFGHIJKLMNOPQRSTUVWXYZ</string>
+
+    <!-- ===================================================================================
+         TapSwipe input model. Added by this fork; not present in upstream FUTO Keyboard.
+         =================================================================================== -->
+    <string name="tapswipe_settings_title">TapSwipe</string>
+    <string name="tapswipe_settings_enable">TapSwipe input model</string>
+    <string name="tapswipe_settings_enable_subtitle">Combine taps and swipes into one word. Only space, punctuation or Enter finishes a word — lifting your finger never does.</string>
+    <string name="tapswipe_settings_peck_threshold">Peck mode threshold</string>
+    <string name="tapswipe_settings_peck_threshold_subtitle">Taps in a word with no swipe before autocorrect switches off and key borders appear. Lets you spell out words that are not in the dictionary.</string>
+    <string name="tapswipe_settings_sensitivity">Swipe sensitivity</string>
+    <string name="tapswipe_settings_sensitivity_subtitle">How readily a finger movement counts as a swipe rather than a tap. Higher registers short swipes sooner. Applies to all swipe typing.</string>
+    <string name="tapswipe_settings_learning_note">Peck mode learns new words so you can swipe them later. This needs Personalized suggestions turned on under Text prediction.</string>
+    <string name="tapswipe_settings_about">Reimplements the input model of the discontinued Nintype keyboard on top of the FUTO swipe decoder.</string>
 </resources>

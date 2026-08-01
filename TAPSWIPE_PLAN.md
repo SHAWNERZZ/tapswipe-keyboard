@@ -1,8 +1,13 @@
-# Nintype-style input re-architecture — implementation plan
+# TapSwipe — implementation plan
 
-Internal project. Not for upstream contribution.
+TapSwipe reimplements the input model of the discontinued **Nintype** keyboard on top of FUTO's
+neural swipe decoder. "Nintype" below refers to that original keyboard; "TapSwipe" refers to this
+implementation.
 
-Target behaviour (from the Nintype keyboard):
+Personal fork, published at https://github.com/SHAWNERZZ/tapswipe-keyboard.
+Changes are not submitted upstream to FUTO.
+
+Target behaviour (from the original Nintype keyboard):
 
 1. **Peck mode** — a word in which no swipe occurred. No autocorrect, no gesture suggestions. The literal tapped string is committed verbatim even if out-of-dictionary, then learned so it becomes swipeable later.
 2. **Swipe mode** — a word built from *interleaved taps and swipes*, including two thumbs operating with temporal overlap. `tap H, tap E, tap L, swipe L→O` ⇒ `hello`. Thumb A `S→A→W` overlapping thumb B `H→N` ⇒ `shawn`.
@@ -78,7 +83,7 @@ Also a real bug to work around: `sGestureFirstDownTime` is set on *every* armed 
 Introduce a word-scoped accumulator — the unit of composition. Opened by the first letter input, closed **only** by space (or explicit cancel).
 
 ```
-NintypeWordSession
+TapSwipeWordSession
   strokes: List<Stroke>            // chronological, whole word
   hasSwipe: Boolean                // ⇒ swipe mode vs peck mode
   literalText: String              // tap code points, in order (peck mode output)
@@ -96,7 +101,7 @@ Stroke
 
 | Concern | Owner |
 |---|---|
-| Input evidence for the whole word | `NintypeWordSession` (new) |
+| Input evidence for the whole word | `TapSwipeWordSession` (new) |
 | Current candidate *text* + composing region | `WordComposer` + `setComposingTextInternal` (unchanged mechanism) |
 | Decode over accumulated evidence | new `SwipeDecoderDictionary.getSuggestionsForSession(...)` |
 | Commit / learn | existing `commitChosenWord` funnel (`InputLogic.java:2764`) |
@@ -147,7 +152,7 @@ Four findings that change the plan:
 
 1. **Cross-hand interleaving is lexicon-driven — confirmed.** The controls prove it: `saw` alone → `saw, Shaw, sat, law`; `hn` alone → `in, then, on, hen`. Neither contains "Shawn"; only the two streams *together* produce it. `decode_multi` really does resolve the interleaving through the lexicon, with no timestamps. **Two-thumb overlap needs only correct per-hand ordering.**
 
-2. **Segment boundaries encode double letters.** A single continuous `hello` stroke ranks `help` (4.544) *above* `hello` (4.257) — the classic swipe double-letter ambiguity. Split as `hel`+`lo`, `hello` jumps to rank 0 at 6.377. Re-touching a key starts a new segment, and that re-touch is itself the signal for the repeated letter. Nintype's tap-then-swipe style therefore *disambiguates better than a pure swipe*, rather than merely coping. Retires risk 3.7 and is a genuine quality argument for the whole approach.
+2. **Segment boundaries encode double letters.** A single continuous `hello` stroke ranks `help` (4.544) *above* `hello` (4.257) — the classic swipe double-letter ambiguity. Split as `hel`+`lo`, `hello` jumps to rank 0 at 6.377. Re-touching a key starts a new segment, and that re-touch is itself the signal for the repeated letter. TapSwipe's tap-then-swipe style therefore *disambiguates better than a pure swipe*, rather than merely coping. Retires risk 3.7 and is a genuine quality argument for the whole approach.
 
 3. **No practical timestep ceiling.** The `"Too many timesteps specified!"` path never triggered, even at 64 segments per hand (~2048 timesteps) — far beyond any real word. Scores decay roughly linearly (about −2.8/segment on garbage input), so the real limit is confidence and latency, not a hard cap. Risk 3.3 downgraded; keep a generous sanity cap only.
 
@@ -161,9 +166,9 @@ Not covered by these spikes, still open:
 *Ordering correction:* the session-state panel described in §6.4 can only be built once a session exists, so it moves to Phase 1. Phase 0 instead ships a **spike runner**, which is what's actually needed to answer S1–S4.
 
 Implemented:
-- `java/src/org/futo/inputmethod/latin/nintype/NintypeSpikes.kt` — synthesizes trajectories from the **applied layout's normalized key centers** (`SwipeDecoderDictionary.appliedLayoutInfo.letters/xs/ys`), so the spikes run in exactly the coordinate space the real path uses, with no pixel math and no touch input. Decodes via the live decoder under `BinaryDictionary.sTrieUsageLock` using the live tries and trie weights.
+- `java/src/org/futo/inputmethod/latin/tapSwipe/TapSwipeSpikes.kt` — synthesizes trajectories from the **applied layout's normalized key centers** (`SwipeDecoderDictionary.appliedLayoutInfo.letters/xs/ys`), so the spikes run in exactly the coordinate space the real path uses, with no pixel math and no touch input. Decodes via the live decoder under `BinaryDictionary.sTrieUsageLock` using the live tries and trie weights.
 - `SwipeDecoderDictionary.debugGetOrInitDecoder()` — exposes the lazily-created decoder to the harness.
-- `MemDebugAction.kt` — "Nintype Phase 0 Spikes" section: run button, on-screen report, copy-to-clipboard. Results also go to logcat under tag `NintypeSpikes`.
+- `MemDebugAction.kt` — "TapSwipe Phase 0 Spikes" section: run button, on-screen report, copy-to-clipboard. Results also go to logcat under tag `TapSwipeSpikes`.
 
 Incidental fix: `tools/make-keyboard-text-py/src/generate.py` opened UTF-8 JSON without an explicit encoding, so the `:updateLocales` codegen task failed on Windows under the cp1252 default. All three `open()` calls now pass `encoding="utf-8"`. Pre-existing upstream issue, unrelated to this work, but it blocked every build on this machine.
 
@@ -180,22 +185,22 @@ Goal: multiple **sequential swipes** accumulate into one word; only a finalizer 
 
 **Status: implemented and compiling; NOT yet verified on device.**
 
-Behind `NintypeModeSetting` (`__experimental_nintype_mode`, default **off**) — Dev Settings → Nintype → "Nintype input model". Stock behaviour is one toggle away on the same build.
+Behind `TapSwipeModeSetting` (`__experimental_tapSwipe_mode`, default **off**) — Dev Settings → TapSwipe → "TapSwipe input model". Stock behaviour is one toggle away on the same build.
 
 New files:
-- `nintype/NintypeSession.kt` — the word-scoped accumulator, implementing the §5.5 contract (generation counter, cursor anchor, `validateOrReset`, `MAX_STROKES` fail-safe, derived `literalText`, deep-copying `addSwipeSegments`).
-- `nintype/NintypeDecodeInput.kt` — immutable per-decode evidence snapshot, carrying its source generation.
-- `nintype/NintypeInputBuilder.kt` — unions completed session strokes with the in-progress stroke; also folds a lone right-hand stroke into the left stream, mirroring `SwipeDecoderDictionary.kt:433-435`.
+- `tapSwipe/TapSwipeSession.kt` — the word-scoped accumulator, implementing the §5.5 contract (generation counter, cursor anchor, `validateOrReset`, `MAX_STROKES` fail-safe, derived `literalText`, deep-copying `addSwipeSegments`).
+- `tapSwipe/TapSwipeDecodeInput.kt` — immutable per-decode evidence snapshot, carrying its source generation.
+- `tapSwipe/TapSwipeInputBuilder.kt` — unions completed session strokes with the in-progress stroke; also folds a lone right-hand stroke into the left stream, mirroring `SwipeDecoderDictionary.kt:433-435`.
 
 Modified:
-- `ComposedData` — optional `mNintypeInput` (typed `Object` to keep `common/` free of a swipe-library dependency); new 4-arg constructor, old 3-arg delegates.
-- `WordComposer` — `setNintypeInput`, passed through `getComposedDataSnapshot`, cleared in `reset`.
-- `SwipeDecoderDictionary` — `decodeNintype` path taking precedence over single-batch pointers; `currentNormalizers()` exposing the exact `transformSegment` arithmetic; `NintypeModeSetting`; extracted `contextWordsFrom`/`resultsToSuggestions` helpers.
+- `ComposedData` — optional `mTapSwipeInput` (typed `Object` to keep `common/` free of a swipe-library dependency); new 4-arg constructor, old 3-arg delegates.
+- `WordComposer` — `setTapSwipeInput`, passed through `getComposedDataSnapshot`, cleared in `reset`.
+- `SwipeDecoderDictionary` — `decodeTapSwipe` path taking precedence over single-batch pointers; `currentNormalizers()` exposing the exact `transformSegment` arithmetic; `TapSwipeModeSetting`; extracted `contextWordsFrom`/`resultsToSuggestions` helpers.
 - `BatchInputArbiter` — `getBatchOriginTime()` so per-batch timestamps can be re-based onto one word timeline.
-- `InputLogic` — session field, `nintypeSession()` validate-on-read accessor, `absorbBatchIntoNintypeSession` (once per batch, at finger lift), `buildNintypeDecodeInput` (unions the live stroke only at `UPDATE_BATCH`), no `commitCurrentAutoCorrection` on batch start, no `finishComposingText`/auto-space/PHANTOM re-arm while a session is open, `noteComposingWrite` anchoring, unconditional session reset on any finalizer, ANTIPHANTOM swallow bypassed while a session is open, explicit reset on backspace.
+- `InputLogic` — session field, `tapSwipeSession()` validate-on-read accessor, `absorbBatchIntoTapSwipeSession` (once per batch, at finger lift), `buildTapSwipeDecodeInput` (unions the live stroke only at `UPDATE_BATCH`), no `commitCurrentAutoCorrection` on batch start, no `finishComposingText`/auto-space/PHANTOM re-arm while a session is open, `noteComposingWrite` anchoring, unconditional session reset on any finalizer, ANTIPHANTOM swallow bypassed while a session is open, explicit reset on backspace.
 - `GeneralIME` — `inputLogicForDebug` accessor.
-- `MemDebugAction` — live "Nintype Session" panel (polls every 250ms; a leaked session is visible immediately) plus the Phase 0 spike runner.
-- `DevSettings` — the Nintype toggle.
+- `MemDebugAction` — live "TapSwipe Session" panel (polls every 250ms; a leaked session is visible immediately) plus the Phase 0 spike runner.
+- `DevSettings` — the TapSwipe toggle.
 
 #### Fix 1 — second swipe replaced the first word instead of extending it
 
@@ -207,7 +212,7 @@ Two distinct defects, both from the same oversight — treating *"a session exis
 
    Fix: the editor-state invariants only apply once the session has actually written a composing region (`hasComposed`). Before that, strokes-without-a-composing-word is normal. The `MAX_STROKES` fail-safe still applies unconditionally.
 
-2. **The first stroke of a word was wrongly treated as a continuation.** `nintypeOpen` was true from the very first stroke, so `finishComposingText` and the phantom auto-space were skipped even when starting a brand-new word — which would have run consecutive words together.
+2. **The first stroke of a word was wrongly treated as a continuation.** `tapSwipeOpen` was true from the very first stroke, so `finishComposingText` and the phantom auto-space were skipped even when starting a brand-new word — which would have run consecutive words together.
 
    Fix: skip finalization/auto-space only for a *continuation* (`isOpen && hasComposed`). The first stroke behaves exactly like stock.
 
@@ -217,7 +222,7 @@ Validation was also strengthened while fixing this: it now checks that the compo
 
 Deliberately still absent (later phases): taps do **not** join the session yet, so tap+swipe fusion doesn't work (Phase 3); autocorrect is not yet gated on `hasSwipe` (Phase 2); backspace resets the whole session rather than popping one stroke (Phase 5).
 
-1. Add `NintypeWordSession` + deep-copy of `GestureSegment`s, re-basing `t` per §0.4. Expose the batch origin (a getter for `sGestureFirstDownTime`) so times can be normalized.
+1. Add `TapSwipeWordSession` + deep-copy of `GestureSegment`s, re-basing `t` per §0.4. Expose the batch origin (a getter for `sGestureFirstDownTime`) so times can be normalized.
 2. `InputLogic.onStartBatchInput` (`:763-775`) — **remove the `commitCurrentAutoCorrection` at `:773`**. Keep the `resetEntireInputState` at `:770` for the genuine mid-word-cursor recorrection case only.
 3. `InputLogic.onUpdateTailBatchInputCompleted` (`:2637-2661`) — stop finalizing: don't `finishComposingText()` at `:2648` while a session is open. The `distinct` parameter is a ready-made lever (`distinct=false` already exists, exercised by `GeneralIME.requestSuggestionRefresh`, `GeneralIME.kt:742-751`).
 4. New `SwipeDecoderDictionary.getSuggestionsForSession(...)` decoding from the session rather than `composedData.mInputPointers`. Keep the existing `getSuggestions` for the legacy path.
@@ -229,7 +234,7 @@ Deliberately still absent (later phases): taps do **not** join the session yet, 
 
 **Status: implemented and compiling; Phase 1 verified working on device.**
 
-A word is a *peck* word when Nintype is on and no swipe contributed to it (`isNintypePeckWord()` = `isNintypeMode() && !session.hasSwipe`). The session is read without revalidating: a leaked session can only report `hasSwipe=true`, which suppresses peck behaviour rather than applying it wrongly — the conservative direction.
+A word is a *peck* word when TapSwipe is on and no swipe contributed to it (`isTapSwipePeckWord()` = `isTapSwipeMode() && !session.hasSwipe`). The session is read without revalidating: a leaked session can only report `hasSwipe=true`, which suppresses peck behaviour rather than applying it wrongly — the conservative direction.
 
 Three gates, each at an existing precedent site:
 
@@ -285,15 +290,15 @@ Also fixed here: taps were being timestamped with `System.currentTimeMillis()` w
 
 Three tweaks after on-device use of Phases 1–3.
 
-1. **Peck mode now needs a tap threshold.** Engaging on the first tap meant short words lost autocorrect, and short words are exactly where it earns its keep ("ti" → "to"). Peck now requires `NintypePeckMinTapsSetting` taps (default 4) in a swipe-free word. Below that, a word behaves like stock: autocorrected, not force-learned.
+1. **Peck mode now needs a tap threshold.** Engaging on the first tap meant short words lost autocorrect, and short words are exactly where it earns its keep ("ti" → "to"). Peck now requires `TapSwipePeckMinTapsSetting` taps (default 4) in a swipe-free word. Below that, a word behaves like stock: autocorrected, not force-learned.
 
 2. **Key borders as a peck-mode indicator.** Borders switch on when peck engages and off when a swipe joins the word or the word finishes.
 
-   Not done by writing `KeyBordersSetting`: that is the user's own preference, and changing it makes `LatinIME` rebuild the entire drawable provider — far too heavy to run twice per word. Instead `BasicThemeProvider` precomputes bordered variants of the only four styles that depend on borders (`Normal`, `Functional`, `StickyOff`, `Spacebar`) and `getKeyStyleDescriptor` swaps to them when the transient [`NintypePeckIndicator`] flag is set. Cost is a handful of extra drawables at theme construction; toggling is then a map lookup plus `invalidateAllKeys()`. No effect when the user already has borders on.
+   Not done by writing `KeyBordersSetting`: that is the user's own preference, and changing it makes `LatinIME` rebuild the entire drawable provider — far too heavy to run twice per word. Instead `BasicThemeProvider` precomputes bordered variants of the only four styles that depend on borders (`Normal`, `Functional`, `StickyOff`, `Spacebar`) and `getKeyStyleDescriptor` swaps to them when the transient [`TapSwipePeckIndicator`] flag is set. Cost is a handful of extra drawables at theme construction; toggling is then a map lookup plus `invalidateAllKeys()`. No effect when the user already has borders on.
 
 3. **Swipe sensitivity is now continuous.** Short swipes (`e`→`r` to finish a word) needed too much travel before being classified as a gesture. `SwipeSensitivitySetting` (default 1.0 = stock) scales the three quantities gating recognition in `GestureStrokeRecognitionPoints`: the fast-move speed test in `detectFastMove`, and the dynamic distance/time thresholds in `isStartOfAGesture`. Higher = registers sooner.
 
-   The pre-existing coarse `mGestureInputSensitive` toggle now multiplies on top (×2) rather than applying its own hardcoded factors. Slight behaviour change for that toggle alone: it previously scaled `deltaTime` by 3 and the thresholds by 2; it is now a uniform ×2. Both sliders live in Dev Settings → Nintype.
+   The pre-existing coarse `mGestureInputSensitive` toggle now multiplies on top (×2) rather than applying its own hardcoded factors. Slight behaviour change for that toggle alone: it previously scaled `deltaTime` by 3 and the thresholds by 2; it is now a uniform ×2. Both sliders live in Dev Settings → TapSwipe.
 
 #### Fix 4 — swipe + tap committed the pre-tap word
 
@@ -303,9 +308,9 @@ A tap sets `inputTransaction.setRequiresUpdateSuggestions()`, scheduling an ordi
 
 Pure swipes were unaffected only because a finger lift never sets that flag, so no typing query is ever scheduled — the bug needed a tap to appear.
 
-Fix: `isNintypeVerbatimWord()` — true for peck words **and** any word containing a swipe — now gates both the commit branch and `mWillAutoCorrect`. A swiped word is committed exactly as displayed. This is not a special case: the decoded candidate already came from a lexicon-constrained beam search over the whole word, and stock never autocorrects batch input either (`Suggest.getSuggestedWordsForBatchInput` hardcodes `willAutoCorrect = false`). Letting a second, weaker pipeline overrule it was the mistake.
+Fix: `isTapSwipeVerbatimWord()` — true for peck words **and** any word containing a swipe — now gates both the commit branch and `mWillAutoCorrect`. A swiped word is committed exactly as displayed. This is not a special case: the decoded candidate already came from a lexicon-constrained beam search over the whole word, and stock never autocorrects batch input either (`Suggest.getSuggestedWordsForBatchInput` hardcodes `willAutoCorrect = false`). Letting a second, weaker pipeline overrule it was the mistake.
 
-`isNintypePeckWord()` (tap-only, at/above the threshold) is retained and still gates the two genuinely peck-specific behaviours: force-learning and the key-border indicator.
+`isTapSwipePeckWord()` (tap-only, at/above the threshold) is retained and still gates the two genuinely peck-specific behaviours: force-learning and the key-border indicator.
 
 Known remaining rough edge: that redundant TYPING query still runs after a tap in a swiped word, so the suggestion strip may briefly list typed-word/LM candidates rather than swipe candidates. Harmless for the committed text now, but it means a manual strip pick during that window chooses from the wrong candidate set.
 
@@ -313,9 +318,9 @@ Known remaining rough edge: that redundant TYPING query still runs after a tap i
 
 Two independent defects, found in sequence.
 
-**a) Peck detection could never engage on a fresh keyboard.** It counted session *tap strokes*, which are recorded by `absorbTapIntoNintypeSession` — and that method early-returns when `SwipeDecoderDictionary.normalizedKeyPosition()` finds no entry, which is the case until `appliedLayoutInfo` has been populated by a decode. The indicator refresh sat *after* that early return, so neither the tap nor the refresh happened.
+**a) Peck detection could never engage on a fresh keyboard.** It counted session *tap strokes*, which are recorded by `absorbTapIntoTapSwipeSession` — and that method early-returns when `SwipeDecoderDictionary.normalizedKeyPosition()` finds no entry, which is the case until `appliedLayoutInfo` has been populated by a decode. The indicator refresh sat *after* that early return, so neither the tap nor the refresh happened.
 
-Peck now keys off `mWordComposer.size()` — the actual composing word length, which is what "the 4th tap of a word" means — and the refresh moved out of `absorbTapIntoNintypeSession` so it runs on every tap regardless of whether the tap became usable decode evidence.
+Peck now keys off `mWordComposer.size()` — the actual composing word length, which is what "the 4th tap of a word" means — and the refresh moved out of `absorbTapIntoTapSwipeSession` so it runs on every tap regardless of whether the tap became usable decode evidence.
 
 **b) The bordered styles were byte-identical to the borderless ones.** `peckKeyStyles` was built from the `keyColor` / `functionalKeyColor` / `onKeyColor` locals — but those are themselves gated on `keyBorders` earlier in the same `init` block (`:344-362`), so with borders off they are already `Color.Transparent`. The precomputed "bordered" styles therefore reproduced the borderless look exactly. Flag, map, and redraw were all working; the two styles just looked the same.
 
@@ -328,8 +333,8 @@ Worth noting the redraw was never the problem: with hardware acceleration `Keybo
 Fix 4 was correct but treated a symptom. The logs showed the actual sequence:
 
 ```
-:270  nintype NintypeDecodeInput(L=2 R=0 hasSwipe=true) beam=300 -> but(17.15)   correct
-:271  NintypeSession: reset (2 strokes): editor is no longer composing            session destroyed
+:270  tapSwipe TapSwipeDecodeInput(L=2 R=0 hasSwipe=true) beam=300 -> but(17.15)   correct
+:271  TapSwipeSession: reset (2 strokes): editor is no longer composing            session destroyed
 :278  Left = [SwipeSeg(...)]                                                      legacy path, swipe only
 :279  outputs = Word("by", ...)                                                   overwrites the composer
 :732  commitChosenWord() : [by]
@@ -337,15 +342,15 @@ Fix 4 was correct but treated a symptom. The logs showed the actual sequence:
 
 Not autocorrect at all — a second decode of *stale, partial* evidence overwriting a correct result.
 
-**a) Validate-on-read destroyed a live session mid-word.** `onUpdateTailBatchInputCompleted` called `nintypeSession()`, which revalidates. On this device the emulated-composing input connection (`InputConnectionInternalComposingWrapper`, logged as `ICPatched`) implements the composing region with real `commitText`/backspace calls, so a mid-word edit churns the selection and leaves the editor transiently not composing. The invariant fired and discarded a two-stroke session.
+**a) Validate-on-read destroyed a live session mid-word.** `onUpdateTailBatchInputCompleted` called `tapSwipeSession()`, which revalidates. On this device the emulated-composing input connection (`InputConnectionInternalComposingWrapper`, logged as `ICPatched`) implements the composing region with real `commitText`/backspace calls, so a mid-word edit churns the selection and leaves the editor transiently not composing. The invariant fired and discarded a two-stroke session.
 
 That method applies a decode already computed from the session and accumulates no new evidence, so validation buys nothing there. It now reads the session directly.
 
 This is the same lesson as Fix 1, in a new place: **an invariant that is correct in steady state can still be wrong in the window between mutating evidence and applying its result.** The earlier fix exempted the pre-first-write window; this one exempts the apply step itself.
 
-**b) Losing the session silently fell back to a worse decode.** With `mNintypeInput` null, `getSuggestions` dropped through to the legacy single-batch path, which decodes `mInputPointers` — still holding only the *last* gesture. So it re-derived the swipe-only word and clobbered the one taps had completed.
+**b) Losing the session silently fell back to a worse decode.** With `mTapSwipeInput` null, `getSuggestions` dropped through to the legacy single-batch path, which decodes `mInputPointers` — still holding only the *last* gesture. So it re-derived the swipe-only word and clobbered the one taps had completed.
 
-While Nintype is enabled, that fallback is now declined outright: whatever is already composed beats a decode of partial evidence.
+While TapSwipe is enabled, that fallback is now declined outright: whatever is already composed beats a decode of partial evidence.
 
 Why it only struck later in a sentence: at position 0 the wrapper takes its simple "Case Begin" path, while mid-text it uses "Case Addition"/"Case Complex" with backspacing — far more selection churn, so far more likely to trip the composing check.
 
@@ -357,12 +362,12 @@ Investigated after a report of similar corruption around double-space-to-period.
 
 `onUpdateTailBatchInputCompleted` had **no guard against applying a decode whose word no longer exists**. Decoding is async, so a result can arrive after the user has hit space (finalizing the word) or after the next word has begun. Applying one then calls `finishComposingText()` + `setBatchInputWord()` + `setComposingTextInternal()`, re-inserting a stale word *after* the committed text — and a following double-space-to-period would then operate on that corrupted text, which matches the reported symptom.
 
-This is precisely the generation counter specified in §5.5 (item 3). It existed on `NintypeSession` and was carried on every `NintypeDecodeInput`, but was **never actually checked at the apply site** — the one place it was designed to protect. Two guards now:
+This is precisely the generation counter specified in §5.5 (item 3). It existed on `TapSwipeSession` and was carried on every `TapSwipeDecodeInput`, but was **never actually checked at the apply site** — the one place it was designed to protect. Two guards now:
 
 - session no longer open ⇒ drop the result (word already finalized);
 - the decode input's generation is not the session's current generation ⇒ drop it (belongs to an earlier word).
 
-Note Fix 6(a) slightly widened this window by removing the `nintypeSession()` call from this method, though the hazard predated it: that call could reset the session but never gated the apply.
+Note Fix 6(a) slightly widened this window by removing the `tapSwipeSession()` call from this method, though the hazard predated it: that call could reset the session but never gated the apply.
 
 **Recurring theme across fixes 1, 6 and 7:** every defect so far has been in the seam between *when evidence changes* and *when a result derived from it is applied*. The validate-on-read design handles steady state well; each bug lived in a transition window.
 
@@ -392,16 +397,16 @@ Also: `mInputPointers` is never truncated on delete (`WordComposer.java:210` gua
 #### Fix 8 — "but"→"by" again: validation firing *inside* the apply window
 
 ```
-:824  nintype TAIL applied text='but' continuation=true prevTypedWord='byt'
-:825  NintypeSession reset (2 strokes): composing word changed: expected 'byt', got 'but'
-:825  nintype on but no session input; declining legacy batch decode
-:987  nintype COMMIT verbatim=false hasSwipe=false strokes=0 typedWord='but' autoCorrection='by'
+:824  tapSwipe TAIL applied text='but' continuation=true prevTypedWord='byt'
+:825  TapSwipeSession reset (2 strokes): composing word changed: expected 'byt', got 'but'
+:825  tapswipe on but no session input; declining legacy batch decode
+:987  tapSwipe COMMIT verbatim=false hasSwipe=false strokes=0 typedWord='but' autoCorrection='by'
 :987  commitChosenWord() : [by]
 ```
 
-Caused by the invariant added in Fix 6 (composing word must equal the text we last wrote). Inside the apply block, `setBatchInputWord` updates the composer, then `setComposingTextInternal` + `send()` flush the input connection, which triggers a selection update, which triggers a fresh suggestion query, which calls `nintypeSession()` — **while the composer already says "but" but `lastComposedText` still says "byt"**, since `noteComposingWrite` only runs at the end of the method. Mismatch, session destroyed mid-apply, `verbatim` false at commit, autocorrect wins.
+Caused by the invariant added in Fix 6 (composing word must equal the text we last wrote). Inside the apply block, `setBatchInputWord` updates the composer, then `setComposingTextInternal` + `send()` flush the input connection, which triggers a selection update, which triggers a fresh suggestion query, which calls `tapSwipeSession()` — **while the composer already says "but" but `lastComposedText` still says "byt"**, since `noteComposingWrite` only runs at the end of the method. Mismatch, session destroyed mid-apply, `verbatim` false at commit, autocorrect wins.
 
-Fix: `mNintypeApplyingDecode`, set for the duration of the write-back; `nintypeSession()` skips validation while it is set. The composer and the session's recorded text are *legitimately* out of step during that window, and flushing the IC re-enters this class.
+Fix: `mTapSwipeApplyingDecode`, set for the duration of the write-back; `tapSwipeSession()` skips validation while it is set. The composer and the session's recorded text are *legitimately* out of step during that window, and flushing the IC re-enters this class.
 
 **This is the general form of fixes 1, 6 and 8 — all three were validate-on-read firing in a transition window.** Fix 1 exempted the pre-first-write window, Fix 6 exempted a single call site, and this exempts the whole apply block. The re-entrancy guard is what Fix 6 should have been.
 
@@ -415,18 +420,18 @@ final boolean isFirstCharCapitalized = wordComposer.wasShiftedNoLock();
 
 which reads `mCapitalizedMode`. `onStartBatchInput` ended with an **unconditional** `setCapitalizedModeAtStartComposingTime(getActualCapsMode(...))`, and `getActualCapsMode` returns any non-`AUTO_SHIFTED` mode verbatim — i.e. `CAPS_MODE_OFF` once the keyboard un-shifts.
 
-Under Nintype a word spans multiple strokes, and applying the first stroke's decode puts text before the cursor, so `requestUpdatingShiftState` un-shifts the keyboard. The *next* stroke's `onStartBatchInput` then recorded `CAPS_MODE_OFF`, clearing `wasShiftedNoLock()` — so the whole-word re-decode came back lowercase. Stock never hit this because a word there is exactly one batch.
+Under TapSwipe a word spans multiple strokes, and applying the first stroke's decode puts text before the cursor, so `requestUpdatingShiftState` un-shifts the keyboard. The *next* stroke's `onStartBatchInput` then recorded `CAPS_MODE_OFF`, clearing `wasShiftedNoLock()` — so the whole-word re-decode came back lowercase. Stock never hit this because a word there is exactly one batch.
 
-Fix: skip that write while a Nintype session is open. Capitalization is decided when the **word** starts, not when each stroke starts.
+Fix: skip that write while a TapSwipe session is open. Capitalization is decided when the **word** starts, not when each stroke starts.
 
 Not changed: `Suggest.java:358` itself. Switching it to `isOrWillBeOnlyFirstCharCapitalized()` would arguably be more robust but alters stock behaviour for every gesture, which this fork shouldn't do casually.
 
 ### Phase 6 — Settings home, pro mode, sensitivity default
 
-1. **Nintype gets its own settings section**, out of Dev Settings: mode toggle, peck threshold, peck cadence, swipe sensitivity, pro mode, key personalization.
+1. **TapSwipe gets its own settings section**, out of Dev Settings: mode toggle, peck threshold, peck cadence, swipe sensitivity, pro mode, key personalization.
 2. **Pro mode — dots instead of letters.** Draw-time label substitution at `AdvancedThemeCustomizer.kt:163` (`key.labelOverride ?: key.label`), the same override seam the peck borders use. Precedent exists: `HiddenKeysSetting` ("Touch typing mode") already blanks labels by making the foreground transparent, so dots sit between that and normal.
-3. **Default swipe sensitivity 3.0×**, noted as tuned for short swipes under Nintype.
-4. **Surface the personalization dependency.** `mUsePersonalizedDicts` gates `performAdditionToUserHistoryDictionary` *before* our `forceValidWord` flag is read, so with it off the peck→learn→swipe loop silently does nothing and learned words never reach the swipe tries. Warn next to the Nintype toggle.
+3. **Default swipe sensitivity 3.0×**, noted as tuned for short swipes under TapSwipe.
+4. **Surface the personalization dependency.** `mUsePersonalizedDicts` gates `performAdditionToUserHistoryDictionary` *before* our `forceValidWord` flag is read, so with it off the peck→learn→swipe loop silently does nothing and learned words never reach the swipe tries. Warn next to the TapSwipe toggle.
 
 ### Phase 7 — Mode state machine (normal / peck / legacy tap)
 
@@ -440,7 +445,7 @@ Today peck is a single predicate on word length. It becomes an explicit three-st
 
 - **Cadence gate.** Fast typing should not trigger peck. Inter-tap intervals are already available — the session stores a timestamp per stroke — so a median inter-tap interval needs no new plumbing. Worth testing whether *slowness alone* is a more reliable peck signal than tap count, using a low count threshold.
 - **Latch per word.** Classify once at the crossing and hold for the rest of the word; re-evaluating every tap would flicker the letters/dots and borders mid-word. A swipe always forces back to Swipe mode.
-- **Morph suppression.** Peck disables both personal-preference morphing and dictionary key boosting. Key boosting in particular *contradicts* peck: it biases hitboxes toward letters that continue known words, which is exactly wrong when the point is entering a word the dictionary doesn't have. It is currently gated only on the setting, `mAutoCorrectionEnabledPerTextFieldSettings`, a preceding word codepoint, and accessibility — nothing Nintype-aware.
+- **Morph suppression.** Peck disables both personal-preference morphing and dictionary key boosting. Key boosting in particular *contradicts* peck: it biases hitboxes toward letters that continue known words, which is exactly wrong when the point is entering a word the dictionary doesn't have. It is currently gated only on the setting, `mAutoCorrectionEnabledPerTextFieldSettings`, a preceding word codepoint, and accessibility — nothing TapSwipe-aware.
 
 ### Phase 8 — Key personalization (adaptive frame), trained before applied
 
@@ -473,7 +478,7 @@ Now it needs doing properly, and the hard part is not the session — popping a 
 | 3.4 | Latency — re-decoding the whole word on every event. Beam 300 at tail today. | Use low beam mid-stroke, high beam on finger-lift; `SwipeDecoder.lastTiming()` gives per-stage numbers. `useHighBeam` is currently just `inputStyle == TAIL_BATCH` (`DictionaryFacilitatorImpl.java:887`) — that equivalence must be broken since "tail" no longer means "word over". |
 | 3.5 | Thread-safety — `InputPointers` is not thread-safe and is read on `InputLogicHandler`'s thread while mutated on the UI thread (§0.5). | Deep-copy at a single well-defined point; never retain references to live segments. |
 | 3.6 | Very long-lived composing regions. `InputConnectionInternalComposingWrapper` (`:160-193`) emulates composing for buggy editors. | Test in a few real apps early. |
-| 3.7 | ~~Double letters lost~~ | **RETIRED — inverted into an advantage.** S1 showed a single continuous `hello` stroke ranks `help` above `hello`, while `hel`+`lo` puts `hello` at rank 0. A re-touch starts a new segment and that boundary *is* the repeated-letter signal, so Nintype's style disambiguates better than a pure swipe. |
+| 3.7 | ~~Double letters lost~~ | **RETIRED — inverted into an advantage.** S1 showed a single continuous `hello` stroke ranks `help` above `hello`, while `hel`+`lo` puts `hello` at rank 0. A re-touch starts a new segment and that boundary *is* the repeated-letter signal, so TapSwipe's style disambiguates better than a pure swipe. |
 | 3.8 | Latent: `static TrieId CHILD_ID` shared across all three ITrie wrappers (`dictionary_itrie.cpp:75`), reset by any trie's `end_search`. Pre-existing correctness bug. | Watch for it; fix if peck-mode learning exposes it. |
 | 3.9 | Contacts dictionary is absent from the swipe tries (only MAIN/USER/USER_HISTORY, `DictionaryFacilitatorImpl.java:1137-1141`). | Out of scope; note that contact names are never swipeable. |
 

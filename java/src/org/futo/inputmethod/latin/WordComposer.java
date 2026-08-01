@@ -102,25 +102,25 @@ public final class WordComposer {
     }
 
     /**
-     * Nintype word-session evidence for the next decode, or null when the Nintype input model is
+     * TapSwipe word-session evidence for the next decode, or null when the TapSwipe input model is
      * inactive. Set by InputLogic immediately before requesting suggestions and cleared by
      * {@link #reset}. Deliberately not part of this class's own state machine - it is a
      * pass-through so the session (which outlives a single batch) can reach the swipe decoder
      * through the existing pipeline.
      */
-    private Object mNintypeInput;
+    private Object mTapSwipeInput;
 
-    public void setNintypeInput(final Object nintypeInput) {
-        mNintypeInput = nintypeInput;
+    public void setTapSwipeInput(final Object tapSwipeInput) {
+        mTapSwipeInput = tapSwipeInput;
     }
 
-    public Object getNintypeInput() {
-        return mNintypeInput;
+    public Object getTapSwipeInput() {
+        return mTapSwipeInput;
     }
 
     public ComposedData getComposedDataSnapshot() {
         return new ComposedData(getInputPointers(), isBatchMode(), mTypedWordCache.toString(),
-                mNintypeInput);
+                mTapSwipeInput);
     }
 
     /**
@@ -156,9 +156,9 @@ public final class WordComposer {
         mCursorPositionWithinWord = 0;
         mIsAttachedToNonWord = false;
         // Hygiene: never let a decode input outlive the word it was built for. InputLogic sets a
-        // fresh one before every suggestion request, and NintypeDecodeInput.generation guards
+        // fresh one before every suggestion request, and TapSwipeDecodeInput.generation guards
         // against a stale one being applied anyway.
-        mNintypeInput = null;
+        mTapSwipeInput = null;
 
         if(alsoResetRejectedBatchSuggestion) mRejectedBatchModeSuggestion = null;
         refreshTypedWordCache();

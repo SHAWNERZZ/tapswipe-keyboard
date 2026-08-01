@@ -785,7 +785,7 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
         // forceValidWord overrides that demotion. An "invalid" entry is inserted with count 0,
         // which the native layer treats as not-a-word (language_model_dict_content.cpp), leaving
         // it with no usable probability and therefore unreachable by the swipe decoder's lexicon
-        // until a second commit bumps the count. Nintype peck mode is a deliberate "I mean this
+        // until a second commit bumps the count. TapSwipe peck mode is a deliberate "I mean this
         // exact word" signal, so a pecked word is learned as valid immediately and becomes
         // swipeable straight away. User history uses a forgetting curve, so a one-off typo
         // learned this way decays on its own.

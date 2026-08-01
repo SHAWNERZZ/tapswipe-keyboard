@@ -1,4 +1,4 @@
-package org.futo.inputmethod.latin.nintype
+package org.futo.inputmethod.latin.tapswipe
 
 import android.util.Log
 import org.futo.inputmethod.latin.BinaryDictionary
@@ -8,7 +8,7 @@ import org.futo.inputmethod.latin.SwipeDecoderDictionary
 import org.futo.ml.inference.SwipeDecoder
 
 /**
- * Phase 0 feasibility spikes for the Nintype re-architecture (see NINTYPE_PLAN.md).
+ * Phase 0 feasibility spikes for the TapSwipe re-architecture (see TAPSWIPE_PLAN.md).
  *
  * These drive [SwipeDecoder] directly with synthetic trajectories built from the *applied*
  * layout's normalized key centers, so they exercise the decoder in exactly the coordinate
@@ -17,8 +17,8 @@ import org.futo.ml.inference.SwipeDecoder
  *
  * Run from the Memory Debug action. Results also go to logcat under [TAG].
  */
-object NintypeSpikes {
-    const val TAG = "NintypeSpikes"
+object TapSwipeSpikes {
+    const val TAG = "TapSwipeSpikes"
 
     /** Points generated per leg (letter-to-letter) of a synthetic swipe. */
     private const val POINTS_PER_LEG = 10
@@ -330,7 +330,7 @@ object NintypeSpikes {
     }
 
     /**
-     * S5 — latency of re-decoding an accumulated word. Under Nintype every new stroke re-decodes
+     * S5 — latency of re-decoding an accumulated word. Under TapSwipe every new stroke re-decodes
      * the *whole* word, so cost grows with accumulated segment count (each one costs a
      * predict_segment pass, and the beam runs over the concatenated emissions).
      *

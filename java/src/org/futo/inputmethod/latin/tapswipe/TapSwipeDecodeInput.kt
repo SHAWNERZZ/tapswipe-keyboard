@@ -1,4 +1,4 @@
-package org.futo.inputmethod.latin.nintype
+package org.futo.inputmethod.latin.tapswipe
 
 import org.futo.ml.inference.SwipeDecoder
 
@@ -7,12 +7,12 @@ import org.futo.ml.inference.SwipeDecoder
  * suggestion pipeline on [org.futo.inputmethod.latin.common.ComposedData].
  *
  * Built fresh for every decode from the session's completed strokes plus any in-progress stroke,
- * so nothing about it is incremental — see the statelessness contract in [NintypeSession].
+ * so nothing about it is incremental — see the statelessness contract in [TapSwipeSession].
  *
  * [generation] is the session generation this input was built from. Results computed for a stale
  * generation must be discarded rather than applied.
  */
-class NintypeDecodeInput(
+class TapSwipeDecodeInput(
     @JvmField val left: Array<SwipeDecoder.SwipeSeg>,
     @JvmField val right: Array<SwipeDecoder.SwipeSeg>,
     /** True if any stroke was a real gesture; false means peck mode (no swipe decoding). */
@@ -24,5 +24,5 @@ class NintypeDecodeInput(
     val segmentCount: Int get() = left.size + right.size
 
     override fun toString(): String =
-        "NintypeDecodeInput(L=${left.size} R=${right.size} hasSwipe=$hasSwipe gen=$generation)"
+        "TapSwipeDecodeInput(L=${left.size} R=${right.size} hasSwipe=$hasSwipe gen=$generation)"
 }

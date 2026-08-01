@@ -28,10 +28,6 @@ import org.futo.inputmethod.latin.BuildConfig
 import org.futo.inputmethod.latin.CrashLoggingApplication
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
-import kotlin.math.roundToInt
-import org.futo.inputmethod.latin.NintypeModeSetting
-import org.futo.inputmethod.latin.NintypePeckMinTapsSetting
-import org.futo.inputmethod.latin.SwipeSensitivitySetting
 import org.futo.inputmethod.latin.SwipeLanguageModelSetting
 import org.futo.inputmethod.latin.SwipeSpecialDecoderSetting
 import org.futo.inputmethod.latin.TextInputAlternativeIC
@@ -55,7 +51,6 @@ import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
-import org.futo.inputmethod.latin.uix.settings.SettingSlider
 import org.futo.inputmethod.latin.uix.settings.SettingToggleDataStore
 import org.futo.inputmethod.latin.uix.settings.SettingToggleRaw
 import org.futo.inputmethod.latin.uix.settings.useDataStore
@@ -206,30 +201,6 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
             title = "Use setComposingRegion",
             setting = VoiceInputAlternativeICComposing,
             disabled = useDataStoreValue(VoiceInputAlternativeIC) == false
-        )
-
-        ScreenTitle("Nintype")
-        SettingToggleDataStore(
-            title = "Nintype input model",
-            subtitle = "Accumulate taps+swipes into one word; only space/punctuation/Enter finalizes. default = no",
-            setting = NintypeModeSetting
-        )
-        SettingSlider(
-            title = "Peck mode threshold",
-            subtitle = "Taps in a swipe-free word before autocorrect turns off and key borders show. default = 4",
-            setting = NintypePeckMinTapsSetting,
-            range = 1.0f..10.0f,
-            transform = { it.roundToInt() },
-            indicator = { "$it taps" },
-            steps = 8
-        )
-        SettingSlider(
-            title = "Swipe sensitivity",
-            subtitle = "Higher registers short swipes sooner (e.g. 'e' to 'r'), at the cost of taps being read as swipes. 1.0 = stock",
-            setting = SwipeSensitivitySetting,
-            range = 0.5f..4.0f,
-            transform = { (it * 20.0f).roundToInt() / 20.0f },
-            indicator = { "%.2fx".format(it) }
         )
 
         ScreenTitle("Swipe debug")

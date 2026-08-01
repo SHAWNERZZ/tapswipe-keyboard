@@ -115,7 +115,7 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         this
     )
 
-    /** Debug-tooling access to the input logic (Nintype session inspection). */
+    /** Debug-tooling access to the input logic (TapSwipe session inspection). */
     val inputLogicForDebug: InputLogic get() = inputLogic
 
     private val settings = Settings.getInstance()

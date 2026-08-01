@@ -1,11 +1,11 @@
-package org.futo.inputmethod.latin.nintype
+package org.futo.inputmethod.latin.tapswipe
 
-import org.futo.inputmethod.latin.NintypeNormalizers
+import org.futo.inputmethod.latin.TapSwipeNormalizers
 import org.futo.inputmethod.latin.common.InputPointers
 import org.futo.ml.inference.SwipeDecoder
 
 /**
- * Builds a [NintypeDecodeInput] from a session, optionally unioned with an in-progress stroke.
+ * Builds a [TapSwipeDecodeInput] from a session, optionally unioned with an in-progress stroke.
  *
  * ## Why the live stroke is passed in rather than accumulated
  *
@@ -18,21 +18,21 @@ import org.futo.ml.inference.SwipeDecoder
  * Caller distinguishes the two cases by input style: `INPUT_STYLE_UPDATE_BATCH` passes the live
  * segments, `INPUT_STYLE_TAIL_BATCH` does not (the session already owns them).
  */
-object NintypeInputBuilder {
+object TapSwipeInputBuilder {
     @JvmStatic
     fun build(
-        session: NintypeSession,
+        session: TapSwipeSession,
         liveSegments: List<InputPointers.GestureSegment>?,
-        norm: NintypeNormalizers?,
+        norm: TapSwipeNormalizers?,
         batchOriginMs: Long,
         sessionOriginMs: Long
-    ): NintypeDecodeInput? {
+    ): TapSwipeDecodeInput? {
         val left = ArrayList<SwipeDecoder.SwipeSeg>()
         val right = ArrayList<SwipeDecoder.SwipeSeg>()
         var hasSwipe = session.hasSwipe
 
         for (s in session.strokes) {
-            if (s.hand == NintypeSession.Hand.RIGHT) right.add(s.toSeg()) else left.add(s.toSeg())
+            if (s.hand == TapSwipeSession.Hand.RIGHT) right.add(s.toSeg()) else left.add(s.toSeg())
         }
 
         if (liveSegments != null && norm != null) {
@@ -73,7 +73,7 @@ object NintypeInputBuilder {
             right.clear()
         }
 
-        return NintypeDecodeInput(
+        return TapSwipeDecodeInput(
             left.toTypedArray(),
             right.toTypedArray(),
             hasSwipe,

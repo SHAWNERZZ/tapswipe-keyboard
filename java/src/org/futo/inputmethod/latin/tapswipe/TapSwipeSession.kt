@@ -1,16 +1,16 @@
-package org.futo.inputmethod.latin.nintype
+package org.futo.inputmethod.latin.tapswipe
 
 import android.util.Log
 import org.futo.inputmethod.latin.common.InputPointers
 import org.futo.ml.inference.SwipeDecoder
 
 /**
- * Word-scoped accumulator of input evidence for the Nintype re-architecture.
+ * Word-scoped accumulator of input evidence for the TapSwipe re-architecture.
  *
  * A "session" is one word being built. It is opened by the first letter input and closed only
  * by a finalizer (space / punctuation / Enter), never by a finger lift.
  *
- * ## Statelessness contract (see NINTYPE_PLAN.md §5.5)
+ * ## Statelessness contract (see TAPSWIPE_PLAN.md §5.5)
  *
  * The known failure mode for this design is accumulated state outliving the word it belongs to,
  * producing runaway word growth. Rather than trying to enumerate every event that should clear
@@ -24,7 +24,7 @@ import org.futo.ml.inference.SwipeDecoder
  *  - Results computed for an older [generation] are stale and must be discarded.
  *  - The candidate is always a pure function of [strokes]; nothing is applied incrementally.
  */
-class NintypeSession {
+class TapSwipeSession {
     enum class Kind { TAP, SWIPE }
     enum class Hand { LEFT, RIGHT }
 
@@ -46,7 +46,7 @@ class NintypeSession {
     }
 
     companion object {
-        const val TAG = "NintypeSession"
+        const val TAG = "TapSwipeSession"
 
         /**
          * Fail-safe cap. Past this many strokes something has leaked; we log loudly and reset

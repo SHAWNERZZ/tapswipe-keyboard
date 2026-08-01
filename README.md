@@ -22,9 +22,9 @@ neural swipe decoder. Two behaviours differ fundamentally from the upstream keyb
 Plus a **peck mode** for words that contain no swipe: no autocorrect, committed exactly as typed,
 and learned so the word becomes swipeable afterwards.
 
-Everything is behind a setting (Dev Settings → Nintype → "Nintype input model"), off by default,
+Everything is behind a setting (Settings → TapSwipe → "TapSwipe input model"), off by default,
 so the stock behaviour is one toggle away. Design notes, the reasoning behind each decision, and a
-full record of the bugs found along the way are in [NINTYPE_PLAN.md](NINTYPE_PLAN.md).
+full record of the bugs found along the way are in [TAPSWIPE_PLAN.md](TAPSWIPE_PLAN.md).
 
 ## Licensing
 

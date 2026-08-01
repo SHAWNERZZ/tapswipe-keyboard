@@ -61,7 +61,7 @@ public class BatchInputArbiter {
      */
     /**
      * Absolute time corresponding to t=0 of the current batch's segment timestamps, or -1 if no
-     * batch origin is set. Needed by the Nintype session to re-base segments from successive
+     * batch origin is set. Needed by the TapSwipe session to re-base segments from successive
      * batches onto one word-scoped timeline, since each batch establishes its own origin.
      *
      * Caveat: this leaks across taps that never become gestures - it is set on every armed

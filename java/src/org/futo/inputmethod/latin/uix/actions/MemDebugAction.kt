@@ -35,8 +35,8 @@ import org.futo.inputmethod.latin.LatinIME
 import org.futo.inputmethod.latin.LegacySwipeSetting
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
-import org.futo.inputmethod.latin.nintype.NintypePeckIndicator
-import org.futo.inputmethod.latin.nintype.NintypeSpikes
+import org.futo.inputmethod.latin.tapswipe.TapSwipePeckIndicator
+import org.futo.inputmethod.latin.tapswipe.TapSwipeSpikes
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.DataStoreHelper
@@ -344,7 +344,7 @@ val MemoryDebugAction = Action(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    Text("Nintype Session", style = DebugTitle)
+                    Text("TapSwipe Session", style = DebugTitle)
                     run {
                         // Polls so a leaked session is visible while typing, which is the whole
                         // point: runaway stroke accumulation shows up here immediately.
@@ -355,11 +355,11 @@ val MemoryDebugAction = Action(
                                     val ime = latinIme.imeManager.getActiveIME(Settings.getInstance().current)
                                     if (ime is GeneralIME) {
                                         val il = ime.inputLogicForDebug
-                                        "nintypeMode=${il.isNintypeMode()} peck=${il.isNintypePeckWord()} " +
-                                            "verbatim=${il.isNintypeVerbatimWord()} minTaps=${il.nintypePeckMinTaps()}\n" +
-                                        "borderIndicator=${NintypePeckIndicator.active} " +
+                                        "tapSwipeMode=${il.isTapSwipeMode()} peck=${il.isTapSwipePeckWord()} " +
+                                            "verbatim=${il.isTapSwipeVerbatimWord()} minTaps=${il.tapSwipePeckMinTaps()}\n" +
+                                        "borderIndicator=${TapSwipePeckIndicator.active} " +
                                             "userKeyBorders=${DataStoreHelper.getSetting(KeyBordersSetting)}\n" +
-                                        il.mNintypeSession.describe()
+                                        il.mTapSwipeSession.describe()
                                     } else {
                                         "active IME is not GeneralIME"
                                     }
@@ -376,7 +376,7 @@ val MemoryDebugAction = Action(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    Text("Nintype Phase 0 Spikes", style = DebugTitle)
+                    Text("TapSwipe Phase 0 Spikes", style = DebugTitle)
                     run {
                         val scope = rememberCoroutineScope()
                         val spikeState = remember { mutableStateOf("") }
@@ -390,7 +390,7 @@ val MemoryDebugAction = Action(
                                 scope.launch {
                                     val report = withContext(Dispatchers.Default) {
                                         try {
-                                            NintypeSpikes.run()
+                                            TapSwipeSpikes.run()
                                         } catch (e: Throwable) {
                                             "spike runner crashed: $e\n${e.stackTraceToString()}"
                                         }

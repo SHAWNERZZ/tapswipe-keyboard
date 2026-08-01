@@ -15,7 +15,7 @@ import org.futo.inputmethod.keyboard.Keyboard
 import org.futo.inputmethod.keyboard.internal.isAlphabet
 import org.futo.inputmethod.latin.common.ComposedData
 import org.futo.inputmethod.latin.common.InputPointers
-import org.futo.inputmethod.latin.nintype.NintypeDecodeInput
+import org.futo.inputmethod.latin.tapswipe.TapSwipeDecodeInput
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.settings.SettingsValues
 import org.futo.inputmethod.latin.settings.SettingsValuesForSuggestion
@@ -234,7 +234,7 @@ private class SpecialDecoder private constructor(
 }
 
 /** Raw-pixel to layout-space coordinate transforms; see [SwipeDecoderDictionary.currentNormalizers]. */
-class NintypeNormalizers(
+class TapSwipeNormalizers(
     val x: (Float) -> Float,
     val y: (Float) -> Float
 )
@@ -242,11 +242,11 @@ class NintypeNormalizers(
 val LegacySwipeSetting = SettingsKey(booleanPreferencesKey("swipe_mode_legacy"), false)
 
 /**
- * Master switch for the Nintype input model (accumulate strokes across finger lifts, finalize
+ * Master switch for the TapSwipe input model (accumulate strokes across finger lifts, finalize
  * only on space/punctuation/Enter). Off by default so stock behaviour is one toggle away for
  * A/B comparison on the same build.
  */
-val NintypeModeSetting = SettingsKey(booleanPreferencesKey("__experimental_nintype_mode"), false)
+val TapSwipeModeSetting = SettingsKey(booleanPreferencesKey("tapswipe_mode"), false)
 
 /**
  * Number of taps a swipe-free word needs before peck mode engages (no autocorrect, committed
@@ -255,18 +255,19 @@ val NintypeModeSetting = SettingsKey(booleanPreferencesKey("__experimental_ninty
  * Short words are overwhelmingly ordinary typing rather than attempts to enter something the
  * dictionary doesn't know, and they are exactly where autocorrect earns its keep ("ti" to "to").
  */
-val NintypePeckMinTapsSetting = SettingsKey(intPreferencesKey("nintype_peck_min_taps"), 4)
+val TapSwipePeckMinTapsSetting = SettingsKey(intPreferencesKey("tapswipe_peck_min_taps"), 4)
 
 /**
  * How eagerly a finger movement is classified as a swipe rather than a tap.
  *
- * 1.0 is stock behaviour. Higher values make short swipes (e.g. ending a word by swiping `e` to
+ * 1.0 is stock behaviour; the default here is 3.0, which testing found works well for the short
+ * swipes the TapSwipe model encourages. Higher values make short swipes (e.g. ending a word by swiping `e` to
  * `r`) register sooner, at the cost of ordinary taps occasionally being read as gestures.
  * Applied uniformly to the three quantities that gate gesture recognition in
  * `GestureStrokeRecognitionPoints`: the fast-move speed test, and the dynamic distance and time
  * thresholds. The existing coarse "increase sensitivity" toggle multiplies on top of this.
  */
-val SwipeSensitivitySetting = SettingsKey(floatPreferencesKey("swipe_sensitivity"), 1.0f)
+val SwipeSensitivitySetting = SettingsKey(floatPreferencesKey("swipe_sensitivity"), 3.0f)
 
 /** Effective sensitivity multiplier, combining the slider with the legacy coarse toggle. */
 fun currentSwipeSensitivity(coarseToggleOn: Boolean): Float {
@@ -352,19 +353,19 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
 
         /**
          * Coordinate normalizers mapping raw touch pixels into the layout space the decoder
-         * expects. Must stay identical to the arithmetic in [transformSegment], or the Nintype
+         * expects. Must stay identical to the arithmetic in [transformSegment], or the TapSwipe
          * session's stored coordinates will not agree with the applied layout's key centers.
          *
          * Returns null when no keyboard is known yet.
          */
         @JvmStatic
-        fun currentNormalizers(): NintypeNormalizers? {
+        fun currentNormalizers(): TapSwipeNormalizers? {
             val kb = prevKeyboard ?: return null
             val w = kb.mBaseWidth.toFloat()
             val h = (kb.mBaseHeight - kb.mPadding.bottom).toFloat()
             if (w <= 0f || h <= 0f) return null
             val info = appliedLayoutInfo
-            return NintypeNormalizers(
+            return TapSwipeNormalizers(
                 { rawX -> rawX / w * info.sx + info.ox },
                 { rawY -> minOf(1.0f, (rawY / h) * (4.0f / 3.0f) * info.sy + info.oy) }
             )
@@ -431,8 +432,8 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
     }
 
     /**
-     * Exposes the lazily-created decoder for the Nintype Phase 0 spikes
-     * (see nintype/NintypeSpikes.kt). Debug tooling only - the normal decode path
+     * Exposes the lazily-created decoder for the TapSwipe Phase 0 spikes
+     * (see tapSwipe/TapSwipeSpikes.kt). Debug tooling only - the normal decode path
      * goes through [getSuggestions].
      */
     fun debugGetOrInitDecoder(): SwipeDecoder = getOrInitDecoder()
@@ -490,20 +491,20 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             )
         }
 
-        // Nintype: a word accumulates strokes across finger lifts, so when session evidence is
+        // TapSwipe: a word accumulates strokes across finger lifts, so when session evidence is
         // present it supersedes the single-batch pointer data entirely.
-        (composedData.mNintypeInput as? NintypeDecodeInput)?.let { nintype ->
-            return decodeNintype(nintype, ngramContext, useHighBeam, trieWeights)
+        (composedData.mTapSwipeInput as? TapSwipeDecodeInput)?.let { tapSwipe ->
+            return decodeTapSwipe(tapSwipe, ngramContext, useHighBeam, trieWeights)
         }
 
-        // Nintype is on but carried no evidence for this query. Falling through to the legacy
+        // TapSwipe is on but carried no evidence for this query. Falling through to the legacy
         // single-batch path would decode `mInputPointers`, which still holds only the *last*
         // gesture - re-deriving a swipe-only word and overwriting one that taps had already
         // completed ("but" reverting to "by"). Whatever is currently composed is a better answer
         // than a decode of partial evidence, so decline instead.
-        if(DataStoreHelper.getSetting(NintypeModeSetting)) {
+        if(DataStoreHelper.getSetting(TapSwipeModeSetting)) {
             if(BuildConfig.DEBUG || System.currentTimeMillis() < debugLogUntil) {
-                Log.d("SwipeDecoderDictionary", "nintype on but no session input; declining " +
+                Log.d("SwipeDecoderDictionary", "tapswipe on but no session input; declining " +
                     "legacy batch decode (batchMode=${composedData.mIsBatchMode})")
             }
             return null
@@ -656,15 +657,15 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
     }
 
     /**
-     * Decodes accumulated Nintype word-session evidence. Coordinates arrive already normalized
+     * Decodes accumulated TapSwipe word-session evidence. Coordinates arrive already normalized
      * into the layout's space (the session applies the same transform as [transformSegment]),
      * so this only selects beam parameters and runs the decoder.
      *
      * Returns null in peck mode - a word with no swipe in it must not receive gesture
      * suggestions at all.
      */
-    private fun decodeNintype(
-        input: NintypeDecodeInput,
+    private fun decodeTapSwipe(
+        input: TapSwipeDecodeInput,
         ngramContext: NgramContext?,
         useHighBeam: Boolean,
         trieWeights: FloatArray
@@ -700,7 +701,7 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         if (useHighBeam) appliedScoring.value = decoder.scoring
 
         if (BuildConfig.DEBUG || System.currentTimeMillis() < debugLogUntil) {
-            Log.d("SwipeDecoderDictionary", "nintype $input beam=$beamWidth -> " +
+            Log.d("SwipeDecoderDictionary", "tapswipe $input beam=$beamWidth -> " +
                 results.joinToString { "${it.word}(${it.score})" })
         }
 
