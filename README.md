@@ -32,8 +32,14 @@ neural swipe decoder. Two behaviours differ fundamentally from the upstream keyb
 - **Only a separator finalizes a word.** Lifting a finger never commits. Space, punctuation, or
   Enter ends the word; until then every new tap or swipe re-decodes the whole thing.
 
-Plus a **peck mode** for words that contain no swipe: no autocorrect, committed exactly as typed,
-and learned so the word becomes swipeable afterwards.
+Plus a **peck mode** for words that contain no swipe: tap a word out slowly and deliberately and it
+skips autocorrect, is committed exactly as typed, and is learned so you can swipe it next time. This
+is how you enter a word the dictionary doesn't know. Key borders mark it while it's active.
+
+**Master Mode** renders letter keys as dots — once you're typing by shape rather than reading keys,
+the letters are just noise. Peck mode brings them back while you spell something out, and if you
+simply tap away for a few words the keyboard concludes you want a normal keyboard and restores the
+letters until you swipe again. There's an action-bar button to toggle it.
 
 Everything is behind a setting (Settings → TapSwipe → "TapSwipe input model"), off by default,
 so the stock behaviour is one toggle away. Design notes, the reasoning behind each decision, and a
