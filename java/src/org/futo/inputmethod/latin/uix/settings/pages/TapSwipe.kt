@@ -1,63 +1,73 @@
 package org.futo.inputmethod.latin.uix.settings.pages
 
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.futo.inputmethod.latin.R
+import org.futo.inputmethod.latin.SwipeSensitivitySetting
 import org.futo.inputmethod.latin.TapSwipeLegacyTapRunSetting
 import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
-import org.futo.inputmethod.latin.SwipeSensitivitySetting
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
 import org.futo.inputmethod.latin.uix.settings.UserSetting
 import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
+import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.settings.userSettingDecorationOnly
 import org.futo.inputmethod.latin.uix.settings.userSettingToggleDataStore
-import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.theme.Typography
 import kotlin.math.roundToInt
 
+private val tapSwipeEnabled: @Composable () -> Boolean = { useDataStoreValue(TapSwipeModeSetting) }
+
+private val masterModeEnabled: @Composable () -> Boolean = {
+    useDataStoreValue(TapSwipeModeSetting) && useDataStoreValue(TapSwipeMasterModeSetting)
+}
+
 /**
- * Settings for the TapSwipe input model. This whole screen is an addition by this fork and has no
- * counterpart upstream.
+ * Settings for the TapSwipe input model. This whole screen is an addition by this fork.
+ *
+ * Layout notes:
+ * - The master toggle is the only thing visible while TapSwipe is off. Everything below is
+ *   meaningless in that state, and a wall of dimmed controls is worse than none.
+ * - Toggles carry icons. `SettingItem` reserves a 48dp icon column whether or not one is given, so
+ *   an icon-less toggle looks arbitrarily indented beside a slider, which draws full width.
+ *   Filling the slot makes the indent read as deliberate instead of accidental.
+ * - Each control sits directly under what it depends on - Master Mode, then its legacy-typing
+ *   threshold - so the relationship is visible without reading the descriptions.
  */
 val TapSwipeMenu = UserSettingsMenu(
     title = R.string.tapswipe_settings_title,
     navPath = "tapswipe", registerNavPath = true,
     settings = listOf(
+        // The master switch. Always visible; everything else hangs off it.
         userSettingToggleDataStore(
             title = R.string.tapswipe_settings_enable,
             subtitle = R.string.tapswipe_settings_enable_subtitle,
-            setting = TapSwipeModeSetting
+            setting = TapSwipeModeSetting,
+            icon = { Icon(painterResource(R.drawable.swipe_icon), contentDescription = null) }
         ),
 
-        UserSetting(
-            name = R.string.tapswipe_settings_peck_cadence,
-            subtitle = R.string.tapswipe_settings_peck_cadence_subtitle,
-            visibilityCheck = { useDataStoreValue(TapSwipeModeSetting) }
-        ) {
-            SettingSlider(
-                title = stringResource(R.string.tapswipe_settings_peck_cadence),
-                subtitle = stringResource(R.string.tapswipe_settings_peck_cadence_subtitle),
-                setting = TapSwipePeckCadenceSetting,
-                range = 100.0f..600.0f,
-                transform = { it.roundToInt() },
-                indicator = { "$it ms between taps" },
-                steps = 9
-            )
-        },
+        // ---- Appearance ----
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_master_mode,
+            subtitle = R.string.tapswipe_settings_master_mode_subtitle,
+            setting = TapSwipeMasterModeSetting,
+            icon = { Icon(painterResource(R.drawable.blur), contentDescription = null) }
+        ).copy(visibilityCheck = tapSwipeEnabled),
 
+        // Directly beneath Master Mode: it only does anything while the letters are hidden.
         UserSetting(
             name = R.string.tapswipe_settings_legacy_run,
             subtitle = R.string.tapswipe_settings_legacy_run_subtitle,
-            // Only meaningful while Master Mode is hiding the letters - without it, legacy tap is
-            // indistinguishable from ordinary typing.
-            visibilityCheck = {
-                useDataStoreValue(TapSwipeModeSetting) && useDataStoreValue(TapSwipeMasterModeSetting)
-            }
+            visibilityCheck = masterModeEnabled
         ) {
             SettingSlider(
                 title = stringResource(R.string.tapswipe_settings_legacy_run),
@@ -65,21 +75,32 @@ val TapSwipeMenu = UserSettingsMenu(
                 setting = TapSwipeLegacyTapRunSetting,
                 range = 0.0f..15.0f,
                 transform = { it.roundToInt() },
-                indicator = { if (it == 0) "Off" else "$it quick taps" },
+                indicator = { if (it == 0) "Off" else "$it taps" },
                 steps = 14
             )
         },
 
-        userSettingToggleDataStore(
-            title = R.string.tapswipe_settings_master_mode,
-            subtitle = R.string.tapswipe_settings_master_mode_subtitle,
-            setting = TapSwipeMasterModeSetting,
-            disabled = { !useDataStoreValue(TapSwipeModeSetting) }
-        ),
+        // ---- Tuning ----
+        UserSetting(
+            name = R.string.tapswipe_settings_peck_cadence,
+            subtitle = R.string.tapswipe_settings_peck_cadence_subtitle,
+            visibilityCheck = tapSwipeEnabled
+        ) {
+            SettingSlider(
+                title = stringResource(R.string.tapswipe_settings_peck_cadence),
+                subtitle = stringResource(R.string.tapswipe_settings_peck_cadence_subtitle),
+                setting = TapSwipePeckCadenceSetting,
+                range = 100.0f..600.0f,
+                transform = { it.roundToInt() },
+                indicator = { "$it ms" },
+                steps = 9
+            )
+        },
 
         UserSetting(
             name = R.string.tapswipe_settings_sensitivity,
-            subtitle = R.string.tapswipe_settings_sensitivity_subtitle
+            subtitle = R.string.tapswipe_settings_sensitivity_subtitle,
+            visibilityCheck = tapSwipeEnabled
         ) {
             SettingSlider(
                 title = stringResource(R.string.tapswipe_settings_sensitivity),
@@ -91,20 +112,20 @@ val TapSwipeMenu = UserSettingsMenu(
             )
         },
 
+        // ---- Footnotes ----
         userSettingDecorationOnly {
+            Spacer(Modifier.height(16.dp))
             Text(
                 stringResource(R.string.tapswipe_settings_learning_note),
                 style = Typography.Small,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
             )
-        },
-
-        userSettingDecorationOnly {
             Text(
                 stringResource(R.string.tapswipe_settings_about),
                 style = Typography.Small,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
             )
-        }
+            Spacer(Modifier.height(24.dp))
+        }.copy(visibilityCheck = tapSwipeEnabled)
     )
 )
