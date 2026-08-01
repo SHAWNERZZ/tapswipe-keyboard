@@ -435,7 +435,17 @@ Not changed: `Suggest.java:358` itself. Switching it to `isOrWillBeOnlyFirstChar
 3. **Default swipe sensitivity 3.0×**, noted as tuned for short swipes under TapSwipe.
 4. **Surface the personalization dependency.** `mUsePersonalizedDicts` gates `performAdditionToUserHistoryDictionary` *before* our `forceValidWord` flag is read, so with it off the peck→learn→swipe loop silently does nothing and learned words never reach the swipe tries. Warn next to the TapSwipe toggle.
 
-### Phase 7 — Mode state machine (normal / peck / legacy tap)
+### Phase 7 — Mode state machine (normal / peck / legacy tap) — *implemented, dev*
+
+Shipped as `TapSwipeMode` { SWIPE, UNDECIDED, PECK, LEGACY_TAP } resolved by `InputLogic.tapSwipeMode()`.
+
+- **Cadence gate.** `TapSwipeSession.medianTapGapMs()` over per-tap timestamps recorded *unconditionally* (`noteTapTime`), not from TAP strokes — those are skipped when the layout cannot place a code point, which would misclassify any word containing one. Median rather than mean, so a single pause does not make fluent typing look deliberate. Threshold is `TapSwipePeckCadenceSetting`, default 250ms.
+- **Latched per word.** Once classified the mode is held for the rest of the word, or the keys would flip between dots and letters, and borders on and off, as the median drifted mid-word. A swipe is never latched and always forces back to SWIPE — that is how legacy-tap mode is left.
+- **LEGACY_TAP restores stock behaviour**: excluded from `isTapSwipeVerbatimWord()`, so fluent typing keeps autocorrect. This is the behavioural change from the old length-only rule, where any long swipe-free word was committed verbatim.
+- **Morph suppression**: `updateBoostedCodePoints` now also requires `!isTapSwipePeckWord()`, so dictionary key boosting stops fighting a word being deliberately spelled out. Personal-preference morphing does not exist yet (Phase 8).
+- `TapSwipePeckIndicator` became `TapSwipeUiState`, exposing `showBorders()` (peck only) and `showLetters()` (peck or legacy tap), which Master Mode consults.
+
+#### Original plan
 
 Today peck is a single predicate on word length. It becomes an explicit three-state machine, classified per word:
 

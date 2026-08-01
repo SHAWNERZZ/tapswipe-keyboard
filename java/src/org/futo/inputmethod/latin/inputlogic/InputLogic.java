@@ -51,7 +51,8 @@ import org.futo.inputmethod.latin.SwipeDecoderDictionaryKt;
 import org.futo.inputmethod.latin.WordComposer;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeDecodeInput;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeInputBuilder;
-import org.futo.inputmethod.latin.tapswipe.TapSwipePeckIndicator;
+import org.futo.inputmethod.latin.tapswipe.TapSwipeMode;
+import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeSession;
 import org.futo.inputmethod.latin.uix.DataStoreHelper;
 import org.futo.inputmethod.latin.common.Constants;
@@ -208,25 +209,62 @@ public final class InputLogic {
         return (v == null || v < 1) ? 1 : v;
     }
 
-    /**
-     * Whether the word currently being composed is a "peck" word - TapSwipe is on, no swipe has
-     * contributed to it, and it has reached {@link #TAPSWIPE_PECK_MIN_TAPS} taps. Peck words are
-     * contributed to it, and it has reached the peck tap threshold. Peck words are never
-     * autocorrected and are committed verbatim.
-     *
-     * Reads the session without revalidating: we only care whether a swipe contributed to the word
-     * being committed, and a leaked session can only ever report hasSwipe=true here, which is the
-     * conservative direction (it suppresses the peck behaviour rather than applying it wrongly).
-     */
-    public boolean isTapSwipePeckWord() {
-        return isTapSwipeMode()
-                && !mTapSwipeSession.getHasSwipe()
-                && mWordComposer.size() >= tapSwipePeckMinTaps();
+    public int tapSwipePeckCadenceMs() {
+        final Integer v = DataStoreHelper.getSetting(
+                SwipeDecoderDictionaryKt.getTapSwipePeckCadenceSetting());
+        return (v == null || v < 1) ? 1 : v;
     }
 
     /**
-     * Whether the word in progress must be committed exactly as shown, with no autocorrect
-     * second-guessing it. True for peck words *and* for any word containing a swipe.
+     * Classifies the word being composed, latching the answer for the rest of the word.
+     *
+     * A swipe always wins and is never latched, so a swipe pulls the word back to {@link
+     * TapSwipeMode#SWIPE} at any point - that is how legacy-tap mode is left. A swipe-free word
+     * stays {@link TapSwipeMode#UNDECIDED} until it is long enough to judge, then splits on typing
+     * cadence: deliberate spelling becomes {@link TapSwipeMode#PECK}, fluent typing becomes {@link
+     * TapSwipeMode#LEGACY_TAP} and behaves exactly like upstream.
+     *
+     * Latching matters for more than tidiness: without it the keys would flip between dots and
+     * letters, and borders on and off, in the middle of a word as the median cadence drifted.
+     *
+     * Reads the session without revalidating - a leaked session can only report hasSwipe=true,
+     * which is the conservative direction (it suppresses peck rather than applying it wrongly).
+     */
+    public TapSwipeMode tapSwipeMode() {
+        if (!isTapSwipeMode()) return TapSwipeMode.SWIPE;
+        if (mTapSwipeSession.getHasSwipe()) return TapSwipeMode.SWIPE;
+
+        final TapSwipeMode latched = mTapSwipeSession.getLatchedMode();
+        if (latched != null) return latched;
+
+        if (mWordComposer.size() < tapSwipePeckMinTaps()) return TapSwipeMode.UNDECIDED;
+
+        // Not enough taps to have a cadence yet; wait rather than guessing.
+        final int gap = mTapSwipeSession.medianTapGapMs();
+        if (gap < 0) return TapSwipeMode.UNDECIDED;
+
+        final TapSwipeMode decided = (gap >= tapSwipePeckCadenceMs())
+                ? TapSwipeMode.PECK : TapSwipeMode.LEGACY_TAP;
+        mTapSwipeSession.latchMode(decided);
+        if (DEBUG_TAPSWIPE) {
+            Log.d(TAG, "tapswipe mode latched " + decided + " (medianGap=" + gap
+                    + "ms threshold=" + tapSwipePeckCadenceMs() + "ms size="
+                    + mWordComposer.size() + ")");
+        }
+        return decided;
+    }
+
+    /**
+     * A peck word: deliberately spelled out with no swipe. Never autocorrected, committed
+     * verbatim, and learned so it becomes swipeable afterwards.
+     */
+    public boolean isTapSwipePeckWord() {
+        return tapSwipeMode() == TapSwipeMode.PECK;
+    }
+
+    /**
+     * Whether the word must be committed exactly as shown, with no autocorrect second-guessing it.
+     * True for peck words and for any word containing a swipe.
      *
      * Swipes are included because the decoded candidate already *is* the best answer - it came
      * from a lexicon-constrained beam search over the whole word - and stock never autocorrects
@@ -237,14 +275,14 @@ public final class InputLogic {
      * {@code setRequiresUpdateSuggestions()}, which schedules an ordinary TYPING-style query; that
      * query runs the *non-batch* pipeline (plus the transformer LM) over the literal composing
      * string and stores a genuine autocorrection. {@code commitCurrentAutoCorrection} then force-
-     * completes exactly that pending query and commits its answer instead of the decoded word - so
-     * "swipe b-to-u, tap t" displayed "but" but committed "by". Pure swipes were unaffected only
-     * because a finger lift never sets that flag, so no typing query was ever scheduled.
+     * completes exactly that pending query and commits its answer instead of the decoded word.
+     *
+     * LEGACY_TAP is deliberately excluded: fluent typing is ordinary typing, and autocorrect is
+     * what makes it work.
      */
     public boolean isTapSwipeVerbatimWord() {
-        if (!isTapSwipeMode()) return false;
-        if (mTapSwipeSession.getHasSwipe()) return true;
-        return mWordComposer.size() >= tapSwipePeckMinTaps();
+        final TapSwipeMode mode = tapSwipeMode();
+        return mode == TapSwipeMode.SWIPE || mode == TapSwipeMode.PECK;
     }
 
     /** Discards the session. Safe to call unconditionally. */
@@ -257,11 +295,11 @@ public final class InputLogic {
     /**
      * Shows key borders while a word is being pecked out, and hides them again the moment a swipe
      * joins the word or the word is finished. Cheap: this only flips a flag consulted at draw time
-     * (see {@link TapSwipePeckIndicator}), so no theme rebuild is involved.
+     * (see {@link TapSwipeUiState}), so no theme rebuild is involved.
      */
     private void refreshTapSwipePeckIndicator() {
-        final boolean wanted = isTapSwipePeckWord();
-        if (!TapSwipePeckIndicator.set(wanted)) return;
+        final TapSwipeMode wanted = isTapSwipeMode() ? tapSwipeMode() : TapSwipeMode.SWIPE;
+        if (!TapSwipeUiState.set(wanted)) return;
 
         MainKeyboardView view = mImeHelper.getKeyboardSwitcher().getMainKeyboardView();
         if (view == null) {
@@ -270,11 +308,10 @@ public final class InputLogic {
             view = KeyboardSwitcher.getInstance().getMainKeyboardView();
         }
         if (DEBUG_TAPSWIPE) {
-            Log.d(TAG, "tapswipe peck indicator -> " + wanted
+            Log.d(TAG, "tapswipe mode -> " + wanted
                     + " (composingSize=" + mWordComposer.size()
-                    + " taps=" + mTapSwipeSession.getTapCount()
                     + " hasSwipe=" + mTapSwipeSession.getHasSwipe()
-                    + " minTaps=" + tapSwipePeckMinTaps()
+                    + " medianGap=" + mTapSwipeSession.medianTapGapMs() + "ms"
                     + " view=" + (view == null ? "null" : "ok") + ")");
         }
         if (view != null) {
@@ -954,6 +991,10 @@ public final class InputLogic {
         if(settingsValues.mUseDictionaryKeyBoosting
                 // text field must allow autocorrection
                 && settingsValues.mAutoCorrectionEnabledPerTextFieldSettings
+                // Peck mode exists to type words the dictionary does NOT know. Boosting enlarges
+                // the hitboxes of letters that continue known words, which pulls taps toward the
+                // dictionary - directly opposed to what the user is doing.
+                && !isTapSwipePeckWord()
                 // previous codepoint must have been a word codepoint (i.e. exclude boosting after backspace or symbols)
                 && wasWordCodePoint
                 // accessibility must not be enabled
@@ -1438,6 +1479,9 @@ public final class InputLogic {
             setComposingTextInternal(getTextWithUnderline(mWordComposer.getTypedWord()), 1);
 
             if (isTapSwipeMode() && settingsValues.isWordCodePoint(codePoint)) {
+                // Before absorbing: cadence must be measured for every tap, including code points
+                // the layout cannot place (which absorbTap skips).
+                mTapSwipeSession.noteTapTime(SystemClock.uptimeMillis());
                 absorbTapIntoTapSwipeSession(codePoint);
                 // Outside absorbTap deliberately: that method bails out for a code point the
                 // layout can't place, but the word still grew, so peck state must be re-evaluated

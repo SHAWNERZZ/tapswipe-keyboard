@@ -7,7 +7,7 @@ package org.futo.inputmethod.latin.tapswipe
  * swiping and pecking by shape rather than reading each key, the letters are visual noise; removing
  * them makes the trajectory easier to see and discourages hunting for individual keys.
  *
- * Like [TapSwipePeckIndicator] this is a transient flag read at draw time rather than a DataStore
+ * Like [TapSwipeUiState] this is a transient flag read at draw time rather than a DataStore
  * lookup, because it is consulted once per key per frame. It is kept in sync by a settings-flow
  * collector in `LatinIME`, which also invalidates the keyboard when it changes. Nothing here
  * triggers a theme rebuild.
@@ -32,12 +32,11 @@ object TapSwipeMasterMode {
     /**
      * Whether letter labels should currently be replaced with dots.
      *
-     * Peck mode deliberately wins: a word being spelled out letter by letter is exactly when the
-     * user needs to see the letters, so peck reveals them again (and adds key borders) for as long
-     * as it is active.
+     * Tapping deliberately wins: a word being spelled out key by key is exactly when the user
+     * needs to see the letters, so both peck and legacy-tap mode reveal them again.
      */
     @JvmStatic
-    fun shouldHideLetters(): Boolean = enabled && !TapSwipePeckIndicator.active
+    fun shouldHideLetters(): Boolean = enabled && !TapSwipeUiState.showLetters()
 
     /** The glyph drawn in place of a letter. */
     const val DOT = "•"

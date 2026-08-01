@@ -28,7 +28,7 @@ import org.futo.inputmethod.keyboard.Keyboard
 import org.futo.inputmethod.keyboard.internal.KeyDrawParams
 import org.futo.inputmethod.keyboard.internal.KeyboardIconsSet
 import org.futo.inputmethod.latin.R
-import org.futo.inputmethod.latin.tapswipe.TapSwipePeckIndicator
+import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState
 import org.futo.inputmethod.latin.uix.actions.AllActions
 import org.futo.inputmethod.latin.uix.actions.AllActionsMap
 import org.futo.inputmethod.latin.uix.theme.AdvancedThemeMatcher
@@ -214,7 +214,7 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
     private var peckKeyStyles: Map<KeyVisualStyle, VisualStyleDescriptor> = emptyMap()
 
     override fun getKeyStyleDescriptor(visualStyle: KeyVisualStyle): VisualStyleDescriptor {
-        if (TapSwipePeckIndicator.active) {
+        if (TapSwipeUiState.showBorders()) {
             peckKeyStyles[visualStyle]?.let { return it }
         }
         return keyStyles[visualStyle]!!

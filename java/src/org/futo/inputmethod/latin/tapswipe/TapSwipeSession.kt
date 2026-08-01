@@ -93,6 +93,46 @@ class TapSwipeSession {
     val tapCount: Int get() = strokesInternal.count { it.kind == Kind.TAP }
 
     /**
+     * Absolute (uptime) times of every tap in this word, recorded unconditionally on each key
+     * press - unlike TAP strokes, which are only added when the layout can place the code point.
+     * Cadence has to be measured even for keys the decoder cannot use, or a word containing one
+     * would be misclassified.
+     */
+    private val tapTimesMs = ArrayList<Long>()
+
+    fun noteTapTime(uptimeMs: Long) {
+        if (tapTimesMs.size >= MAX_STROKES * 4) return
+        tapTimesMs.add(uptimeMs)
+    }
+
+    /**
+     * Median interval between taps in this word, or -1 when fewer than two taps have been seen.
+     *
+     * Median rather than mean so one pause - reaching for a far key, or a moment's thought - does
+     * not by itself make fluent typing look deliberate.
+     */
+    fun medianTapGapMs(): Int {
+        if (tapTimesMs.size < 2) return -1
+        val gaps = ArrayList<Long>(tapTimesMs.size - 1)
+        for (i in 1 until tapTimesMs.size) gaps.add(tapTimesMs[i] - tapTimesMs[i - 1])
+        gaps.sort()
+        val mid = gaps.size / 2
+        val median = if (gaps.size % 2 == 1) gaps[mid] else (gaps[mid - 1] + gaps[mid]) / 2
+        return median.toInt()
+    }
+
+    /**
+     * The mode this word was classified as, or null while still undecided. Latched so the display
+     * cannot flicker between dots and letters mid-word; cleared only by [reset].
+     */
+    var latchedMode: TapSwipeMode? = null
+        private set
+
+    fun latchMode(value: TapSwipeMode) {
+        latchedMode = value
+    }
+
+    /**
      * Peck-mode literal text, *derived* from tap strokes rather than accumulated separately,
      * so it cannot drift out of sync with [strokes].
      */
@@ -113,6 +153,8 @@ class TapSwipeSession {
             if (DEBUG) Log.d(TAG, "reset (${strokesInternal.size} strokes): $reason")
         }
         strokesInternal.clear()
+        tapTimesMs.clear()
+        latchedMode = null
         anchorSelStart = NO_ANCHOR
         lastComposedText = ""
         generation++
@@ -268,6 +310,7 @@ class TapSwipeSession {
         appendLine("gen=$generation open=$isOpen hasSwipe=$hasSwipe hasComposed=$hasComposed strokes=${strokesInternal.size}")
         appendLine("anchorSelStart=$anchorSelStart lastComposed='$lastComposedText'")
         appendLine("literal='$literalText'")
+        appendLine("mode=${latchedMode ?: "<undecided>"} taps=${tapTimesMs.size} medianGap=${medianTapGapMs()}ms")
         strokesInternal.forEachIndexed { i, s ->
             val label = if (s.kind == Kind.TAP && s.codePoint > 0)
                 "TAP '${String(Character.toChars(s.codePoint))}'" else s.kind.name

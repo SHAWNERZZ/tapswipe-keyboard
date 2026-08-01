@@ -35,7 +35,7 @@ import org.futo.inputmethod.latin.LatinIME
 import org.futo.inputmethod.latin.LegacySwipeSetting
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
-import org.futo.inputmethod.latin.tapswipe.TapSwipePeckIndicator
+import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState
 import org.futo.inputmethod.latin.tapswipe.TapSwipeSpikes
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.Action
@@ -357,7 +357,7 @@ val MemoryDebugAction = Action(
                                         val il = ime.inputLogicForDebug
                                         "tapSwipeMode=${il.isTapSwipeMode()} peck=${il.isTapSwipePeckWord()} " +
                                             "verbatim=${il.isTapSwipeVerbatimWord()} minTaps=${il.tapSwipePeckMinTaps()}\n" +
-                                        "borderIndicator=${TapSwipePeckIndicator.active} " +
+                                        "uiMode=${TapSwipeUiState.mode} borders=${TapSwipeUiState.showBorders()} letters=${TapSwipeUiState.showLetters()} " +
                                             "userKeyBorders=${DataStoreHelper.getSetting(KeyBordersSetting)}\n" +
                                         il.mTapSwipeSession.describe()
                                     } else {
