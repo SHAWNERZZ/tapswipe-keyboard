@@ -67,6 +67,7 @@ import org.futo.inputmethod.latin.uix.DataStoreHelper
 import org.futo.inputmethod.latin.uix.DynamicThemeProvider
 import org.futo.inputmethod.latin.uix.DynamicThemeProviderOwner
 import org.futo.inputmethod.latin.uix.EmojiTracker.useEmoji
+import org.futo.inputmethod.latin.tapswipe.TapSwipeMasterMode
 import org.futo.inputmethod.latin.uix.HiddenKeysSetting
 import org.futo.inputmethod.latin.uix.KeyBordersSetting
 import org.futo.inputmethod.latin.uix.KeyHintsSetting
@@ -420,6 +421,19 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
                 updateDrawableProvider(activeColorScheme.value)
                 invalidateKeyboard()
+            }
+        }
+
+        launchJob {
+            // TapSwipe Master Mode only replaces labels at draw time, so it needs a repaint but
+            // not a theme rebuild - unlike the three settings collected below.
+            combine(
+                getSettingFlow(TapSwipeModeSetting),
+                getSettingFlow(TapSwipeMasterModeSetting)
+            ) { tapSwipeOn, masterOn -> tapSwipeOn && masterOn }.collect { active ->
+                if (TapSwipeMasterMode.set(active)) {
+                    latinIMELegacy.mKeyboardSwitcher?.mainKeyboardView?.invalidateAllKeys()
+                }
             }
         }
 

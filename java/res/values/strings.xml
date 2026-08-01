@@ -288,6 +288,8 @@ mobile devices. [CHAR LIMIT=25] -->
     <string name="tapswipe_settings_peck_threshold_subtitle">Taps in a word with no swipe before autocorrect switches off and key borders appear. Lets you spell out words that are not in the dictionary.</string>
     <string name="tapswipe_settings_sensitivity">Swipe sensitivity</string>
     <string name="tapswipe_settings_sensitivity_subtitle">How readily a finger movement counts as a swipe rather than a tap. Higher registers short swipes sooner. Applies to all swipe typing.</string>
+    <string name="tapswipe_settings_master_mode">Master Mode</string>
+    <string name="tapswipe_settings_master_mode_subtitle">Show letter keys as dots. Once you are typing by shape rather than reading keys, the letters are just noise. Peck mode brings them back while you spell a word out.</string>
     <string name="tapswipe_settings_learning_note">Peck mode learns new words so you can swipe them later. This needs Personalized suggestions turned on under Text prediction.</string>
     <string name="tapswipe_settings_about">Reimplements the input model of the discontinued Nintype keyboard on top of the FUTO swipe decoder.</string>
 </resources>

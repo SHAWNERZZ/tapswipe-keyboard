@@ -249,6 +249,12 @@ val LegacySwipeSetting = SettingsKey(booleanPreferencesKey("swipe_mode_legacy"),
 val TapSwipeModeSetting = SettingsKey(booleanPreferencesKey("tapswipe_mode"), false)
 
 /**
+ * Master Mode: letter keys render as dots instead of letters. Named after the equivalent mode in
+ * the original Nintype keyboard. Peck mode temporarily reveals the letters again.
+ */
+val TapSwipeMasterModeSetting = SettingsKey(booleanPreferencesKey("tapswipe_master_mode"), false)
+
+/**
  * Number of taps a swipe-free word needs before peck mode engages (no autocorrect, committed
  * verbatim, learned as a valid word).
  *

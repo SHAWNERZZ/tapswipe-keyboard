@@ -1,5 +1,6 @@
 package org.futo.inputmethod.latin.uix.theme
 
+import org.futo.inputmethod.latin.tapswipe.TapSwipeMasterMode
 import android.content.Context
 import android.graphics.Rect
 import android.graphics.RectF
@@ -162,6 +163,16 @@ class AdvancedThemeMatcher(
 
         var label: String? = key.labelOverride ?: key.label
         var hintLabel: String? = if(hintIcon == null) key.effectiveHintLabel else null
+
+        // TapSwipe Master Mode: letter keys become dots. Only single-character letter labels are
+        // replaced, so space, shift, backspace, enter, digits and punctuation keep their labels and
+        // stay findable. The hint is dropped alongside the letter, since leaving it would put a
+        // readable character on a key whose own label was just hidden.
+        if (label != null && TapSwipeMasterMode.shouldHideLetters()
+                && label.length == 1 && Character.isLetter(label[0])) {
+            label = TapSwipeMasterMode.DOT
+            hintLabel = null
+        }
 
         val textSize = key.selectTextSize(params).toFloat() * scheme.extended.advancedThemeOptions.textSizeMultiplier
         val hintSize = key.selectHintTextSize(drawableProvider, params).toFloat() * scheme.extended.advancedThemeOptions.hintSizeMultiplier

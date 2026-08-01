@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.futo.inputmethod.latin.R
+import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
 import org.futo.inputmethod.latin.TapSwipePeckMinTapsSetting
 import org.futo.inputmethod.latin.SwipeSensitivitySetting
@@ -47,6 +48,13 @@ val TapSwipeMenu = UserSettingsMenu(
                 steps = 8
             )
         },
+
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_master_mode,
+            subtitle = R.string.tapswipe_settings_master_mode_subtitle,
+            setting = TapSwipeMasterModeSetting,
+            disabled = { !useDataStoreValue(TapSwipeModeSetting) }
+        ),
 
         UserSetting(
             name = R.string.tapswipe_settings_sensitivity,

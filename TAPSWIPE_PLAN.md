@@ -429,7 +429,9 @@ Not changed: `Suggest.java:358` itself. Switching it to `isOrWillBeOnlyFirstChar
 ### Phase 6 — Settings home, pro mode, sensitivity default
 
 1. **TapSwipe gets its own settings section**, out of Dev Settings: mode toggle, peck threshold, peck cadence, swipe sensitivity, pro mode, key personalization.
-2. **Pro mode — dots instead of letters.** Draw-time label substitution at `AdvancedThemeCustomizer.kt:163` (`key.labelOverride ?: key.label`), the same override seam the peck borders use. Precedent exists: `HiddenKeysSetting` ("Touch typing mode") already blanks labels by making the foreground transparent, so dots sit between that and normal.
+2. **Master Mode — dots instead of letters.** *(done, dev)* Named after the original Nintype mode. Off by default and disabled unless the input model is on. Draw-time label substitution at `AdvancedThemeCustomizer.kt`, the same override seam the peck borders use — only single-character letter labels are replaced, so space/shift/backspace/enter/digits/punctuation stay readable, and the hint is dropped alongside the letter. Peck mode reveals the letters again (`TapSwipeMasterMode.shouldHideLetters()`), which is the first piece of the Phase 7 state machine landing early. State is a transient flag kept in sync by a settings collector in `LatinIME` that repaints via `invalidateAllKeys()`; no theme rebuild, and no DataStore lookup per key per frame.
+
+   Original note: **Pro mode — dots instead of letters.** Draw-time label substitution at `AdvancedThemeCustomizer.kt:163` (`key.labelOverride ?: key.label`), the same override seam the peck borders use. Precedent exists: `HiddenKeysSetting` ("Touch typing mode") already blanks labels by making the foreground transparent, so dots sit between that and normal.
 3. **Default swipe sensitivity 3.0×**, noted as tuned for short swipes under TapSwipe.
 4. **Surface the personalization dependency.** `mUsePersonalizedDicts` gates `performAdditionToUserHistoryDictionary` *before* our `forceValidWord` flag is read, so with it off the peck→learn→swipe loop silently does nothing and learned words never reach the swipe tries. Warn next to the TapSwipe toggle.
 
