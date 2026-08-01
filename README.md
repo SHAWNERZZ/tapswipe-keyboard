@@ -9,6 +9,19 @@
 >
 > Changes are not submitted upstream. Bugs you encounter here are most likely mine, not theirs.
 
+## Download
+
+Builds are published on the [Releases page](https://github.com/SHAWNERZZ/tapswipe-keyboard/releases).
+It installs alongside the official FUTO Keyboard rather than replacing it, and everything is off by
+default — enable it at **Settings → TapSwipe**.
+
+APKs are signed with this fork's own key, which is deliberately **not** a FUTO key:
+
+```
+CN=TapSwipe Keyboard, O=SHAWNERZZ, C=US
+SHA-256: 66:DA:06:46:8B:58:26:C3:EB:11:B8:34:B9:6E:A2:78:87:0A:7B:98:E8:39:C5:33:C5:8E:CE:3B:FD:15:AC:97
+```
+
 ## What's different
 
 A reimplementation of the input model from the old **Nintype** keyboard, built on top of FUTO's
