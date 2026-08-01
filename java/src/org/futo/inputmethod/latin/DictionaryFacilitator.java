@@ -162,6 +162,17 @@ public interface DictionaryFacilitator {
                           @Nonnull final NgramContext ngramContext, final long timeStampInSeconds,
                           final boolean blockPotentiallyOffensive);
 
+    /**
+     * @param forceValidWord learn the word as valid even if it is unknown to every other
+     *        dictionary. Normally an out-of-dictionary word is demoted to "invalid", which leaves
+     *        it with a zero count and no usable probability until it is committed a second time -
+     *        so it is not reachable by the swipe decoder's lexicon. Nintype peck mode uses this to
+     *        make a deliberately spelled-out new word swipeable straight away.
+     */
+    void addToUserHistory(final String suggestion, final boolean wasAutoCapitalized,
+                          @Nonnull final NgramContext ngramContext, final long timeStampInSeconds,
+                          final boolean blockPotentiallyOffensive, final boolean forceValidWord);
+
     void unlearnFromUserHistory(final String word,
             @Nonnull final NgramContext ngramContext, final long timeStampInSeconds,
             final int eventType);

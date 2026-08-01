@@ -681,6 +681,14 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
     public void addToUserHistory(final String suggestion, final boolean wasAutoCapitalized,
             @Nonnull final NgramContext ngramContext, final long timeStampInSeconds,
             final boolean blockPotentiallyOffensive) {
+        addToUserHistory(suggestion, wasAutoCapitalized, ngramContext, timeStampInSeconds,
+                blockPotentiallyOffensive, false /* forceValidWord */);
+    }
+
+    @Override
+    public void addToUserHistory(final String suggestion, final boolean wasAutoCapitalized,
+            @Nonnull final NgramContext ngramContext, final long timeStampInSeconds,
+            final boolean blockPotentiallyOffensive, final boolean forceValidWord) {
         // Update the spelling cache before learning. Words that are not yet added to user history
         // and appear in no other language model are not considered valid.
         putWordIntoValidSpellingWordCache("addToUserHistory", suggestion);
@@ -697,7 +705,7 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
             final boolean wasCurrentWordAutoCapitalized = i == 0 && wasAutoCapitalized;
             addWordToUserHistory(mostConfidentDictionary, ngramContextForCurrentWord, currentWord,
                     wasCurrentWordAutoCapitalized, (int) timeStampInSeconds,
-                    blockPotentiallyOffensive);
+                    blockPotentiallyOffensive, forceValidWord);
             ngramContextForCurrentWord =
                     ngramContextForCurrentWord.getNextNgramContext(new WordInfo(currentWord));
         }
@@ -728,7 +736,8 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
 
     private void addWordToUserHistory(final DictionaryGroup dictionaryGroup,
             final NgramContext ngramContext, final String word, final boolean wasAutoCapitalized,
-            final int timeStampInSeconds, final boolean blockPotentiallyOffensive) {
+            final int timeStampInSeconds, final boolean blockPotentiallyOffensive,
+            final boolean forceValidWord) {
         final ExpandableBinaryDictionary userHistoryDictionary =
                 dictionaryGroup.getSubDict(Dictionary.TYPE_USER_HISTORY);
         if (userHistoryDictionary == null || !isForLocale(userHistoryDictionary.mLocale)) {
@@ -772,7 +781,15 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
         }
         // We demote unrecognized words (frequency < 0, below) by specifying them as "invalid".
         // We don't add words with 0-frequency (assuming they would be profanity etc.).
-        final boolean isValid = maxFreq > 0;
+        //
+        // forceValidWord overrides that demotion. An "invalid" entry is inserted with count 0,
+        // which the native layer treats as not-a-word (language_model_dict_content.cpp), leaving
+        // it with no usable probability and therefore unreachable by the swipe decoder's lexicon
+        // until a second commit bumps the count. Nintype peck mode is a deliberate "I mean this
+        // exact word" signal, so a pecked word is learned as valid immediately and becomes
+        // swipeable straight away. User history uses a forgetting curve, so a one-off typo
+        // learned this way decays on its own.
+        final boolean isValid = forceValidWord || maxFreq > 0;
         UserHistoryDictionary.addToDictionary(userHistoryDictionary, ngramContext, secondWord,
                 isValid, timeStampInSeconds);
     }

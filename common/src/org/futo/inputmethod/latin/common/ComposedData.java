@@ -17,6 +17,7 @@
 package org.futo.inputmethod.latin.common;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 /**
  * An immutable class that encapsulates a snapshot of word composition data.
@@ -28,11 +29,28 @@ public class ComposedData {
     @Nonnull
     public final String mTypedWord;
 
+    /**
+     * Nintype word-session evidence to decode, or null when the Nintype input model is inactive.
+     * When non-null this supersedes {@link #mInputPointers} for swipe decoding, because a Nintype
+     * word accumulates strokes across finger lifts rather than being bound to a single batch.
+     *
+     * Typed as Object to keep the common module free of a dependency on the swipe library;
+     * consumers cast to {@code org.futo.inputmethod.latin.nintype.NintypeDecodeInput}.
+     */
+    @Nullable
+    public final Object mNintypeInput;
+
     public ComposedData(@Nonnull final InputPointers inputPointers, final boolean isBatchMode,
             @Nonnull final String typedWord) {
+        this(inputPointers, isBatchMode, typedWord, null);
+    }
+
+    public ComposedData(@Nonnull final InputPointers inputPointers, final boolean isBatchMode,
+            @Nonnull final String typedWord, @Nullable final Object nintypeInput) {
         mInputPointers = inputPointers;
         mIsBatchMode = isBatchMode;
         mTypedWord = typedWord;
+        mNintypeInput = nintypeInput;
     }
 
     /**

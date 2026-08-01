@@ -28,6 +28,7 @@ import org.futo.inputmethod.keyboard.Keyboard
 import org.futo.inputmethod.keyboard.internal.KeyDrawParams
 import org.futo.inputmethod.keyboard.internal.KeyboardIconsSet
 import org.futo.inputmethod.latin.R
+import org.futo.inputmethod.latin.nintype.NintypePeckIndicator
 import org.futo.inputmethod.latin.uix.actions.AllActions
 import org.futo.inputmethod.latin.uix.actions.AllActionsMap
 import org.futo.inputmethod.latin.uix.theme.AdvancedThemeMatcher
@@ -205,7 +206,17 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
     }
 
     val keyStyles: Map<KeyVisualStyle, VisualStyleDescriptor>
+
+    /**
+     * Bordered variants of the styles that depend on [keyBorders], used to show key borders during
+     * Nintype peck mode without rebuilding the theme. Empty when borders are already on.
+     */
+    private var peckKeyStyles: Map<KeyVisualStyle, VisualStyleDescriptor> = emptyMap()
+
     override fun getKeyStyleDescriptor(visualStyle: KeyVisualStyle): VisualStyleDescriptor {
+        if (NintypePeckIndicator.active) {
+            peckKeyStyles[visualStyle]?.let { return it }
+        }
         return keyStyles[visualStyle]!!
     }
 
@@ -533,6 +544,43 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
                 )
             }
         )
+
+        // Precompute bordered variants for Nintype peck mode. Only the four styles above actually
+        // vary with keyBorders, so this is a handful of extra drawables built once at theme
+        // construction - after which toggling peck mode is a free map lookup at draw time.
+        //
+        // NB: these must be built from the *bordered* colours resolved directly off the scheme,
+        // not from keyColor / functionalKeyColor / onKeyColor. Those locals are themselves gated
+        // on keyBorders further up, so with borders off they are already Color.Transparent -
+        // reusing them here produces styles pixel-identical to the borderless ones.
+        peckKeyStyles = if (keyBorders) emptyMap() else {
+            val borderedKey = colorScheme.keyboardContainer.toArgb()
+            val borderedFunctional = colorScheme.keyboardContainerVariant.toArgb()
+            val borderedOnKey = colorScheme.onKeyboardContainer.toArgb()
+            mapOf(
+                KeyVisualStyle.Normal to makeVisualStyle(
+                    borderedKey,
+                    if(expertMode) transparent else borderedOnKey,
+                    highlight, highlightForeground,
+                    keyCornerRadius
+                ),
+                KeyVisualStyle.Functional to makeVisualStyle(
+                    borderedFunctional,
+                    if(expertMode) Color(borderedOnKey).copy(alpha = 0.2f).toArgb() else borderedOnKey,
+                    highlight, highlightForeground,
+                    keyCornerRadius
+                ),
+                KeyVisualStyle.StickyOff to makeVisualStyle(
+                    borderedKey,
+                    if(expertMode) Color(borderedOnKey).copy(alpha = 0.2f).toArgb() else borderedOnKey,
+                    highlight, highlightForeground,
+                    keyCornerRadius
+                ),
+                KeyVisualStyle.Spacebar to makeVisualStyle(
+                    borderedKey, borderedOnKey, highlight, highlightForeground, spaceCornerRadius
+                )
+            )
+        }
 
         keyBackground = keyStyles[KeyVisualStyle.Normal]!!.backgroundDrawable!!
 

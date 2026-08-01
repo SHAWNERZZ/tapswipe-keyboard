@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -34,8 +35,12 @@ import org.futo.inputmethod.latin.LatinIME
 import org.futo.inputmethod.latin.LegacySwipeSetting
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
+import org.futo.inputmethod.latin.nintype.NintypePeckIndicator
+import org.futo.inputmethod.latin.nintype.NintypeSpikes
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.Action
+import org.futo.inputmethod.latin.uix.DataStoreHelper
+import org.futo.inputmethod.latin.uix.KeyBordersSetting
 import org.futo.inputmethod.latin.uix.ActionWindow
 import org.futo.inputmethod.latin.uix.LocalFoldingState
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
@@ -335,6 +340,84 @@ val MemoryDebugAction = Action(
                             Text("dictionary weights = ${SwipeDecoderDictionary.appliedTrieWeights.joinToString(", ")}", style = DebugLabel)
                         }
 
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("Nintype Session", style = DebugTitle)
+                    run {
+                        // Polls so a leaked session is visible while typing, which is the whole
+                        // point: runaway stroke accumulation shows up here immediately.
+                        val sessionInfo = remember { mutableStateOf("") }
+                        LaunchedEffect(Unit) {
+                            while (true) {
+                                sessionInfo.value = try {
+                                    val ime = latinIme.imeManager.getActiveIME(Settings.getInstance().current)
+                                    if (ime is GeneralIME) {
+                                        val il = ime.inputLogicForDebug
+                                        "nintypeMode=${il.isNintypeMode()} peck=${il.isNintypePeckWord()} " +
+                                            "verbatim=${il.isNintypeVerbatimWord()} minTaps=${il.nintypePeckMinTaps()}\n" +
+                                        "borderIndicator=${NintypePeckIndicator.active} " +
+                                            "userKeyBorders=${DataStoreHelper.getSetting(KeyBordersSetting)}\n" +
+                                        il.mNintypeSession.describe()
+                                    } else {
+                                        "active IME is not GeneralIME"
+                                    }
+                                } catch (e: Throwable) {
+                                    "unavailable: $e"
+                                }
+                                delay(250)
+                            }
+                        }
+                        sessionInfo.value.lines().forEach {
+                            Text(it, style = DebugLabel)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("Nintype Phase 0 Spikes", style = DebugTitle)
+                    run {
+                        val scope = rememberCoroutineScope()
+                        val spikeState = remember { mutableStateOf("") }
+                        val spikeRunning = remember { mutableStateOf(false) }
+
+                        Button(
+                            enabled = !spikeRunning.value,
+                            onClick = {
+                                spikeRunning.value = true
+                                spikeState.value = "running..."
+                                scope.launch {
+                                    val report = withContext(Dispatchers.Default) {
+                                        try {
+                                            NintypeSpikes.run()
+                                        } catch (e: Throwable) {
+                                            "spike runner crashed: $e\n${e.stackTraceToString()}"
+                                        }
+                                    }
+                                    spikeState.value = report
+                                    spikeRunning.value = false
+                                }
+                            }
+                        ) {
+                            Text(if (spikeRunning.value) "Running spikes..." else "Run swipe spikes")
+                        }
+
+                        if (spikeState.value.isNotEmpty()) {
+                            Button(onClick = {
+                                val clipboardManager = manager.getContext()
+                                    .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboardManager.setPrimaryClip(
+                                    ClipData.newPlainText("spikes", spikeState.value)
+                                )
+                            }) {
+                                Text("Copy spike results")
+                            }
+
+                            spikeState.value.lines().forEach {
+                                Text(it, style = DebugLabel)
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))

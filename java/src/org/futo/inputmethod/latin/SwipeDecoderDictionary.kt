@@ -6,6 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.futo.inputmethod.keyboard.Key
@@ -13,9 +15,11 @@ import org.futo.inputmethod.keyboard.Keyboard
 import org.futo.inputmethod.keyboard.internal.isAlphabet
 import org.futo.inputmethod.latin.common.ComposedData
 import org.futo.inputmethod.latin.common.InputPointers
+import org.futo.inputmethod.latin.nintype.NintypeDecodeInput
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.settings.SettingsValues
 import org.futo.inputmethod.latin.settings.SettingsValuesForSuggestion
+import org.futo.inputmethod.latin.uix.DataStoreHelper
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.ml.inference.SwipeDecoder
@@ -229,7 +233,47 @@ private class SpecialDecoder private constructor(
     }
 }
 
+/** Raw-pixel to layout-space coordinate transforms; see [SwipeDecoderDictionary.currentNormalizers]. */
+class NintypeNormalizers(
+    val x: (Float) -> Float,
+    val y: (Float) -> Float
+)
+
 val LegacySwipeSetting = SettingsKey(booleanPreferencesKey("swipe_mode_legacy"), false)
+
+/**
+ * Master switch for the Nintype input model (accumulate strokes across finger lifts, finalize
+ * only on space/punctuation/Enter). Off by default so stock behaviour is one toggle away for
+ * A/B comparison on the same build.
+ */
+val NintypeModeSetting = SettingsKey(booleanPreferencesKey("__experimental_nintype_mode"), false)
+
+/**
+ * Number of taps a swipe-free word needs before peck mode engages (no autocorrect, committed
+ * verbatim, learned as a valid word).
+ *
+ * Short words are overwhelmingly ordinary typing rather than attempts to enter something the
+ * dictionary doesn't know, and they are exactly where autocorrect earns its keep ("ti" to "to").
+ */
+val NintypePeckMinTapsSetting = SettingsKey(intPreferencesKey("nintype_peck_min_taps"), 4)
+
+/**
+ * How eagerly a finger movement is classified as a swipe rather than a tap.
+ *
+ * 1.0 is stock behaviour. Higher values make short swipes (e.g. ending a word by swiping `e` to
+ * `r`) register sooner, at the cost of ordinary taps occasionally being read as gestures.
+ * Applied uniformly to the three quantities that gate gesture recognition in
+ * `GestureStrokeRecognitionPoints`: the fast-move speed test, and the dynamic distance and time
+ * thresholds. The existing coarse "increase sensitivity" toggle multiplies on top of this.
+ */
+val SwipeSensitivitySetting = SettingsKey(floatPreferencesKey("swipe_sensitivity"), 1.0f)
+
+/** Effective sensitivity multiplier, combining the slider with the legacy coarse toggle. */
+fun currentSwipeSensitivity(coarseToggleOn: Boolean): Float {
+    val s = DataStoreHelper.getSetting(SwipeSensitivitySetting)
+    val clamped = if (s.isNaN() || s <= 0.0f) 1.0f else s.coerceIn(0.25f, 8.0f)
+    return if (coarseToggleOn) clamped * 2.0f else clamped
+}
 val DisplayTop4Setting = SettingsKey(booleanPreferencesKey("swipe_use_top4_suggestions"), true)
 
 val SwipeSpecialDecoderSetting = SettingsKey(booleanPreferencesKey("__experimental_swipe_special_decoder"), true)
@@ -306,6 +350,46 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             prevKeyboard = keyboard
         }
 
+        /**
+         * Coordinate normalizers mapping raw touch pixels into the layout space the decoder
+         * expects. Must stay identical to the arithmetic in [transformSegment], or the Nintype
+         * session's stored coordinates will not agree with the applied layout's key centers.
+         *
+         * Returns null when no keyboard is known yet.
+         */
+        @JvmStatic
+        fun currentNormalizers(): NintypeNormalizers? {
+            val kb = prevKeyboard ?: return null
+            val w = kb.mBaseWidth.toFloat()
+            val h = (kb.mBaseHeight - kb.mPadding.bottom).toFloat()
+            if (w <= 0f || h <= 0f) return null
+            val info = appliedLayoutInfo
+            return NintypeNormalizers(
+                { rawX -> rawX / w * info.sx + info.ox },
+                { rawY -> minOf(1.0f, (rawY / h) * (4.0f / 3.0f) * info.sy + info.oy) }
+            )
+        }
+
+        /**
+         * Normalized `[x, y]` of a letter's key centre in the applied layout, or null if the
+         * layout has no such letter.
+         *
+         * Taps are located this way rather than from their touch coordinates on purpose: the tap
+         * and gesture paths are in *different* coordinate spaces (tap coordinates pass through
+         * `MainKeyboardView.getKeyX/getKeyY`, which strips view padding; gesture points do not),
+         * and `onCodeInput` reports `NOT_A_COORDINATE` unless the key has proximity correction.
+         * The layout's own key centres are already in the decoder's space, so they sidestep both
+         * problems. Phase 0 / S4 showed a single point is sufficient - dwell length has no effect,
+         * since every segment is resampled to a fixed 64 points internally.
+         */
+        @JvmStatic
+        fun normalizedKeyPosition(codePoint: Int): FloatArray? {
+            val info = appliedLayoutInfo
+            val idx = info.letters.indexOf(Character.toLowerCase(codePoint).toChar())
+            if (idx < 0 || idx >= info.xs.size || idx >= info.ys.size) return null
+            return floatArrayOf(info.xs[idx], info.ys[idx])
+        }
+
         @JvmStatic
         fun canBeUsed(): Boolean {
             val settings = Settings.getInstance().current
@@ -345,6 +429,13 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
     override fun getNextValidCodePoints(composedData: ComposedData?): ArrayList<Int> {
         return arrayListOf()
     }
+
+    /**
+     * Exposes the lazily-created decoder for the Nintype Phase 0 spikes
+     * (see nintype/NintypeSpikes.kt). Debug tooling only - the normal decode path
+     * goes through [getSuggestions].
+     */
+    fun debugGetOrInitDecoder(): SwipeDecoder = getOrInitDecoder()
 
     private fun getPredictions(
         composedData: ComposedData,
@@ -397,6 +488,25 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
                 composedData,
                 ngramContext
             )
+        }
+
+        // Nintype: a word accumulates strokes across finger lifts, so when session evidence is
+        // present it supersedes the single-batch pointer data entirely.
+        (composedData.mNintypeInput as? NintypeDecodeInput)?.let { nintype ->
+            return decodeNintype(nintype, ngramContext, useHighBeam, trieWeights)
+        }
+
+        // Nintype is on but carried no evidence for this query. Falling through to the legacy
+        // single-batch path would decode `mInputPointers`, which still holds only the *last*
+        // gesture - re-deriving a swipe-only word and overwriting one that taps had already
+        // completed ("but" reverting to "by"). Whatever is currently composed is a better answer
+        // than a decode of partial evidence, so decline instead.
+        if(DataStoreHelper.getSetting(NintypeModeSetting)) {
+            if(BuildConfig.DEBUG || System.currentTimeMillis() < debugLogUntil) {
+                Log.d("SwipeDecoderDictionary", "nintype on but no session input; declining " +
+                    "legacy batch decode (batchMode=${composedData.mIsBatchMode})")
+            }
+            return null
         }
 
         if(!composedData.mIsBatchMode) return null
@@ -518,6 +628,83 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         }
 
         return list
+    }
+
+    private fun contextWordsFrom(ngramContext: NgramContext?): List<String> =
+        ngramContext?.fullContext
+            ?.lineSequence()
+            ?.lastOrNull()
+            ?.splitToSequence(whitespaceRegex)
+            ?.filter { it.isNotEmpty() }
+            ?.toList()
+            ?.takeLast(10)
+            ?: emptyList()
+
+    private fun resultsToSuggestions(
+        results: List<SwipeDecoder.Result>
+    ): ArrayList<SuggestedWords.SuggestedWordInfo> {
+        val list = ArrayList<SuggestedWords.SuggestedWordInfo>(results.size)
+        results.forEach {
+            list.add(SuggestedWords.SuggestedWordInfo(
+                it.word, "", (it.score * 1000.0f + 10000.0f).toInt(),
+                SuggestedWords.SuggestedWordInfo.KIND_CORRECTION, this, 0, 0
+            ).apply {
+                mOriginatesFromSwipeModel = true
+            })
+        }
+        return list
+    }
+
+    /**
+     * Decodes accumulated Nintype word-session evidence. Coordinates arrive already normalized
+     * into the layout's space (the session applies the same transform as [transformSegment]),
+     * so this only selects beam parameters and runs the decoder.
+     *
+     * Returns null in peck mode - a word with no swipe in it must not receive gesture
+     * suggestions at all.
+     */
+    private fun decodeNintype(
+        input: NintypeDecodeInput,
+        ngramContext: NgramContext?,
+        useHighBeam: Boolean,
+        trieWeights: FloatArray
+    ): ArrayList<SuggestedWords.SuggestedWordInfo>? {
+        if (!input.hasSwipe) return null
+        if (input.isEmpty) return null
+
+        val decoder = getOrInitDecoder()
+        decoder.setContext(contextWordsFrom(ngramContext))
+        appliedTrieWeights = trieWeights
+
+        val isMultiSegment = input.segmentCount > 1
+        val beamWidth = when {
+            useHighBeam -> BeamValues.highBeam
+            isMultiSegment -> BeamValues.midBeam
+            else -> BeamValues.shortBeam
+        }
+        val topK = if (useHighBeam) 4 else 1
+
+        val results = synchronized(BinaryDictionary.sTrieUsageLock) {
+            if (appliedTries?.isEmpty() != false) {
+                Log.e("SwipeDecoderDictionary", "Applied tries are blank! $appliedTries")
+                return null
+            }
+            decoder.recognize(
+                input.left, input.right,
+                topK = topK,
+                beamWidth = beamWidth,
+                trieWeights = trieWeights
+            )
+        }
+
+        if (useHighBeam) appliedScoring.value = decoder.scoring
+
+        if (BuildConfig.DEBUG || System.currentTimeMillis() < debugLogUntil) {
+            Log.d("SwipeDecoderDictionary", "nintype $input beam=$beamWidth -> " +
+                results.joinToString { "${it.word}(${it.score})" })
+        }
+
+        return resultsToSuggestions(results)
     }
 
     data class PendingLayoutInfo(val layout: LayoutInfoForModel, val tries: List<Long>)

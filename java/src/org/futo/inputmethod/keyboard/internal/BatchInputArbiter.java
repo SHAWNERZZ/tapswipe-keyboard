@@ -59,6 +59,20 @@ public class BatchInputArbiter {
      * @param eventTime the time of this event.
      * @return the elapsed time in millisecond from the first gesture down.
      */
+    /**
+     * Absolute time corresponding to t=0 of the current batch's segment timestamps, or -1 if no
+     * batch origin is set. Needed by the Nintype session to re-base segments from successive
+     * batches onto one word-scoped timeline, since each batch establishes its own origin.
+     *
+     * Caveat: this leaks across taps that never become gestures - it is set on every armed
+     * finger-down but only cleared on gesture end/cancel. Callers must tolerate a stale origin.
+     */
+    public static long getBatchOriginTime() {
+        synchronized (sAggregatedPointers) {
+            return sGestureFirstDownTime;
+        }
+    }
+
     public int getElapsedTimeSinceFirstDown(final long eventTime) {
         return (int)(eventTime - sGestureFirstDownTime);
     }

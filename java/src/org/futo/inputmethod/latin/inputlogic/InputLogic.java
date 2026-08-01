@@ -34,6 +34,7 @@ import org.futo.inputmethod.event.Event;
 import org.futo.inputmethod.event.InputTransaction;
 import org.futo.inputmethod.keyboard.Keyboard;
 import org.futo.inputmethod.keyboard.KeyboardSwitcher;
+import org.futo.inputmethod.keyboard.MainKeyboardView;
 import org.futo.inputmethod.latin.BinaryDictionary;
 import org.futo.inputmethod.latin.DictionaryFacilitator;
 import org.futo.inputmethod.latin.LastComposedWord;
@@ -43,7 +44,16 @@ import org.futo.inputmethod.latin.Suggest;
 import org.futo.inputmethod.latin.Suggest.OnGetSuggestedWordsCallback;
 import org.futo.inputmethod.latin.SuggestedWords;
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
+import org.futo.inputmethod.keyboard.internal.BatchInputArbiter;
+import org.futo.inputmethod.latin.NintypeNormalizers;
+import org.futo.inputmethod.latin.SwipeDecoderDictionary;
+import org.futo.inputmethod.latin.SwipeDecoderDictionaryKt;
 import org.futo.inputmethod.latin.WordComposer;
+import org.futo.inputmethod.latin.nintype.NintypeDecodeInput;
+import org.futo.inputmethod.latin.nintype.NintypeInputBuilder;
+import org.futo.inputmethod.latin.nintype.NintypePeckIndicator;
+import org.futo.inputmethod.latin.nintype.NintypeSession;
+import org.futo.inputmethod.latin.uix.DataStoreHelper;
 import org.futo.inputmethod.latin.common.Constants;
 import org.futo.inputmethod.latin.common.InputPointers;
 import org.futo.inputmethod.latin.common.StringUtils;
@@ -94,6 +104,7 @@ public final class InputLogic {
     private static final boolean COMPOSITION_TEXT_AFTER = false;
 
     private static final String TAG = InputLogic.class.getSimpleName();
+    private static final boolean DEBUG_NINTYPE = true;
 
     private final IMEHelper mImeHelper;
     private final GeneralIME mIme;
@@ -135,6 +146,212 @@ public final class InputLogic {
     private String mWordBeingCorrectedByCursor = null;
 
     final ArrayDeque<RememberedSuggestedWords> mRememberedSuggestedWords = new ArrayDeque<>();
+
+    // ---------------------------------------------------------------- Nintype
+
+    /**
+     * Word-scoped accumulator for the Nintype input model. See NINTYPE_PLAN.md.
+     *
+     * Never access this directly for input handling - go through {@link #nintypeSession()}, which
+     * revalidates it against live editor state first. Direct access is only for debug display.
+     */
+    public final NintypeSession mNintypeSession = new NintypeSession();
+
+    /** Absolute time of the open session's t=0, for re-basing per-batch segment timestamps. */
+    private long mNintypeSessionOriginMs = -1;
+
+    /**
+     * Whether the Nintype input model is active. Backed by an in-memory DataStore cache, so this
+     * is cheap enough for the input hot path.
+     */
+    public boolean isNintypeMode() {
+        return DataStoreHelper.getSetting(SwipeDecoderDictionaryKt.getNintypeModeSetting());
+    }
+
+    /**
+     * The Nintype session, revalidated against live editor state.
+     *
+     * This is the validate-on-read guard described in NINTYPE_PLAN.md §5.5: rather than trying to
+     * enumerate every event that should discard accumulated strokes (and leaking the moment one is
+     * missed, which produces runaway word growth), every read reverifies that the editor is still
+     * composing the same word at the same place. Anything else drops the session.
+     */
+    /**
+     * Set while a decode result is being written back to the composer and the editor. During that
+     * window the composer's word and the session's recorded text are legitimately out of step, and
+     * flushing the input connection re-enters this class (selection updates trigger fresh
+     * suggestion queries), so validate-on-read must stand down or it destroys a live session.
+     */
+    private boolean mNintypeApplyingDecode = false;
+
+    private NintypeSession nintypeSession() {
+        if (mNintypeApplyingDecode) {
+            return mNintypeSession;
+        }
+        mNintypeSession.validateOrReset(
+                mWordComposer.isComposingWord(),
+                mWordComposer.getTypedWord(),
+                mConnection.getExpectedSelectionStart());
+        if (!mNintypeSession.isOpen()) {
+            mNintypeSessionOriginMs = -1;
+        }
+        return mNintypeSession;
+    }
+
+    /**
+     * Number of taps a swipe-free word needs before it is treated as a deliberate peck.
+     * Tunable via NintypePeckMinTapsSetting; see its docs for the rationale.
+     */
+    public int nintypePeckMinTaps() {
+        final Integer v = DataStoreHelper.getSetting(
+                SwipeDecoderDictionaryKt.getNintypePeckMinTapsSetting());
+        return (v == null || v < 1) ? 1 : v;
+    }
+
+    /**
+     * Whether the word currently being composed is a "peck" word - Nintype is on, no swipe has
+     * contributed to it, and it has reached {@link #NINTYPE_PECK_MIN_TAPS} taps. Peck words are
+     * contributed to it, and it has reached the peck tap threshold. Peck words are never
+     * autocorrected and are committed verbatim.
+     *
+     * Reads the session without revalidating: we only care whether a swipe contributed to the word
+     * being committed, and a leaked session can only ever report hasSwipe=true here, which is the
+     * conservative direction (it suppresses the peck behaviour rather than applying it wrongly).
+     */
+    public boolean isNintypePeckWord() {
+        return isNintypeMode()
+                && !mNintypeSession.getHasSwipe()
+                && mWordComposer.size() >= nintypePeckMinTaps();
+    }
+
+    /**
+     * Whether the word in progress must be committed exactly as shown, with no autocorrect
+     * second-guessing it. True for peck words *and* for any word containing a swipe.
+     *
+     * Swipes are included because the decoded candidate already *is* the best answer - it came
+     * from a lexicon-constrained beam search over the whole word - and stock never autocorrects
+     * batch input either ({@code Suggest.getSuggestedWordsForBatchInput} hardcodes
+     * {@code willAutoCorrect = false}).
+     *
+     * Without this, a swipe followed by a tap would commit the wrong word. A tap sets
+     * {@code setRequiresUpdateSuggestions()}, which schedules an ordinary TYPING-style query; that
+     * query runs the *non-batch* pipeline (plus the transformer LM) over the literal composing
+     * string and stores a genuine autocorrection. {@code commitCurrentAutoCorrection} then force-
+     * completes exactly that pending query and commits its answer instead of the decoded word - so
+     * "swipe b-to-u, tap t" displayed "but" but committed "by". Pure swipes were unaffected only
+     * because a finger lift never sets that flag, so no typing query was ever scheduled.
+     */
+    public boolean isNintypeVerbatimWord() {
+        if (!isNintypeMode()) return false;
+        if (mNintypeSession.getHasSwipe()) return true;
+        return mWordComposer.size() >= nintypePeckMinTaps();
+    }
+
+    /** Discards the session. Safe to call unconditionally. */
+    private void resetNintypeSession(final String reason) {
+        mNintypeSession.reset(reason);
+        mNintypeSessionOriginMs = -1;
+        refreshNintypePeckIndicator();
+    }
+
+    /**
+     * Shows key borders while a word is being pecked out, and hides them again the moment a swipe
+     * joins the word or the word is finished. Cheap: this only flips a flag consulted at draw time
+     * (see {@link NintypePeckIndicator}), so no theme rebuild is involved.
+     */
+    private void refreshNintypePeckIndicator() {
+        final boolean wanted = isNintypePeckWord();
+        if (!NintypePeckIndicator.set(wanted)) return;
+
+        MainKeyboardView view = mImeHelper.getKeyboardSwitcher().getMainKeyboardView();
+        if (view == null) {
+            // Fall back to the singleton: the helper's switcher can hand back null depending on
+            // which view is currently attached.
+            view = KeyboardSwitcher.getInstance().getMainKeyboardView();
+        }
+        if (DEBUG_NINTYPE) {
+            Log.d(TAG, "nintype peck indicator -> " + wanted
+                    + " (composingSize=" + mWordComposer.size()
+                    + " taps=" + mNintypeSession.getTapCount()
+                    + " hasSwipe=" + mNintypeSession.getHasSwipe()
+                    + " minTaps=" + nintypePeckMinTaps()
+                    + " view=" + (view == null ? "null" : "ok") + ")");
+        }
+        if (view != null) {
+            view.invalidateAllKeys();
+        }
+    }
+
+    /**
+     * Absorbs a completed gesture into the open session. Called once per batch, on finger lift,
+     * before the tail-batch suggestion request is dispatched.
+     */
+    private void absorbBatchIntoNintypeSession(final InputPointers batchPointers) {
+        final NintypeNormalizers norm = SwipeDecoderDictionary.currentNormalizers();
+        if (norm == null) return;
+
+        final long batchOrigin = BatchInputArbiter.getBatchOriginTime();
+        final NintypeSession session = nintypeSession();
+        if (mNintypeSessionOriginMs < 0) {
+            // First stroke of the word establishes the session timeline.
+            mNintypeSessionOriginMs = batchOrigin > 0 ? batchOrigin : SystemClock.uptimeMillis();
+        }
+
+        final int added = session.addSwipeSegments(batchPointers.getGestureSegments(), batchOrigin,
+                mNintypeSessionOriginMs, norm.getX(), norm.getY());
+        // A swipe joining the word ends peck mode immediately.
+        refreshNintypePeckIndicator();
+        if (DEBUG_NINTYPE) {
+            Log.d(TAG, "nintype absorbed " + added + " segment(s); session now "
+                    + session.getStrokes().size() + " stroke(s)");
+        }
+    }
+
+    /**
+     * Records a tap as evidence for the word in progress.
+     *
+     * Taps are recorded even in peck mode (no swipe yet). They stay inert - peck words are never
+     * decoded - but if a swipe arrives later, the taps that preceded it are already part of the
+     * word and get decoded together with it. That is what makes "tap H, tap E, tap L, swipe L to
+     * O" resolve to "hello".
+     */
+    private void absorbTapIntoNintypeSession(final int codePoint) {
+        final float[] pos = SwipeDecoderDictionary.normalizedKeyPosition(codePoint);
+        if (pos == null) return; // not a letter on this layout; nothing decodable to record
+
+        // uptimeMillis, not currentTimeMillis: gesture segment times derive from
+        // MotionEvent.getEventTime(), which is on the uptime clock. Mixing the two would put taps
+        // and swipes on timelines offset by an arbitrary amount. (Harmless today, since each
+        // segment is resampled relative to its own first point and the beam search never sees
+        // timestamps at all - but only by accident, so keep the clocks consistent.)
+        final long now = SystemClock.uptimeMillis();
+        if (mNintypeSessionOriginMs < 0) {
+            mNintypeSessionOriginMs = now;
+        }
+        // Taps go to the left stream so that sequential taps and swipes form one ordered sequence.
+        // Order within a stream is what the beam search relies on; ordering *between* streams is
+        // resolved by the lexicon (Phase 0 / S2), so this is safe even when a swipe used the right.
+        mNintypeSession.addTap(codePoint, pos[0], pos[1],
+                (float) (now - mNintypeSessionOriginMs), NintypeSession.Hand.LEFT);
+    }
+
+    /**
+     * Builds the evidence for the next decode, or null when Nintype is off or there is nothing to
+     * decode. Mid-batch the in-progress stroke is unioned in from the live pointers; at tail batch
+     * the session already owns it.
+     */
+    private NintypeDecodeInput buildNintypeDecodeInput(final int inputStyle) {
+        if (!isNintypeMode()) return null;
+
+        final NintypeSession session = nintypeSession();
+        final boolean midBatch = inputStyle == SuggestedWords.INPUT_STYLE_UPDATE_BATCH;
+        return NintypeInputBuilder.build(
+                session,
+                midBatch ? mWordComposer.getInputPointers().getGestureSegments() : null,
+                midBatch ? SwipeDecoderDictionary.currentNormalizers() : null,
+                BatchInputArbiter.getBatchOriginTime(),
+                mNintypeSessionOriginMs);
+    }
 
     private void clearRememberedSuggestedWords() {
         synchronized(mRememberedSuggestedWords) {
@@ -769,9 +986,18 @@ public final class InputLogic {
                         Constants.EVENT_BACKSPACE);
                 resetEntireInputState(mConnection.getExpectedSelectionStart(),
                         mConnection.getExpectedSelectionEnd(), true /* clearSuggestionStrip */);
-            } else {
+            } else if (!isNintypeMode() || !nintypeSession().isOpen()) {
+                // Nintype: a swipe extending an open session must NOT finalize it - that is the
+                // whole point of deferring commits to a finalizer. Taps join the session too, so
+                // an open session here also covers a tapped prefix being fused into this swipe.
+                //
+                // A session that is *not* open means there is nothing to fuse with (for instance
+                // the composing word predates Nintype being switched on), so commit as stock does
+                // rather than let the swipe silently discard it.
                 commitCurrentAutoCorrection(settingsValues, LastComposedWord.NOT_A_SEPARATOR);
             }
+            // Note the recorrection branch above is deliberately kept - a cursor sitting inside
+            // the word means the session is already invalid and must be torn down.
         }
         final int codePointBeforeCursor = mConnection.getCodePointBeforeCursor();
         if (Character.isLetterOrDigit(codePointBeforeCursor)
@@ -789,8 +1015,16 @@ public final class InputLogic {
             }
         }
         mConnection.endBatchEdit();
-        mWordComposer.setCapitalizedModeAtStartComposingTime(
-                getActualCapsMode(settingsValues, keyboardSwitcher.getKeyboardShiftMode()));
+        // Nintype: a word's capitalization is decided when the WORD starts, not when each stroke
+        // starts. Once the first stroke's text sits before the cursor the keyboard un-shifts, so
+        // getActualCapsMode() reports CAPS_MODE_OFF (it returns a non-AUTO_SHIFTED mode verbatim).
+        // Overwriting the mode here would clear wasShiftedNoLock(), which is the sole gate on
+        // capitalizing batch suggestions (Suggest.getSuggestedWordsForBatchInput), so the
+        // whole-word re-decode would come back lowercase at the start of a sentence.
+        if (!(isNintypeMode() && nintypeSession().isOpen())) {
+            mWordComposer.setCapitalizedModeAtStartComposingTime(
+                    getActualCapsMode(settingsValues, keyboardSwitcher.getKeyboardShiftMode()));
+        }
     }
 
     /* The sequence number member is only used in onUpdateBatchInput. It is increased each time
@@ -813,6 +1047,11 @@ public final class InputLogic {
     }
 
     public void onEndBatchInput(final InputPointers batchPointers) {
+        // Nintype: absorb this stroke into the word session before the tail-batch decode is
+        // dispatched, so that decode sees the whole word rather than just this gesture.
+        if (isNintypeMode()) {
+            absorbBatchIntoNintypeSession(batchPointers);
+        }
         mInputLogicHandler.updateTailBatchInput(batchPointers, mAutoCommitSequenceNumber);
         ++mAutoCommitSequenceNumber;
     }
@@ -830,8 +1069,14 @@ public final class InputLogic {
                     mWordComposer.getTypedWord(), suggestedWords);
         }
         if (!suggestedWords.isEmpty()) {
+            // Nintype peck mode never autocorrects. Clearing the flag here (rather than only at
+            // the commit site) also keeps the strip honest: candidates stay listed and tappable,
+            // but none is highlighted as the one that will be applied automatically. This is the
+            // single choke point that covers the transformer LM path too, which stamps merged
+            // candidates KIND_WHITELIST and so bypasses the autocorrect threshold entirely.
             suggestedWords.mWillAutoCorrect = suggestedWords.mWillAutoCorrect
-                    && !mConnection.textBeforeCursorLooksLikeURL();
+                    && !mConnection.textBeforeCursorLooksLikeURL()
+                    && !isNintypeVerbatimWord();
             final SuggestedWordInfo suggestedWordInfo;
             if (suggestedWords.mWillAutoCorrect) {
                 suggestedWordInfo = suggestedWords.getInfo(SuggestedWords.INDEX_OF_AUTO_CORRECTION);
@@ -1065,8 +1310,12 @@ public final class InputLogic {
         final int codePoint = event.mCodePoint;
         mSpaceState = SpaceState.NONE;
 
+        // A space arriving in ANTIPHANTOM state is normally swallowed, because one was already
+        // auto-inserted. Under Nintype that space is the word's finalizer, so swallowing it would
+        // leave the word open and the session accumulating - let it through instead.
         if(codePoint == Constants.CODE_SPACE
-                && inputTransaction.mSpaceState == SpaceState.ANTIPHANTOM) {
+                && inputTransaction.mSpaceState == SpaceState.ANTIPHANTOM
+                && !(isNintypeMode() && nintypeSession().isOpen())) {
             startDoubleSpacePeriodCountdown(inputTransaction);
             return;
         }
@@ -1082,7 +1331,11 @@ public final class InputLogic {
                 || Character.getType(codePoint) == Character.OTHER_SYMBOL) {
             handleSeparatorEvent(event, inputTransaction);
         } else {
-            if (SpaceState.PHANTOM == inputTransaction.mSpaceState) {
+            // Nintype: a phantom space is armed after every swipe, meaning "the next input starts
+            // a new word". While a session is open that is wrong - the next tap extends the word -
+            // so the pre-commit here must be skipped or fusion after a swipe is impossible.
+            final boolean nintypeFusing = isNintypeMode() && nintypeSession().isOpen();
+            if (SpaceState.PHANTOM == inputTransaction.mSpaceState && !nintypeFusing) {
                 if (mWordComposer.isCursorFrontOrMiddleOfComposingWord()) {
                     // If we are in the middle of a recorrection, we need to commit the recorrection
                     // first so that we can insert the character at the current cursor position.
@@ -1113,17 +1366,26 @@ public final class InputLogic {
         boolean isComposingWord = mWordComposer.isComposingWord();
 
         // TODO: remove isWordConnector() and use isUsuallyFollowedBySpace() instead.
+        // Nintype: a tap landing on a swiped word is additional evidence for that same word, not
+        // a correction of it. Tearing the word down here (and unlearning it) is what stock does
+        // because typed and batch input are mutually exclusive there; under Nintype they compose.
+        final boolean nintypeFusing = isNintypeMode() && nintypeSession().isOpen();
+
         // See onStartBatchInput() to see how to do it.
+        // Skipped while fusing: the caller already declined to commit the word for the same
+        // reason, so the composing word legitimately survives into this branch and no automatic
+        // space belongs in the middle of a word being built.
         if (SpaceState.PHANTOM == inputTransaction.mSpaceState
-                && !settingsValues.isWordConnector(codePoint)) {
+                && !settingsValues.isWordConnector(codePoint)
+                && !nintypeFusing) {
             if (isComposingWord) {
                 // Validity check
                 throw new RuntimeException("Should not be composing here");
             }
             insertAutomaticSpaceIfOptionsAndTextAllow(settingsValues);
         }
-
-        if (mWordComposer.isCursorFrontOrMiddleOfComposingWord() || mWordComposer.isBatchMode()) {
+        if (mWordComposer.isCursorFrontOrMiddleOfComposingWord()
+                || (mWordComposer.isBatchMode() && !nintypeFusing)) {
             // If we are in the middle of a recorrection, we need to commit the recorrection
             // first so that we can insert the character at the current cursor position.
             // We also need to unlearn the original word that is now being corrected.
@@ -1174,6 +1436,32 @@ public final class InputLogic {
                 mWordComposer.setCapitalizedModeAtStartComposingTime(inputTransaction.mShiftState);
             }
             setComposingTextInternal(getTextWithUnderline(mWordComposer.getTypedWord()), 1);
+
+            if (isNintypeMode() && settingsValues.isWordCodePoint(codePoint)) {
+                absorbTapIntoNintypeSession(codePoint);
+                // Outside absorbTap deliberately: that method bails out for a code point the
+                // layout can't place, but the word still grew, so peck state must be re-evaluated
+                // regardless of whether the tap became decodable evidence.
+                refreshNintypePeckIndicator();
+                // Keep the session's identity in step with what we just wrote, or the next
+                // validate-on-read would see a changed composing word and drop the session.
+                mNintypeSession.noteComposingWrite(
+                        mWordComposer.getTypedWord(), mConnection.getExpectedSelectionStart());
+
+                if (DEBUG_NINTYPE) {
+                    Log.d(TAG, "nintype TAP cp=" + (char) codePoint
+                            + " typedWord='" + mWordComposer.getTypedWord() + "'"
+                            + " hasSwipe=" + mNintypeSession.getHasSwipe()
+                            + " strokes=" + mNintypeSession.getStrokes().size());
+                }
+                if (mNintypeSession.getHasSwipe()) {
+                    // The word already contains a swipe, so the literal text just written is not
+                    // the answer - re-decode the whole word (taps included) and let the tail-batch
+                    // path overwrite the composing region with the result, exactly as a finger
+                    // lift does. Peck words skip this and keep their literal text.
+                    postUpdateSuggestionStrip(SuggestedWords.INPUT_STYLE_TAIL_BATCH);
+                }
+            }
         } else {
             final boolean swapWeakSpace = tryStripSpaceAndReturnWhetherShouldSwapInstead(event,
                     inputTransaction);
@@ -1222,8 +1510,20 @@ public final class InputLogic {
         }
         // isComposingWord() may have changed since we stored wasComposing
         if (mWordComposer.isComposingWord()) {
+            // Nintype: peck words and swiped words alike are committed exactly as shown - see
+            // isNintypeVerbatimWord() for why a swipe must never be autocorrected on commit.
+            final boolean commitVerbatim = isNintypeVerbatimWord();
+            if (DEBUG_NINTYPE) {
+                final SuggestedWordInfo ac = mWordComposer.getAutoCorrectionOrNull();
+                Log.d(TAG, "nintype COMMIT verbatim=" + commitVerbatim
+                        + " hasSwipe=" + mNintypeSession.getHasSwipe()
+                        + " strokes=" + mNintypeSession.getStrokes().size()
+                        + " typedWord='" + mWordComposer.getTypedWord() + "'"
+                        + " autoCorrection='" + (ac == null ? "<null>" : ac.mWord) + "'");
+            }
             if (settingsValues.mAutoCorrectionEnabledPerUserSettings
-                    && Suggest.shouldCodePointAutocorrect(codePoint)) {
+                    && Suggest.shouldCodePointAutocorrect(codePoint)
+                    && !commitVerbatim) {
                 final String separator = shouldAvoidSendingCode ? LastComposedWord.NOT_A_SEPARATOR
                         : StringUtils.newSingleCodePointString(codePoint);
                 commitCurrentAutoCorrection(settingsValues, separator);
@@ -1232,6 +1532,13 @@ public final class InputLogic {
                 commitTyped(settingsValues,
                         StringUtils.newSingleCodePointString(codePoint));
             }
+        }
+
+        // Nintype: a separator is a finalizer, so the word is over regardless of whether anything
+        // was actually committed above. Clearing unconditionally here is deliberate - it is the
+        // primary guard against strokes leaking into the next word.
+        if (isNintypeMode()) {
+            resetNintypeSession("finalizer: " + StringUtils.newSingleCodePointString(codePoint));
         }
 
         final boolean swapWeakSpace = tryStripSpaceAndReturnWhetherShouldSwapInstead(event,
@@ -1443,6 +1750,15 @@ public final class InputLogic {
 
         final boolean deleteWholeWords = event.isKeyRepeat()
                 && inputTransaction.mSettingsValues.mBackspaceModeHold == Settings.BACKSPACE_MODE_WORDS;
+
+        // Nintype: delete is the classic trigger for accumulated strokes outliving their word
+        // (delete part of a word, swipe again, and the new stroke extends the stale evidence).
+        // validate-on-read would catch it once the composer is torn down, but reset explicitly
+        // here so the invariant holds even for paths that leave the composer intact.
+        // Phase 5 replaces this with stroke-level undo (pop last stroke and re-decode).
+        if (isNintypeMode()) {
+            resetNintypeSession("backspace");
+        }
 
         if (mWordComposer.isComposingWord() && !mConnection.hasSelection()) {
             if (mWordComposer.isBatchMode()) {
@@ -2028,9 +2344,16 @@ public final class InputLogic {
 
         StatsUtils.onWordLearned(mImeHelper.getContext(), suggestion);
 
+        // Nintype peck mode is a deliberate "I mean exactly this word" signal - the user spelled
+        // it out with no autocorrect in the way - so learn it as valid even if it is unknown to
+        // every dictionary. Without this an out-of-dictionary word is stored with count 0, has no
+        // usable probability, and stays unreachable by the swipe decoder until a second commit.
+        // Only affects words that are actually OOV; known words already have a real frequency.
+        final boolean forceValidWord = isNintypePeckWord();
+
         mIme.addToHistory(suggestion, wasAutoCapitalized,
                 ngramContext, timeStampInSeconds, settingsValues.mBlockPotentiallyOffensive,
-                importance);
+                importance, forceValidWord);
     }
 
     private boolean ensureSuggestionStripCompleted(final SettingsValues settingsValues,
@@ -2642,20 +2965,87 @@ public final class InputLogic {
             return;
         }
 
+        // Drop decode results that no longer belong to the word being composed. Decoding is async,
+        // so a result can land after the user has already finalized the word (hitting space while
+        // it was in flight) or after a new word has begun. Applying one then re-inserts a stale
+        // word *after* the committed text - which is what corrupted the text that a following
+        // double-space-to-period then operated on.
+        //
+        // This is the generation guard specified in NINTYPE_PLAN.md 5.5; it was designed but never
+        // actually wired into the apply path.
+        if (isNintypeMode()) {
+            if (!mNintypeSession.isOpen()) {
+                if (DEBUG_NINTYPE) {
+                    Log.d(TAG, "nintype TAIL dropped (session closed) text='" + batchInputText + "'");
+                }
+                return;
+            }
+            final Object in = mWordComposer.getNintypeInput();
+            if (in instanceof NintypeDecodeInput
+                    && !mNintypeSession.isCurrent(((NintypeDecodeInput) in).generation)) {
+                if (DEBUG_NINTYPE) {
+                    Log.d(TAG, "nintype TAIL dropped (stale gen "
+                            + ((NintypeDecodeInput) in).generation + " vs "
+                            + mNintypeSession.getGeneration() + ") text='" + batchInputText + "'");
+                }
+                return;
+            }
+        }
+
         rememberSuggestedWords(mConnection.getExpectedSelectionStart(), batchInputText, suggestedWords);
 
+        // Nintype: only a *continuation* stroke (one extending a word this session has already
+        // written) may skip finalizing the previous composing region and skip the auto-space.
+        // The first stroke of a word must behave exactly like stock, or consecutive words would
+        // run together with no separating space.
+        // Read the session WITHOUT revalidating. This applies a decode that was already computed
+        // from the session; it accumulates no new evidence, so the validate-on-read guard buys
+        // nothing here and actively harms. The editor is transiently "not composing" at this
+        // instant on the emulated-composing input connection (which implements the composing
+        // region with real commitText calls, so mid-word edits churn the selection), and
+        // validating would destroy a live session mid-word - exactly the "swipe b-to-u, tap t,
+        // get by" bug.
+        final boolean nintypeOn = isNintypeMode();
+        final NintypeSession nintypeSession = nintypeOn ? mNintypeSession : null;
+        final boolean nintypeContinuation =
+                nintypeSession != null && nintypeSession.isOpen() && nintypeSession.getHasComposed();
+
+        mNintypeApplyingDecode = true;
+        try {
         mConnection.beginBatchEdit();
-        if(distinct) mConnection.finishComposingText();
-        if (SpaceState.PHANTOM == mSpaceState) {
+        if(distinct && !nintypeContinuation) mConnection.finishComposingText();
+        if (SpaceState.PHANTOM == mSpaceState && !nintypeContinuation) {
             if(!mConnection.spacePrecedesComposingText())
                 insertAutomaticSpaceIfOptionsAndTextAllow(settingsValues);
+        }
+        if (DEBUG_NINTYPE) {
+            Log.d(TAG, "nintype TAIL applied text='" + batchInputText + "'"
+                    + " continuation=" + nintypeContinuation
+                    + " wasShiftedNoLock=" + mWordComposer.wasShiftedNoLock()
+                    + " prevTypedWord='" + mWordComposer.getTypedWord() + "'");
         }
         mWordComposer.setBatchInputWord(batchInputText);
         setComposingTextInternal(batchInputText, 1);
         mConnection.endBatchEdit();
         mConnection.send();
+
+        if (nintypeSession != null && nintypeSession.isOpen()) {
+            // Record the text and cursor position this write produced, so validate-on-read can
+            // detect any later movement or external edit and drop the session instead of
+            // appending to a stale word. Also marks the session as having composed, so the next
+            // stroke is treated as a continuation.
+            nintypeSession.noteComposingWrite(
+                    batchInputText, mConnection.getExpectedSelectionStart());
+        }
+        } finally {
+            mNintypeApplyingDecode = false;
+        }
         // Space state must be updated before calling updateShiftState
-        if(settingsValues.mAltSpacesMode != Settings.SPACES_MODE_NONE) mSpaceState = SpaceState.PHANTOM;
+        // Arming PHANTOM means "the next input begins a new word", which is exactly wrong while a
+        // Nintype word is still open - further strokes must keep extending it.
+        if(settingsValues.mAltSpacesMode != Settings.SPACES_MODE_NONE && !nintypeContinuation) {
+            mSpaceState = SpaceState.PHANTOM;
+        }
         keyboardSwitcher.requestUpdatingShiftState(getCurrentAutoCapsState(settingsValues));
 
         updateUiInputState();
@@ -2862,6 +3252,7 @@ public final class InputLogic {
             final int sequenceNumber, final OnGetSuggestedWordsCallback callback) {
         mWordComposer.adviseCapitalizedModeBeforeFetchingSuggestions(
                 getActualCapsMode(settingsValues, keyboardShiftMode));
+        mWordComposer.setNintypeInput(buildNintypeDecodeInput(inputStyle));
         mSuggest.getSuggestedWords(mWordComposer,
                 getNgramContextFromNthPreviousWordForSuggestion(
                         settingsValues.mSpacingAndPunctuations,

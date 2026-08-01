@@ -6,7 +6,7 @@ import glob
 def load_data():
     all_data = []
     for fname in glob.glob("locales/*.json"):
-        with open(fname, "r") as f:
+        with open(fname, "r", encoding="utf-8") as f:
             all_data.append(json.loads(f.read()))
 
     return all_data
@@ -82,7 +82,7 @@ def dump_locales_and_texts(texts_by_locale):
 
 def generate_templated_code(names, texts_by_locale):
     out = ""
-    with open("src/KeyboardTextsTable.tmpl", "r") as f:
+    with open("src/KeyboardTextsTable.tmpl", "r", encoding="utf-8") as f:
         for line in f:
             if "@NAMES@" in line:
                 out += dump_names(names) + "\n"
@@ -123,5 +123,5 @@ if __name__ == "__main__":
 
     code = generate_templated_code(names, texts_by_locale)
 
-    with open("../../java/src/org/futo/inputmethod/keyboard/internal/KeyboardTextsTable.java", "w") as f:
+    with open("../../java/src/org/futo/inputmethod/keyboard/internal/KeyboardTextsTable.java", "w", encoding="utf-8") as f:
         f.write(code)

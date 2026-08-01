@@ -60,7 +60,9 @@ interface WordLearner {
         ngramContext: NgramContext,
         timestamp: Long,
         blockOffensive: Boolean,
-        importance: Int
+        importance: Int,
+        /** Learn as a valid word even if unknown elsewhere; see DictionaryFacilitator. */
+        forceValidWord: Boolean = false
     )
 
     fun removeFromHistory(
@@ -113,6 +115,9 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         this
     )
 
+    /** Debug-tooling access to the input logic (Nintype session inspection). */
+    val inputLogicForDebug: InputLogic get() = inputLogic
+
     private val settings = Settings.getInstance()
 
     private val suggestionBlacklist = SuggestionBlacklist(
@@ -138,12 +143,13 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         ngramContext: NgramContext,
         timestamp: Long,
         blockOffensive: Boolean,
-        importance: Int
+        importance: Int,
+        forceValidWord: Boolean
     ) {
         dictionaryFacilitator.addToUserHistory(
             word, wasCapitalized,
             ngramContext, timestamp,
-            blockOffensive
+            blockOffensive, forceValidWord
         )
 
         if (settings.current.mTransformerPredictionEnabled) {

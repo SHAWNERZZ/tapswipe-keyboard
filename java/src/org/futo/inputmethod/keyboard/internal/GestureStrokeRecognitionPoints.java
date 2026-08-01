@@ -18,6 +18,7 @@ package org.futo.inputmethod.keyboard.internal;
 
 import android.util.Log;
 
+import org.futo.inputmethod.latin.SwipeDecoderDictionaryKt;
 import org.futo.inputmethod.latin.common.Constants;
 import org.futo.inputmethod.latin.common.InputPointers;
 import org.futo.inputmethod.latin.common.ResizableIntArray;
@@ -148,7 +149,8 @@ public final class GestureStrokeRecognitionPoints {
 
     // TODO: Make this package private
     public final boolean isStartOfAGesture() {
-        boolean increaseSensitivity = Settings.getInstance().getCurrent().mGestureInputSensitive;
+        final float sensitivity = SwipeDecoderDictionaryKt.currentSwipeSensitivity(
+                Settings.getInstance().getCurrent().mGestureInputSensitive);
         if (!hasDetectedFastMove()) {
             return false;
         }
@@ -165,16 +167,17 @@ public final class GestureStrokeRecognitionPoints {
                 mXCoordinates.get(lastIndex), mYCoordinates.get(lastIndex),
                 mDetectFastMoveX, mDetectFastMoveY);
 
-        // Effectively, we are reducing the decay duration by 3x
-        if(increaseSensitivity) deltaTime *= 3;
+        // Sensitivity scales the decay duration and both thresholds uniformly: a higher value
+        // makes a short movement qualify as a gesture sooner, which is what short swipes like
+        // "e to r" at the end of a word need. 1.0 is stock.
+        if (sensitivity != 1.0f) deltaTime = (int) (deltaTime * sensitivity);
 
         int distanceThreshold = getGestureDynamicDistanceThreshold(deltaTime);
         int timeThreshold = getGestureDynamicTimeThreshold(deltaTime);
 
-        // And reducing thresholds by 2x
-        if(increaseSensitivity) {
-            distanceThreshold /= 2;
-            timeThreshold /= 2;
+        if (sensitivity != 1.0f) {
+            distanceThreshold = (int) (distanceThreshold / sensitivity);
+            timeThreshold = (int) (timeThreshold / sensitivity);
         }
 
         final boolean isStartOfAGesture = deltaTime >= timeThreshold
@@ -257,8 +260,10 @@ public final class GestureStrokeRecognitionPoints {
                 Log.d(TAG, String.format("[%d] detectFastMove: speed=%5.2f", mPointerId, speed));
             }
             // Equivalent to (pixels / msecs < mStartSpeedThreshold / MSEC_PER_SEC)
-            if(Settings.getInstance().getCurrent().mGestureInputSensitive) {
-                pixelsPerSec *= 2;
+            final float sensitivity = SwipeDecoderDictionaryKt.currentSwipeSensitivity(
+                    Settings.getInstance().getCurrent().mGestureInputSensitive);
+            if (sensitivity != 1.0f) {
+                pixelsPerSec = (int) (pixelsPerSec * sensitivity);
             }
             if (!hasDetectedFastMove() && pixelsPerSec > mDetectFastMoveSpeedThreshold * msecs) {
                 if (DEBUG) {

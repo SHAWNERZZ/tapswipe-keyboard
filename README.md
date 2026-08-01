@@ -1,3 +1,45 @@
+# TapSwipe Keyboard
+
+> ## ⚠️ This is a modified version of FUTO Keyboard
+>
+> **This software has been modified.** It is an unofficial personal fork of
+> [FUTO Keyboard](https://github.com/futo-org/android-keyboard), maintained by
+> [@SHAWNERZZ](https://github.com/SHAWNERZZ). It is **not** affiliated with, endorsed by, or
+> supported by FUTO Holdings, Inc. Please do not report issues with this fork to FUTO.
+>
+> Changes are not submitted upstream. Bugs you encounter here are most likely mine, not theirs.
+
+## What's different
+
+A reimplementation of the input model from the old **Nintype** keyboard, built on top of FUTO's
+neural swipe decoder. Two behaviours differ fundamentally from the upstream keyboard:
+
+- **Taps and swipes compose into one word.** `tap H, tap E, tap L, swipe L→O` decodes as "hello".
+  Both hands can swipe at once; the decoder resolves the interleaving through the lexicon.
+- **Only a separator finalizes a word.** Lifting a finger never commits. Space, punctuation, or
+  Enter ends the word; until then every new tap or swipe re-decodes the whole thing.
+
+Plus a **peck mode** for words that contain no swipe: no autocorrect, committed exactly as typed,
+and learned so the word becomes swipeable afterwards.
+
+Everything is behind a setting (Dev Settings → Nintype → "Nintype input model"), off by default,
+so the stock behaviour is one toggle away. Design notes, the reasoning behind each decision, and a
+full record of the bugs found along the way are in [NINTYPE_PLAN.md](NINTYPE_PLAN.md).
+
+## Licensing
+
+This fork is distributed under the same [FUTO Source First License 1.1-kb](LICENSE.md) as the
+original, free of charge and for non-commercial use only. Those terms carry over to this fork and
+to anything derived from it — they are **not** an open-source licence. The swipe model weights are
+covered separately by the FUTO Model Weights License 1.0 and are referenced as a submodule rather
+than redistributed here.
+
+---
+
+*The original FUTO Keyboard README follows, unmodified.*
+
+---
+
 # FUTO Keyboard
 
 The goal is to make a good modern keyboard that stays offline and doesn't spy on you. This keyboard is a fork of [LatinIME, The Android Open-Source Keyboard](https://android.googlesource.com/platform/packages/inputmethods/LatinIME), with significant changes made to it.
