@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.futo.inputmethod.latin.R
+import org.futo.inputmethod.latin.TapSwipeLegacyTapRunSetting
 import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
@@ -63,6 +64,22 @@ val TapSwipeMenu = UserSettingsMenu(
                 transform = { it.roundToInt() },
                 indicator = { "$it ms between taps" },
                 steps = 9
+            )
+        },
+
+        UserSetting(
+            name = R.string.tapswipe_settings_legacy_run,
+            subtitle = R.string.tapswipe_settings_legacy_run_subtitle,
+            visibilityCheck = { useDataStoreValue(TapSwipeModeSetting) }
+        ) {
+            SettingSlider(
+                title = stringResource(R.string.tapswipe_settings_legacy_run),
+                subtitle = stringResource(R.string.tapswipe_settings_legacy_run_subtitle),
+                setting = TapSwipeLegacyTapRunSetting,
+                range = 2.0f..15.0f,
+                transform = { it.roundToInt() },
+                indicator = { "$it quick taps" },
+                steps = 12
             )
         },
 

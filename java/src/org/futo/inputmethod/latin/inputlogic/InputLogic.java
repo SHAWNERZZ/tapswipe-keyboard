@@ -215,17 +215,65 @@ public final class InputLogic {
         return (v == null || v < 1) ? 1 : v;
     }
 
+    public int tapSwipeLegacyTapRun() {
+        final Integer v = DataStoreHelper.getSetting(
+                SwipeDecoderDictionaryKt.getTapSwipeLegacyTapRunSetting());
+        return (v == null || v < 1) ? 1 : v;
+    }
+
     /**
-     * Classifies the word being composed, latching the answer for the rest of the word.
+     * Running count of quick taps, carried ACROSS words, that decides whether legacy-tap mode is
+     * active. Reset whenever a swipe is absorbed.
      *
-     * A swipe always wins and is never latched, so a swipe pulls the word back to {@link
-     * TapSwipeMode#SWIPE} at any point - that is how legacy-tap mode is left. A swipe-free word
-     * stays {@link TapSwipeMode#UNDECIDED} until it is long enough to judge, then splits on typing
-     * cadence: deliberate spelling becomes {@link TapSwipeMode#PECK}, fluent typing becomes {@link
-     * TapSwipeMode#LEGACY_TAP} and behaves exactly like upstream.
+     * Legacy tap is not a property of one word - it is a judgement about the person typing. Someone
+     * unfamiliar with the keyboard just taps, and should get letters and ordinary autocorrect
+     * without having to discover anything. Classifying it per word made short words like "to" flip
+     * the display for the duration of the word and then flip back, which is noise rather than
+     * information.
+     */
+    private int mTapSwipeFastTapRun = 0;
+
+    /** Uptime of the previous tap, across word boundaries, for measuring the gap to this one. */
+    private long mTapSwipeLastTapMs = -1;
+
+    /**
+     * Records a tap for the cross-word cadence run. Quick taps build the run; a deliberate pause
+     * simply does not add to it, rather than clearing it - real typing pauses at word boundaries
+     * and between thoughts, so resetting on every slow tap would mean the run never builds for an
+     * ordinary typist.
+     */
+    private void noteTapForLegacyRun(final long nowMs) {
+        final long prev = mTapSwipeLastTapMs;
+        mTapSwipeLastTapMs = nowMs;
+        if (prev < 0) return;
+        if (nowMs - prev < tapSwipePeckCadenceMs()) {
+            mTapSwipeFastTapRun++;
+        }
+    }
+
+    /** A swipe means this is not someone who only taps. Drops legacy-tap mode immediately. */
+    private void clearLegacyTapRun() {
+        if (mTapSwipeFastTapRun != 0 && DEBUG_TAPSWIPE) {
+            Log.d(TAG, "tapswipe legacy run cleared by swipe (was " + mTapSwipeFastTapRun + ")");
+        }
+        mTapSwipeFastTapRun = 0;
+        mTapSwipeLastTapMs = -1;
+    }
+
+    public boolean isTapSwipeLegacyTapActive() {
+        return isTapSwipeMode() && mTapSwipeFastTapRun >= tapSwipeLegacyTapRun();
+    }
+
+    /**
+     * Classifies the word being composed.
      *
-     * Latching matters for more than tidiness: without it the keys would flip between dots and
-     * letters, and borders on and off, in the middle of a word as the median cadence drifted.
+     * A swipe always wins. Otherwise a swipe-free word may latch {@link TapSwipeMode#PECK} once it
+     * is long enough and is being spelled out slowly; that latch holds for the rest of the word,
+     * because without it the keys would flip between dots and letters, and borders on and off, as
+     * the median cadence drifted mid-word.
+     *
+     * {@link TapSwipeMode#LEGACY_TAP} is deliberately *not* latched per word - it reflects the
+     * cross-word tap run above, so it switches on once and stays on until a swipe.
      *
      * Reads the session without revalidating - a leaked session can only report hasSwipe=true,
      * which is the conservative direction (it suppresses peck rather than applying it wrongly).
@@ -234,24 +282,22 @@ public final class InputLogic {
         if (!isTapSwipeMode()) return TapSwipeMode.SWIPE;
         if (mTapSwipeSession.getHasSwipe()) return TapSwipeMode.SWIPE;
 
-        final TapSwipeMode latched = mTapSwipeSession.getLatchedMode();
-        if (latched != null) return latched;
+        if (mTapSwipeSession.getLatchedMode() == TapSwipeMode.PECK) return TapSwipeMode.PECK;
 
-        if (mWordComposer.size() < tapSwipePeckMinTaps()) return TapSwipeMode.UNDECIDED;
-
-        // Not enough taps to have a cadence yet; wait rather than guessing.
-        final int gap = mTapSwipeSession.medianTapGapMs();
-        if (gap < 0) return TapSwipeMode.UNDECIDED;
-
-        final TapSwipeMode decided = (gap >= tapSwipePeckCadenceMs())
-                ? TapSwipeMode.PECK : TapSwipeMode.LEGACY_TAP;
-        mTapSwipeSession.latchMode(decided);
-        if (DEBUG_TAPSWIPE) {
-            Log.d(TAG, "tapswipe mode latched " + decided + " (medianGap=" + gap
-                    + "ms threshold=" + tapSwipePeckCadenceMs() + "ms size="
-                    + mWordComposer.size() + ")");
+        if (mWordComposer.size() >= tapSwipePeckMinTaps()) {
+            final int gap = mTapSwipeSession.medianTapGapMs();
+            // gap < 0 means fewer than two taps, so there is no cadence to judge yet.
+            if (gap >= 0 && gap >= tapSwipePeckCadenceMs()) {
+                mTapSwipeSession.latchMode(TapSwipeMode.PECK);
+                if (DEBUG_TAPSWIPE) {
+                    Log.d(TAG, "tapswipe latched PECK (medianGap=" + gap + "ms threshold="
+                            + tapSwipePeckCadenceMs() + "ms size=" + mWordComposer.size() + ")");
+                }
+                return TapSwipeMode.PECK;
+            }
         }
-        return decided;
+
+        return isTapSwipeLegacyTapActive() ? TapSwipeMode.LEGACY_TAP : TapSwipeMode.UNDECIDED;
     }
 
     /**
@@ -312,6 +358,7 @@ public final class InputLogic {
                     + " (composingSize=" + mWordComposer.size()
                     + " hasSwipe=" + mTapSwipeSession.getHasSwipe()
                     + " medianGap=" + mTapSwipeSession.medianTapGapMs() + "ms"
+                    + " fastRun=" + mTapSwipeFastTapRun + "/" + tapSwipeLegacyTapRun()
                     + " view=" + (view == null ? "null" : "ok") + ")");
         }
         if (view != null) {
@@ -336,7 +383,9 @@ public final class InputLogic {
 
         final int added = session.addSwipeSegments(batchPointers.getGestureSegments(), batchOrigin,
                 mTapSwipeSessionOriginMs, norm.getX(), norm.getY());
-        // A swipe joining the word ends peck mode immediately.
+        // A swipe joining the word ends peck mode immediately, and proves this is not someone
+        // who only taps, so legacy-tap mode drops too.
+        clearLegacyTapRun();
         refreshTapSwipePeckIndicator();
         if (DEBUG_TAPSWIPE) {
             Log.d(TAG, "tapswipe absorbed " + added + " segment(s); session now "
@@ -1481,7 +1530,9 @@ public final class InputLogic {
             if (isTapSwipeMode() && settingsValues.isWordCodePoint(codePoint)) {
                 // Before absorbing: cadence must be measured for every tap, including code points
                 // the layout cannot place (which absorbTap skips).
-                mTapSwipeSession.noteTapTime(SystemClock.uptimeMillis());
+                final long tapNowMs = SystemClock.uptimeMillis();
+                mTapSwipeSession.noteTapTime(tapNowMs);
+                noteTapForLegacyRun(tapNowMs);
                 absorbTapIntoTapSwipeSession(codePoint);
                 // Outside absorbTap deliberately: that method bails out for a code point the
                 // layout can't place, but the word still grew, so peck state must be re-evaluated
