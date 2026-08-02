@@ -1,6 +1,7 @@
 package org.futo.inputmethod.latin.uix
 
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.res.TypedArray
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
@@ -81,13 +82,15 @@ interface DynamicThemeProvider {
 
         @JvmStatic
         fun obtainFromContext(context: Context): DynamicThemeProvider {
-            if (context is DynamicThemeProviderOwner) {
-                return context.getDrawableProvider()
-            } else if (context is ContextThemeWrapper) {
-                val baseContext = context.baseContext
-                if (baseContext is DynamicThemeProviderOwner) {
-                    return baseContext.getDrawableProvider()
+            // Walk the whole wrapper chain rather than checking one level. Views inflate through
+            // nested wrappers (a themed wrapper around a themed wrapper around the service), and
+            // stopping at the first base context misses the owner in those cases.
+            var candidate: Context? = context
+            while (candidate != null) {
+                if (candidate is DynamicThemeProviderOwner) {
+                    return candidate.getDrawableProvider()
                 }
+                candidate = (candidate as? ContextWrapper)?.baseContext
             }
 
             throw IllegalArgumentException("Could not find DynamicThemeProviderOwner")

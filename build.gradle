@@ -365,6 +365,19 @@ android {
             java.srcDirs = ['tests/src']
             manifest.srcFile 'tests/AndroidManifest.xml'
         }
+
+        // Plain JVM tests for logic with no Android dependencies - currently the TapSwipe
+        // session state machine. These run in seconds via `gradlew testUnstableDebugUnitTest`,
+        // with no device or emulator.
+        test {
+            java.srcDirs = ['tests/unit']
+        }
+    }
+
+    testOptions {
+        // TapSwipeSession logs through android.util.Log, which is a stub on the JVM classpath and
+        // throws by default. The tests assert on state, not logging.
+        unitTests.returnDefaultValues = true
     }
 
     lintOptions {

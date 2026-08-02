@@ -99,6 +99,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -1546,9 +1547,19 @@ class UixManager(private val latinIME: LatinIME) {
         isActionsExpanded.value = latinIME.getSettingBlocking(ActionBarExpanded)
 
         latinIME.lifecycleScope.launch(Dispatchers.Main) {
-            WindowInfoTracker.getOrCreate(latinIME).windowLayoutInfo(latinIME).collect {
-                foldingOptions.value = FoldingOptions(it.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull())
-                latinIME.invalidateKeyboard(true)
+            // Fold tracking is a progressive enhancement: without it the keyboard simply never
+            // adapts to a fold. The tracker needs a real window, so under the IME test harness
+            // (which runs the service without one) it throws from inside the collector and takes
+            // the whole process down with it. Never let a cosmetic feature do that.
+            try {
+                WindowInfoTracker.getOrCreate(latinIME).windowLayoutInfo(latinIME).collect {
+                    foldingOptions.value = FoldingOptions(it.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull())
+                    latinIME.invalidateKeyboard(true)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w("UixManager", "Window layout tracking unavailable; fold detection disabled", e)
             }
         }
 
