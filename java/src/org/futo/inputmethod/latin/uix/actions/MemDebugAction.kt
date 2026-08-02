@@ -36,6 +36,7 @@ import org.futo.inputmethod.latin.LegacySwipeSetting
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
 import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState
+import org.futo.inputmethod.latin.tapswipe.TapSwipeScenarios
 import org.futo.inputmethod.latin.tapswipe.TapSwipeSpikes
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.Action
@@ -415,6 +416,50 @@ val MemoryDebugAction = Action(
                             }
 
                             spikeState.value.lines().forEach {
+                                Text(it, style = DebugLabel)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("TapSwipe Scenarios", style = DebugTitle)
+                    run {
+                        val scope = rememberCoroutineScope()
+                        val scenarioState = remember { mutableStateOf("") }
+                        val scenarioRunning = remember { mutableStateOf(false) }
+
+                        Button(
+                            enabled = !scenarioRunning.value,
+                            onClick = {
+                                scenarioRunning.value = true
+                                scenarioState.value = "running..."
+                                scope.launch {
+                                    val report = try {
+                                        TapSwipeScenarios.run(latinIme)
+                                    } catch (e: Throwable) {
+                                        "scenario runner crashed: $e\n${e.stackTraceToString()}"
+                                    }
+                                    scenarioState.value = report
+                                    scenarioRunning.value = false
+                                }
+                            }
+                        ) {
+                            Text(if (scenarioRunning.value) "Running scenarios..." else "Run scenarios")
+                        }
+
+                        if (scenarioState.value.isNotEmpty()) {
+                            Button(onClick = {
+                                val clipboardManager = manager.getContext()
+                                    .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboardManager.setPrimaryClip(
+                                    ClipData.newPlainText("scenarios", scenarioState.value)
+                                )
+                            }) {
+                                Text("Copy scenario results")
+                            }
+
+                            scenarioState.value.lines().forEach {
                                 Text(it, style = DebugLabel)
                             }
                         }

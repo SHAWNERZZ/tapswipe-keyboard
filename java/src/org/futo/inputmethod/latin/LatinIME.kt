@@ -129,20 +129,6 @@ private class UnlockedBroadcastReceiver(val onDeviceUnlocked: () -> Unit) : Broa
 }
 
 open class InputMethodServiceCompose : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
-    companion object {
-        /**
-         * Test-only escape hatch for the IME test harness.
-         *
-         * `InputTestsBase` creates the service on the *test* thread (with its own prepared
-         * Looper), and LifecycleRegistry asserts it is constructed and mutated on the main thread.
-         * That assertion fails every instrumented IME test in this fork. Production always
-         * constructs on the main thread, so setting this only ever relaxes a debug assertion that
-         * would never have fired outside tests.
-         */
-        @JvmStatic
-        var unsafeLifecycleForTests: Boolean = false
-    }
-
     private lateinit var mLifecycleRegistry: LifecycleRegistry
     private lateinit var mViewModelStore: ViewModelStore
     private lateinit var mSavedStateRegistryController: SavedStateRegistryController
@@ -157,11 +143,7 @@ open class InputMethodServiceCompose : InputMethodService(), LifecycleOwner, Vie
     override fun onCreate() {
         super.onCreate()
 
-        mLifecycleRegistry = if (unsafeLifecycleForTests) {
-            LifecycleRegistry.createUnsafe(this)
-        } else {
-            LifecycleRegistry(this)
-        }
+        mLifecycleRegistry = LifecycleRegistry(this)
         mLifecycleRegistry.currentState = Lifecycle.State.INITIALIZED
 
         mViewModelStore = ViewModelStore()

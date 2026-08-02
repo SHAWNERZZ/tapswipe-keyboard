@@ -44,7 +44,6 @@ import org.futo.inputmethod.latin.Dictionary.PhonyDictionary;
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
 import org.futo.inputmethod.latin.common.Constants;
 import org.futo.inputmethod.latin.common.InputPointers;
-import org.futo.inputmethod.latin.common.ResizableIntArray;
 import org.futo.inputmethod.latin.common.LocaleUtils;
 import org.futo.inputmethod.latin.common.StringUtils;
 import org.futo.inputmethod.latin.settings.DebugSettings;
@@ -210,9 +209,6 @@ public class InputTestsBase extends ServiceTestCase<LatinIME> {
         if (null == Looper.myLooper()) {
             Looper.prepare();
         }
-        // The harness runs the service on this thread, not the main one; relax the Lifecycle
-        // main-thread assertion so onCreate() can complete. See the flag's documentation.
-        InputMethodServiceCompose.setUnsafeLifecycleForTests(true);
         setupService();
         mLatinIMELegacy = getService().getLatinIMELegacy();
         setDebugMode(true);
@@ -223,17 +219,9 @@ public class InputTestsBase extends ServiceTestCase<LatinIME> {
         getService().onCreate();
         EditorInfo ei = new EditorInfo();
         final InputConnection ic = mEditText.onCreateInputConnection(ei);
-        // Inflate against the service, not the test context: MainKeyboardView resolves a
-        // DynamicThemeProviderOwner from its context, and the service is that owner. Inflating
-        // with the plain test context throws from the view constructor.
-        // MainKeyboardView resolves a DynamicThemeProviderOwner from the *inflater's* context, and
-        // the service is that owner. ServiceTestCase attaches the test context as the service's
-        // base, so getSystemService hands back an inflater bound to the test context - hence
-        // cloneInContext to rebind it to the service itself.
         final LayoutInflater inflater =
-                ((LayoutInflater)getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE))
-                        .cloneInContext(getService());
-        final ViewGroup vg = new FrameLayout(getService());
+                (LayoutInflater)getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        final ViewGroup vg = new FrameLayout(getContext());
         mInputView = inflater.inflate(R.layout.input_view, vg);
         ei = enrichEditorInfo(ei);
         getService().onCreateInputMethodInterface().startInput(ic, ei);
@@ -331,22 +319,6 @@ public class InputTestsBase extends ServiceTestCase<LatinIME> {
         return new Point(key.getX() + key.getWidth() / 2, key.getY() + key.getHeight() / 2);
     }
 
-    /**
-     * Appends a single gesture point through {@link InputPointers#append}, which fills the flat
-     * coordinate arrays *and* the segment opened by {@code onPointerDown}. The older
-     * {@code addPointer} helper only fills the flat arrays.
-     */
-    private static void appendGesturePoint(final InputPointers pointers, final int x, final int y,
-            final int time) {
-        final ResizableIntArray xs = new ResizableIntArray(1);
-        final ResizableIntArray ys = new ResizableIntArray(1);
-        final ResizableIntArray ts = new ResizableIntArray(1);
-        xs.add(x);
-        ys.add(y);
-        ts.add(time);
-        pointers.append(0 /* pointerId */, ts, xs, ys, 0 /* startPos */, 1 /* length */);
-    }
-
     protected void gesture(final String stringToGesture) {
         if (StringUtils.codePointCount(stringToGesture) < 2) {
             throw new RuntimeException("Can't gesture strings less than 2 chars long");
@@ -357,11 +329,7 @@ public class InputTestsBase extends ServiceTestCase<LatinIME> {
         Point oldPoint = getXY(startCodePoint);
         int timestamp = 0; // In milliseconds since the start of the gesture
         final InputPointers pointers = new InputPointers(Constants.DEFAULT_GESTURE_POINTS_CAPACITY);
-        // Open a GestureSegment for this finger. Without it the points below land only in the flat
-        // coordinate arrays and no segment is produced, which the segment-based decoding paths
-        // read - a gesture built that way looks like an empty stroke to them.
-        pointers.onPointerDown(0 /* pointerId */);
-        appendGesturePoint(pointers, oldPoint.x, oldPoint.y, timestamp);
+        pointers.addPointer(oldPoint.x, oldPoint.y, 0 /* pointerId */, timestamp);
 
         for (int i = Character.charCount(startCodePoint); i < stringToGesture.length();
                 i = stringToGesture.offsetByCodePoints(i, 1)) {
@@ -370,10 +338,9 @@ public class InputTestsBase extends ServiceTestCase<LatinIME> {
             final int STEPS = 5;
             for (int j = 0; j < STEPS; ++j) {
                 timestamp += 100;
-                appendGesturePoint(pointers,
-                        oldPoint.x + ((newPoint.x - oldPoint.x) * j) / STEPS,
+                pointers.addPointer(oldPoint.x + ((newPoint.x - oldPoint.x) * j) / STEPS,
                         oldPoint.y + ((newPoint.y - oldPoint.y) * j) / STEPS,
-                        timestamp);
+                        0 /* pointerId */, timestamp);
             }
             oldPoint.x = newPoint.x;
             oldPoint.y = newPoint.y;

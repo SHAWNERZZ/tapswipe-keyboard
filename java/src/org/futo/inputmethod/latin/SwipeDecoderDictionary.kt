@@ -414,6 +414,10 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             return floatArrayOf(info.xs[idx], info.ys[idx])
         }
 
+        /** The keyboard the decoder is currently configured for; used by the scenario runner. */
+        @JvmStatic
+        fun debugCurrentKeyboard(): Keyboard? = prevKeyboard
+
         @JvmStatic
         fun canBeUsed(): Boolean {
             val settings = Settings.getInstance().current
