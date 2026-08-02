@@ -490,6 +490,16 @@ Popping to empty clears the composing region with the existing `commitText("", 1
 
 Placed *after* the revert branches (autocorrect, double-space period, punctuation swap, prefix space, inserted text). Those are one-press undos of the previous keystroke and must keep priority or the corresponding settings appear broken.
 
+#### Fix 10 — stroke undo appended instead of replacing ("But" → "ButBy")
+
+Backspacing after `swipe b-to-u, tap t` produced "ButBy" rather than "By".
+
+Self-inflicted by the "fail closed" clause added to `popLastStroke` in the same phase. `hasComposed` is derived from `anchorSelStart != NO_ANCHOR`, and the apply path reads it to decide whether it is *continuing* a word or *starting* one. Clearing the anchor on pop therefore made the rewrite treat the word as new: it called `finishComposingText()`, finalising "But", then wrote the re-decoded "By" after it.
+
+Clearing was wrong in principle too. A pop changes the **evidence**, not the editor — the composing region still holds the pre-pop text, so the anchor remains an accurate description of it until the replacement is written. Only the generation bump is kept.
+
+Fixed alongside: the literal (no-swipe-left) branch used to return false and fall through to the ordinary delete, which changed the composing word without telling the session. The next validate-on-read would have seen a word that no longer matched `lastComposedText` and discarded the session, losing the taps still belonging to that word. It now performs the delete itself and re-anchors.
+
 **Supporting changes.**
 - `popLastStroke` now bumps `generation` on *every* pop and clears the anchor, so a decode already in flight is rejected rather than applied against strokes that no longer exist, and a caller that forgets to write a new candidate fails closed.
 - The composing write was factored out of `onUpdateTailBatchInputCompleted` into `applyTapSwipeCandidate`, shared by both paths. Duplicating that sequence — re-entrancy guard, batch edit, `setBatchInputWord`, `setComposingTextInternal`, `noteComposingWrite` — is how this feature has bled before.

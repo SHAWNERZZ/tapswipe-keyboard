@@ -291,12 +291,16 @@ class TapSwipeSession {
      * Removes the most recent stroke. The caller must recompute the candidate afterwards and apply
      * it through the usual write path, which re-establishes the anchor.
      *
-     * Fails closed on both counts that have bitten this code before:
-     *  - [generation] is bumped on *every* pop, so a decode already in flight for the pre-pop
-     *    evidence is rejected by the guard in `onUpdateTailBatchInputCompleted` instead of being
-     *    applied against strokes that no longer exist.
-     *  - the anchor is cleared, so if a caller forgets to write a new candidate the session is
-     *    treated as not-yet-composed rather than silently asserting the pre-pop text.
+     * [generation] is bumped so a decode already in flight for the pre-pop evidence is rejected by
+     * the guard in `onUpdateTailBatchInputCompleted` rather than applied against strokes that no
+     * longer exist.
+     *
+     * The anchor and [lastComposedText] are deliberately left alone. Popping changes the
+     * *evidence*, not the editor: the composing region still holds the pre-pop text, so the anchor
+     * remains an accurate description of it until the replacement is written. Clearing them here
+     * also cleared [hasComposed], which the apply path reads to decide whether it is continuing a
+     * word or starting one - so the rewrite called `finishComposingText()` and appended the new
+     * candidate after the old text instead of replacing it ("But" + "By").
      */
     fun popLastStroke(): Boolean {
         if (strokesInternal.isEmpty()) return false
@@ -306,8 +310,6 @@ class TapSwipeSession {
             return true
         }
         generation++
-        anchorSelStart = NO_ANCHOR
-        lastComposedText = ""
         return true
     }
 

@@ -387,8 +387,8 @@ public final class InputLogic {
      *
      * @return true if the backspace was fully handled and the caller must return immediately.
      */
-    private boolean handleTapSwipeStrokeUndo(final InputTransaction inputTransaction) {
-        final boolean hadSwipe = mTapSwipeSession.getHasSwipe();
+    private boolean handleTapSwipeStrokeUndo(final Event event,
+            final InputTransaction inputTransaction) {
         if (!mTapSwipeSession.popLastStroke()) return false;
 
         // Popping the last stroke ends the word. Clear the composing region the same way the
@@ -403,7 +403,7 @@ public final class InputLogic {
             return true;
         }
 
-        if (hadSwipe && mTapSwipeSession.getHasSwipe()) {
+        if (mTapSwipeSession.getHasSwipe()) {
             // Still a swiped word: re-decode what is left. The result arrives asynchronously and
             // is applied by onUpdateTailBatchInputCompleted, whose generation guard now rejects
             // anything computed before the pop.
@@ -416,17 +416,34 @@ public final class InputLogic {
             return true;
         }
 
-        // No swipe left in the word, so there is nothing to decode - the composing text is the
-        // literal the user tapped. Deliberately NOT rewritten from the session's derived
-        // literalText: a code point the layout cannot place (an apostrophe, say) never became a
-        // stroke, so that string can be missing characters the composer legitimately holds.
-        // Deleting one code point keeps the text correct, and the pop above keeps the evidence in
-        // step with it.
-        if (DEBUG_TAPSWIPE) {
-            Log.d(TAG, "tapswipe stroke undo -> literal delete, "
-                    + mTapSwipeSession.getStrokes().size() + " stroke(s) left");
+        // No swipe left, so there is nothing to decode - the composing text is the literal the
+        // user tapped, and one code point comes off it.
+        //
+        // Deliberately NOT rewritten from the session's derived literalText: a code point the
+        // layout cannot place (an apostrophe, say) never became a stroke, so that string can be
+        // missing characters the composer legitimately holds.
+        //
+        // Handled here rather than by falling through to the ordinary delete branch, because that
+        // branch would change the composing word without telling the session - and the next
+        // validate-on-read would then see a word that no longer matches lastComposedText and
+        // discard the whole session, losing the taps that are still part of this word.
+        mWordComposer.applyProcessedEvent(event);
+        if (mWordComposer.isComposingWord()) {
+            final String remaining = mWordComposer.getTypedWord();
+            setComposingTextInternal(getTextWithUnderline(remaining), 1);
+            mTapSwipeSession.noteComposingWrite(
+                    remaining, mConnection.getExpectedSelectionStart());
+            if (DEBUG_TAPSWIPE) {
+                Log.d(TAG, "tapswipe stroke undo -> literal '" + remaining + "', "
+                        + mTapSwipeSession.getStrokes().size() + " stroke(s) left");
+            }
+        } else {
+            mConnection.commitText("", 1);
+            resetTapSwipeSession("stroke undo emptied the literal");
         }
-        return false;
+        StatsUtils.onBackspacePressed(1);
+        inputTransaction.setRequiresUpdateSuggestions();
+        return true;
     }
 
     /**
@@ -440,7 +457,7 @@ public final class InputLogic {
      * @return true if something was deleted and the caller must return immediately.
      */
     private boolean deleteLastCommittedWord(final InputTransaction inputTransaction) {
-        // 48 mirrors the word-mode lookback used by the auto-repeat path below.
+        // 48 mirrors the word-mode lookback used by the auto-repeat path.
         final CharSequence before = mConnection.getTextBeforeCursor(48, 0);
         if (TextUtils.isEmpty(before)) return false;
 
@@ -1993,7 +2010,7 @@ public final class InputLogic {
         // put a word back into composing between ticks.
         if (isTapSwipeMode() && !event.isKeyRepeat() && !mConnection.hasSelection()
                 && mWordComposer.isComposingWord() && tapSwipeSession().isOpen()) {
-            if (handleTapSwipeStrokeUndo(inputTransaction)) {
+            if (handleTapSwipeStrokeUndo(event, inputTransaction)) {
                 return;
             }
         } else if (isTapSwipeMode()) {
