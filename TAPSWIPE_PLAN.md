@@ -478,7 +478,26 @@ Learn where the user's hand actually sits and shift the decode frame to match �
 1. **Key boosting corrupts the training signal.** A boosted key can capture a touch up to half a key outside its own bounds (`KeyDetector.java:110-130`, distance-to-edge with `0.5 * min(w,h)` slack). The residual then reflects a dictionary correction, not hand drift. Residual collection must **exclude boosting-resolved taps** — or run with boosting off, which is what "disable letter prediction changes until trained" achieves.
 2. **Taps currently record key centres, not touch points** (`normalizedKeyPosition`). That is right for decode reliability — taps are exact anchors — but it discards the residual. The touch point must be captured separately for training while decode keeps using centres.
 
-### Phase 5 (revisited) — stroke-level backspace
+### Phase 5 (revisited) — stroke-level backspace — *implemented, dev*
+
+Two tiers.
+
+**Tier 1 — word in progress: pop the last stroke.** A tap of backspace removes the last tap or swipe and rewrites what remains, so a mis-swipe can be redone without losing the word. Auto-repeat is deliberately excluded: holding backspace is a bulk gesture already governed by `mBackspaceModeHold`, and per-stroke undo under repeat would let the tiers oscillate, because `restartSuggestionsOnWordTouchedByCursor` can put a word back into composing between ticks.
+
+Popping to empty clears the composing region with the existing `commitText("", 1)` idiom. If a swipe remains the word is re-decoded; if only taps remain the composing text is the literal and one code point is deleted instead — deliberately *not* rewritten from `session.literalText`, because a code point the layout cannot place never became a stroke and that derived string can be missing characters the composer legitimately holds.
+
+**Tier 2 — finished word: delete it whole.** Behind `TapSwipeWholeWordBackspaceSetting`, **off by default**: a backspace tap eating a whole word departs sharply from every other keyboard, and it would override `mBackspaceModeHold = CHARACTERS` for the first press. Takes one trailing space with the word, since words are committed together with their separator and leaving the space would mean two presses to undo one word.
+
+Placed *after* the revert branches (autocorrect, double-space period, punctuation swap, prefix space, inserted text). Those are one-press undos of the previous keystroke and must keep priority or the corresponding settings appear broken.
+
+**Supporting changes.**
+- `popLastStroke` now bumps `generation` on *every* pop and clears the anchor, so a decode already in flight is rejected rather than applied against strokes that no longer exist, and a caller that forgets to write a new candidate fails closed.
+- The composing write was factored out of `onUpdateTailBatchInputCompleted` into `applyTapSwipeCandidate`, shared by both paths. Duplicating that sequence — re-entrancy guard, batch edit, `setBatchInputWord`, `setComposingTextInternal`, `noteComposingWrite` — is how this feature has bled before.
+- Branch A1 (wipe the whole batch word, set `setRejectedBatchModeSuggestion`) is now unreachable while TapSwipe is on. It disabled autocorrect for the retry, and tier 1 owns that case.
+
+**Found while tracing:** `revertCommit` is already dead for every TapSwipe-committed word. `canRevertCommit()` requires `mActive && !didCommitTypedWord()`, and `commitTyped` produces `COMMIT_TYPE_USER_TYPED_WORD`, which `WordComposer.commitWord` deactivates immediately *and* whose typed and committed words are equal by construction. So "Undo autocorrect on backspace" silently does nothing under TapSwipe — a pre-existing regression from the verbatim-commit work, not addressed here.
+
+#### Original plan
 
 Not a bug: **never implemented.** The current code resets the whole session on backspace, which was deliberate as an anti-leak interim (Phase 1) with stroke-level undo deferred.
 

@@ -336,6 +336,139 @@ public final class InputLogic {
         return mode == TapSwipeMode.SWIPE || mode == TapSwipeMode.PECK;
     }
 
+    /**
+     * Writes a candidate into the composing region and re-anchors the session.
+     *
+     * The single place any TapSwipe candidate reaches the editor - the decode-apply path and
+     * stroke-level undo both go through it. Duplicating this sequence is how this feature has bled
+     * before: every step matters and the ordering is load-bearing.
+     *
+     * {@code mTapSwipeApplyingDecode} suppresses validate-on-read for the duration. Flushing the
+     * connection re-enters this class (selection updates trigger fresh suggestion queries), and
+     * during the write the composer's word and the session's recorded text are legitimately out of
+     * step - validating there destroys a live session mid-word.
+     */
+    private void applyTapSwipeCandidate(final SettingsValues settingsValues, final String text,
+            final boolean finishPreviousComposition, final boolean allowAutoSpace) {
+        mTapSwipeApplyingDecode = true;
+        try {
+            mConnection.beginBatchEdit();
+            if (finishPreviousComposition) mConnection.finishComposingText();
+            if (allowAutoSpace && SpaceState.PHANTOM == mSpaceState
+                    && !mConnection.spacePrecedesComposingText()) {
+                insertAutomaticSpaceIfOptionsAndTextAllow(settingsValues);
+            }
+            mWordComposer.setBatchInputWord(text);
+            setComposingTextInternal(text, 1);
+            mConnection.endBatchEdit();
+            mConnection.send();
+
+            if (mTapSwipeSession.isOpen()) {
+                // Record the text and cursor position this write produced, so validate-on-read can
+                // detect later movement or an external edit and drop the session instead of
+                // appending to a stale word. Also marks the session as having composed, so the
+                // next stroke counts as a continuation.
+                mTapSwipeSession.noteComposingWrite(
+                        text, mConnection.getExpectedSelectionStart());
+            }
+        } finally {
+            mTapSwipeApplyingDecode = false;
+        }
+    }
+
+    public boolean isTapSwipeWholeWordBackspace() {
+        return isTapSwipeMode()
+                && DataStoreHelper.getSetting(
+                        SwipeDecoderDictionaryKt.getTapSwipeWholeWordBackspaceSetting());
+    }
+
+    /**
+     * Tier 1: removes the last stroke from the word in progress and rewrites what remains.
+     *
+     * @return true if the backspace was fully handled and the caller must return immediately.
+     */
+    private boolean handleTapSwipeStrokeUndo(final InputTransaction inputTransaction) {
+        final boolean hadSwipe = mTapSwipeSession.getHasSwipe();
+        if (!mTapSwipeSession.popLastStroke()) return false;
+
+        // Popping the last stroke ends the word. Clear the composing region the same way the
+        // ordinary delete path does; an empty commit is what actually erases it, including under
+        // the emulated-composing input connection.
+        if (!mTapSwipeSession.isOpen()) {
+            mWordComposer.reset(true);
+            mConnection.commitText("", 1);
+            resetTapSwipeSession("stroke undo emptied the word");
+            inputTransaction.setRequiresUpdateSuggestions();
+            if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe stroke undo -> word cleared");
+            return true;
+        }
+
+        if (hadSwipe && mTapSwipeSession.getHasSwipe()) {
+            // Still a swiped word: re-decode what is left. The result arrives asynchronously and
+            // is applied by onUpdateTailBatchInputCompleted, whose generation guard now rejects
+            // anything computed before the pop.
+            if (DEBUG_TAPSWIPE) {
+                Log.d(TAG, "tapswipe stroke undo -> re-decoding "
+                        + mTapSwipeSession.getStrokes().size() + " stroke(s)");
+            }
+            postUpdateSuggestionStrip(SuggestedWords.INPUT_STYLE_TAIL_BATCH);
+            inputTransaction.setRequiresUpdateSuggestions();
+            return true;
+        }
+
+        // No swipe left in the word, so there is nothing to decode - the composing text is the
+        // literal the user tapped. Deliberately NOT rewritten from the session's derived
+        // literalText: a code point the layout cannot place (an apostrophe, say) never became a
+        // stroke, so that string can be missing characters the composer legitimately holds.
+        // Deleting one code point keeps the text correct, and the pop above keeps the evidence in
+        // step with it.
+        if (DEBUG_TAPSWIPE) {
+            Log.d(TAG, "tapswipe stroke undo -> literal delete, "
+                    + mTapSwipeSession.getStrokes().size() + " stroke(s) left");
+        }
+        return false;
+    }
+
+    /**
+     * Tier 2: deletes the whole word before the cursor, plus one trailing space if the cursor sits
+     * just after one.
+     *
+     * The trailing space goes with the word on purpose. Words are committed together with their
+     * separator, so leaving the space behind would mean two presses to undo one word - which reads
+     * as the delete not having worked.
+     *
+     * @return true if something was deleted and the caller must return immediately.
+     */
+    private boolean deleteLastCommittedWord(final InputTransaction inputTransaction) {
+        // 48 mirrors the word-mode lookback used by the auto-repeat path below.
+        final CharSequence before = mConnection.getTextBeforeCursor(48, 0);
+        if (TextUtils.isEmpty(before)) return false;
+
+        int end = before.length();
+        // Take at most one trailing space, so "foo  " leaves the earlier spaces alone.
+        if (end > 0 && before.charAt(end - 1) == Constants.CODE_SPACE) end--;
+        if (end == 0) return false;
+
+        final int wordEnd = end;
+        while (end > 0 && !Character.isWhitespace(before.charAt(end - 1))) end--;
+
+        // Nothing but whitespace before the cursor: let the ordinary paths handle it.
+        if (end == wordEnd) return false;
+
+        final int lengthToDelete = before.length() - end;
+        final String removed = before.subSequence(end, wordEnd).toString();
+
+        unlearnWord(removed, inputTransaction.mSettingsValues, Constants.EVENT_BACKSPACE);
+        mConnection.deleteTextBeforeCursor(lengthToDelete);
+        StatsUtils.onBackspaceWordDelete(lengthToDelete);
+        inputTransaction.setRequiresUpdateSuggestions();
+        if (DEBUG_TAPSWIPE) {
+            Log.d(TAG, "tapswipe whole-word backspace removed '" + removed + "' ("
+                    + lengthToDelete + " chars)");
+        }
+        return true;
+    }
+
     /** Discards the session. Safe to call unconditionally. */
     private void resetTapSwipeSession(final String reason) {
         mTapSwipeSession.reset(reason);
@@ -1851,17 +1984,30 @@ public final class InputLogic {
         final boolean deleteWholeWords = event.isKeyRepeat()
                 && inputTransaction.mSettingsValues.mBackspaceModeHold == Settings.BACKSPACE_MODE_WORDS;
 
-        // TapSwipe: delete is the classic trigger for accumulated strokes outliving their word
-        // (delete part of a word, swipe again, and the new stroke extends the stale evidence).
-        // validate-on-read would catch it once the composer is torn down, but reset explicitly
-        // here so the invariant holds even for paths that leave the composer intact.
-        // Phase 5 replaces this with stroke-level undo (pop last stroke and re-decode).
-        if (isTapSwipeMode()) {
+        // TapSwipe tier 1: a tap of backspace removes the last stroke rather than the whole word,
+        // so a mis-swipe can be redone without losing what came before it.
+        //
+        // Repeats are excluded deliberately. Holding backspace is a bulk-delete gesture and is
+        // already governed by mBackspaceModeHold; stroke-by-stroke undo under auto-repeat would
+        // also let the two tiers oscillate, because restartSuggestionsOnWordTouchedByCursor can
+        // put a word back into composing between ticks.
+        if (isTapSwipeMode() && !event.isKeyRepeat() && !mConnection.hasSelection()
+                && mWordComposer.isComposingWord() && tapSwipeSession().isOpen()) {
+            if (handleTapSwipeStrokeUndo(inputTransaction)) {
+                return;
+            }
+        } else if (isTapSwipeMode()) {
+            // Any other route through backspace invalidates the accumulated evidence. Without this
+            // a partially deleted word keeps its strokes and the next swipe extends them.
             resetTapSwipeSession("backspace");
         }
 
         if (mWordComposer.isComposingWord() && !mConnection.hasSelection()) {
-            if (mWordComposer.isBatchMode()) {
+            // TapSwipe never takes the wipe-the-whole-batch-word branch: it fires
+            // setRejectedBatchModeSuggestion, which disables autocorrect for the retry, and the
+            // stroke-undo tier above already owns this case. If a session went stale the composer
+            // can still be in batch mode here, and deleting one character is the safe fallback.
+            if (mWordComposer.isBatchMode() && !isTapSwipeMode()) {
                 final String rejectedSuggestion = mWordComposer.getTypedWord();
                 mWordComposer.reset(true);
                 mWordComposer.setRejectedBatchModeSuggestion(rejectedSuggestion);
@@ -1956,6 +2102,16 @@ public final class InputLogic {
 
             // No cancelling of commit/double space/swap: we have a regular backspace.
             // We should backspace one char and restart suggestion if at the end of a word.
+            // TapSwipe tier 2: a committed word is removed whole rather than a character at a
+            // time. Placed after the revert branches above deliberately - undoing an autocorrect,
+            // a double-space period or an inserted ".com" is a one-press undo of the *previous
+            // keystroke* and must keep priority, or those settings would appear broken.
+            if (isTapSwipeWholeWordBackspace() && !event.isKeyRepeat()
+                    && !mConnection.hasSelection()
+                    && deleteLastCommittedWord(inputTransaction)) {
+                return;
+            }
+
             if (mConnection.hasSelection()) {
                 // If there is a selection, remove it.
                 // We also need to unlearn the selected text.
@@ -3110,36 +3266,14 @@ public final class InputLogic {
         final boolean tapSwipeContinuation =
                 tapSwipeSession != null && tapSwipeSession.isOpen() && tapSwipeSession.getHasComposed();
 
-        mTapSwipeApplyingDecode = true;
-        try {
-        mConnection.beginBatchEdit();
-        if(distinct && !tapSwipeContinuation) mConnection.finishComposingText();
-        if (SpaceState.PHANTOM == mSpaceState && !tapSwipeContinuation) {
-            if(!mConnection.spacePrecedesComposingText())
-                insertAutomaticSpaceIfOptionsAndTextAllow(settingsValues);
-        }
         if (DEBUG_TAPSWIPE) {
             Log.d(TAG, "tapswipe TAIL applied text='" + batchInputText + "'"
                     + " continuation=" + tapSwipeContinuation
                     + " wasShiftedNoLock=" + mWordComposer.wasShiftedNoLock()
                     + " prevTypedWord='" + mWordComposer.getTypedWord() + "'");
         }
-        mWordComposer.setBatchInputWord(batchInputText);
-        setComposingTextInternal(batchInputText, 1);
-        mConnection.endBatchEdit();
-        mConnection.send();
-
-        if (tapSwipeSession != null && tapSwipeSession.isOpen()) {
-            // Record the text and cursor position this write produced, so validate-on-read can
-            // detect any later movement or external edit and drop the session instead of
-            // appending to a stale word. Also marks the session as having composed, so the next
-            // stroke is treated as a continuation.
-            tapSwipeSession.noteComposingWrite(
-                    batchInputText, mConnection.getExpectedSelectionStart());
-        }
-        } finally {
-            mTapSwipeApplyingDecode = false;
-        }
+        applyTapSwipeCandidate(settingsValues, batchInputText,
+                distinct && !tapSwipeContinuation, !tapSwipeContinuation);
         // Space state must be updated before calling updateShiftState
         // Arming PHANTOM means "the next input begins a new word", which is exactly wrong while a
         // TapSwipe word is still open - further strokes must keep extending it.

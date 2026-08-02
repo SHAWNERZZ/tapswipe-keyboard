@@ -263,6 +263,17 @@ val TapSwipePeckCadenceSetting = SettingsKey(intPreferencesKey("tapswipe_peck_ca
 val TapSwipeLegacyTapRunSetting = SettingsKey(intPreferencesKey("tapswipe_legacy_tap_run"), 5)
 
 /**
+ * When on, backspace after a finished word removes the whole word instead of one character.
+ *
+ * Off by default: a plain backspace tap deleting a whole word is a large departure from every
+ * other keyboard, and it would override the existing "hold to delete words" preference for the
+ * first press. Deleting strokes *within* a word is not gated on this - that is core to the input
+ * model rather than a preference.
+ */
+val TapSwipeWholeWordBackspaceSetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_whole_word_backspace"), false)
+
+/**
  * Master Mode: letter keys render as dots instead of letters. Named after the equivalent mode in
  * the original Nintype keyboard. Peck mode temporarily reveals the letters again.
  */
