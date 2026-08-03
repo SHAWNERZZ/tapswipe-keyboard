@@ -5,7 +5,7 @@
 | Layer | How to run | Device | Status |
 |---|---|---|---|
 | JVM unit tests | `./gradlew testUnstableDebugUnitTest` | none | **working** - 18 tests, ~5s |
-| In-app scenario runner | Memory Debug action -> **Run scenarios** | phone | **working** - 23 scenarios |
+| In-app scenario runner | Memory Debug action -> **Run scenarios** | phone | **working** - 46 scenarios, ~2 min |
 | Manual matrix | the checklist below | phone | for anything the runner cannot reach |
 
 ## Why the layers differ in value
@@ -103,45 +103,43 @@ that is not a trade worth making for a window nobody can hit.
 The ladder still runs and reports `KNOWN` rather than `FAIL`. If the 50ms rung ever fails, decoding
 got slower and this judgement needs revisiting.
 
-## Scenario matrix
+## Manual checklist
 
-Each row is a bug that shipped, or an edge case identified while tracing. Until the instrumented
-layer runs, these are the manual checklist before calling a feature done.
+The runner now covers 46 cases across word building, backspace, modes, session hygiene,
+auto-capitalisation, punctuation and everyday sentences. Those are no longer listed here - run it
+instead of reading them.
 
-### Word building
-- [ ] Two swipes then space build one word, not two
-- [ ] Swipe then tap commits what is displayed, not the pre-tap word
-- [ ] Tap then swipe keeps the tapped prefix
-- [ ] Lifting a finger never commits
-- [ ] Space, punctuation and Enter each finalize
-- [ ] Sentence start stays capitalised across two strokes
-- [ ] Two thumbs swiping at once compose one word
+What is left needs a human, because it needs a second app, a settings change, or an eye on the
+keyboard rather than the text:
 
-### Modes
-- [ ] Slow tapping engages peck: no autocorrect, borders, letters return under Master Mode
-- [ ] Fast tapping does not engage peck
-- [ ] Five quick taps engage legacy typing; a swipe leaves it again
-- [ ] Peck-committed out-of-dictionary word is swipeable afterwards
-- [ ] Mode is latched per word — no flicker mid-word
-- [ ] Key boosting is suppressed during peck
+### Needs another app or field type
+- [ ] Password and no-suggestion fields behave as stock
+- [ ] Behaves in an app using the emulated-composing connection (`ICPatched`)
+- [ ] Switching text fields mid-word does not carry evidence across
+- [ ] Disabling TapSwipe restores stock behaviour exactly
 
-### Backspace
-- [ ] Undo in a swiped word pops one stroke and re-decodes, without appending
-- [ ] Undo in a pecked word removes one character
-- [ ] Undoing every stroke clears the word and leaves nothing
-- [ ] Peck, backspace, then swipe still fuses the earlier taps
+### Needs a settings change mid-run
 - [ ] Whole-word delete (when enabled) takes one trailing space with the word
 - [ ] Autocorrect undo, double-space period and inserted text keep priority over whole-word delete
 - [ ] Hold-to-delete still honours the existing setting
+- [ ] Legacy typing engages after the configured run of fast taps; a swipe leaves it again
+- [ ] Legacy slider disabled at 0, and hidden unless Master Mode is on
 
-### Session hygiene — the runaway-word class
-- [ ] Strokes never leak into the next word
-- [ ] Cursor move mid-word drops the session
-- [ ] Rapid swipe / space / swipe produces two distinct words
-- [ ] A word never grows past the stroke cap
-- [ ] Switching text fields mid-word does not carry evidence across
+### Needs looking at the keyboard, not the text
+- [ ] Peck borders appear when peck engages, and letters return under Master Mode
+- [ ] Master Mode shows dots, and the quick-action button toggles it
+- [ ] No visible mode flicker mid-word
 
-### Interop
-- [ ] Disabling TapSwipe restores stock behaviour exactly
-- [ ] Password and no-suggestion fields behave as stock
-- [ ] Behaves in an app using the emulated-composing connection (`ICPatched`)
+### Needs state that survives a restart
+- [ ] A peck-committed out-of-dictionary word is swipeable afterwards
+- [ ] Key boosting is suppressed during peck
+
+## Adding a scenario
+
+Follow the four rules above - resolve codes from the live keyboard, send press/code/release,
+send coordinates only where the real path does, and assert the invariant rather than the decoder's
+output. Then add a `Scenario` to `scenarios()` with a `group`, and if it needs to compare against
+mid-run state, wrap it in `run { var captured = ""; Scenario(...) }`.
+
+If a case is expected to fail for a reason that has been judged acceptable, set `knownLimitation`
+rather than deleting it, so the boundary stays measured.
