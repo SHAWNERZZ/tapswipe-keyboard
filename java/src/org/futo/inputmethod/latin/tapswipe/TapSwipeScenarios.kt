@@ -4,6 +4,9 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import org.futo.inputmethod.keyboard.Key
+import org.futo.inputmethod.keyboard.Keyboard
+import org.futo.inputmethod.keyboard.KeyboardSwitcher
 import org.futo.inputmethod.latin.LatinIME
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
 import org.futo.inputmethod.latin.TapSwipeModeSetting
@@ -47,22 +50,54 @@ object TapSwipeScenarios {
 
     private suspend fun <T> onMain(block: () -> T): T = withContext(Dispatchers.Main) { block() }
 
+    /**
+     * The keyboard as it is *right now*, shift state included.
+     *
+     * This matters more than it looks. `PointerTracker` sends `key.getCode()` from the live
+     * keyboard, and a shifted alphabet layout carries uppercase codes ([BaseKey] resolves
+     * `ELEMENT_ALPHABET_AUTOMATIC_SHIFTED` to the shifted key). So a real tap on "h" after ". "
+     * delivers 'H', not 'h' plus a flag. A harness that always sent lowercase would report
+     * auto-capitalisation as working no matter what the shift machinery did.
+     */
+    private fun liveKeyboard(): Keyboard? =
+        KeyboardSwitcher.getInstance().keyboard ?: SwipeDecoderDictionary.debugCurrentKeyboard()
+
+    private fun findKey(cp: Int): Key? = liveKeyboard()?.sortedKeys?.firstOrNull {
+        Character.toLowerCase(it.code) == Character.toLowerCase(cp)
+    }
+
     /** Key centre in keyboard coordinates, or null if the current layout has no such key. */
     private fun keyXY(cp: Int): Pair<Int, Int>? {
-        val kb = SwipeDecoderDictionary.debugCurrentKeyboard() ?: return null
-        val key = kb.sortedKeys.firstOrNull {
-            Character.toLowerCase(it.code) == Character.toLowerCase(cp)
-        } ?: return null
+        val key = findKey(cp) ?: return null
         return (key.x + key.width / 2) to (key.y + key.height / 2)
     }
 
+    /**
+     * Taps the key bearing [cp], sending whatever code that key currently carries.
+     *
+     * `onCodeInput` runs its coordinates through `MainKeyboardView.getKeyX/getKeyY`, which subtract
+     * the view padding to convert a *view*-frame touch into the keyboard frame. Key centres are
+     * already in the keyboard frame, so handing them over raw would land every synthetic tap offset
+     * by the padding. Probing the transform at the origin recovers the offset without reaching for
+     * private fields, and cancels it.
+     */
     private suspend fun tap(ime: LatinIME, cp: Int) {
-        val xy = keyXY(cp)
+        val key = findKey(cp)
+        if (key == null) {
+            onMain {
+                ime.latinIMELegacy.onCodeInput(
+                    cp, Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false)
+            }
+            return
+        }
         onMain {
+            val view = KeyboardSwitcher.getInstance().mainKeyboardView
+            val dx = view?.getKeyX(0) ?: 0
+            val dy = view?.getKeyY(0) ?: 0
             ime.latinIMELegacy.onCodeInput(
-                cp,
-                xy?.first ?: Constants.NOT_A_COORDINATE,
-                xy?.second ?: Constants.NOT_A_COORDINATE,
+                key.code,
+                key.x + key.width / 2 - dx,
+                key.y + key.height / 2 - dy,
                 false
             )
         }
@@ -195,6 +230,8 @@ object TapSwipeScenarios {
 
     private class Scenario(
         val name: String,
+        /** Printed as a header so a long report stays readable. */
+        val group: String = "",
         /** Skipped when the decoder is unavailable, since it cannot do anything meaningful. */
         val needsSwipe: Boolean = true,
         val run: suspend (LatinIME) -> Unit,
@@ -202,11 +239,20 @@ object TapSwipeScenarios {
         val check: (Probe) -> String?
     )
 
+    /** Shift is a code input like any other; the live keyboard reflects it on the next lookup. */
+    private suspend fun shift(ime: LatinIME) = tap(ime, Constants.CODE_SHIFT)
+
+    /** True when the live keyboard is in any shifted state - what a real finger would see. */
+    private fun keyboardIsShifted(): Boolean =
+        findKey('a'.code)?.code?.let { Character.isUpperCase(it) } ?: false
+
+    private fun capitalised(w: String) = w.isNotEmpty() && w[0].isUpperCase()
+
     private fun scenarios(): List<Scenario> = listOf(
 
         // --- word building --------------------------------------------------------------
 
-        Scenario("two swipes build one word",
+        Scenario("two swipes build one word", group = "Word building",
             run = { swipe(it, "hel"); settle(); swipe(it, "lo") },
             check = { p ->
                 if (p.words.size == 1) null else "expected one word, got '${p.word}'"
@@ -256,7 +302,7 @@ object TapSwipeScenarios {
 
         // --- backspace ------------------------------------------------------------------
 
-        Scenario("stroke undo replaces rather than appends",
+        Scenario("stroke undo replaces rather than appends", group = "Backspace",
             run = {
                 swipe(it, "bu"); settle(); type(it, "t"); settle()
                 tap(it, Constants.CODE_DELETE)
@@ -300,7 +346,7 @@ object TapSwipeScenarios {
 
         // --- modes ----------------------------------------------------------------------
 
-        Scenario("slow tapping engages peck", needsSwipe = false,
+        Scenario("slow tapping engages peck", group = "Modes", needsSwipe = false,
             run = { type(it, "cat", SLOW_TAP_MS) },
             check = { p ->
                 if (p.mode == TapSwipeMode.PECK) null else "mode was ${p.mode}, expected PECK"
@@ -339,7 +385,7 @@ object TapSwipeScenarios {
 
         // --- session hygiene: the runaway-word class ------------------------------------
 
-        Scenario("strokes do not leak into the next word",
+        Scenario("strokes do not leak into the next word", group = "Session hygiene",
             run = {
                 swipe(it, "hel"); settle(); type(it, " "); settle()
                 swipe(it, "cat")
@@ -390,6 +436,172 @@ object TapSwipeScenarios {
             check = { p ->
                 if (p.lower.startsWith("hi") && p.lower.length <= 4) null
                 else "double space garbled the word: '${p.text}'"
+            }),
+
+        // --- auto-capitalisation ---------------------------------------------------------
+        // These read the code the *live* keyboard hands back, so they fail if the shift machinery
+        // stops switching layouts - which a harness sending fixed lowercase could not have noticed.
+
+        Scenario("keyboard is shifted at the start of an empty field",
+            group = "Auto-capitalisation", needsSwipe = false,
+            run = { },
+            check = { _ ->
+                if (keyboardIsShifted()) null else "layout was not auto-shifted on an empty field"
+            }),
+
+        Scenario("first tapped word is capitalised", needsSwipe = false,
+            run = { type(it, "hello", FAST_TAP_MS); settle(); type(it, " ") },
+            check = { p -> if (capitalised(p.word)) null else "got '${p.word}'" }),
+
+        Scenario("keyboard re-shifts after a period and space", needsSwipe = false,
+            run = { type(it, "hi", FAST_TAP_MS); settle(); type(it, ". ") },
+            check = { _ ->
+                if (keyboardIsShifted()) null else "layout did not re-shift after a period"
+            }),
+
+        Scenario("word after a period is capitalised", needsSwipe = false,
+            run = {
+                type(it, "hi", FAST_TAP_MS); settle(); type(it, ". "); settle()
+                type(it, "there", FAST_TAP_MS); settle(); type(it, " ")
+            },
+            check = { p ->
+                val w = p.words.lastOrNull() ?: ""
+                if (capitalised(w)) null else "second sentence not capitalised: '${p.word}'"
+            }),
+
+        Scenario("word after a question mark is capitalised", needsSwipe = false,
+            run = {
+                type(it, "hi", FAST_TAP_MS); settle(); type(it, "? "); settle()
+                type(it, "yes", FAST_TAP_MS); settle(); type(it, " ")
+            },
+            check = { p ->
+                val w = p.words.lastOrNull() ?: ""
+                if (capitalised(w)) null else "not capitalised after a question mark: '${p.word}'"
+            }),
+
+        Scenario("mid-sentence words are not capitalised", needsSwipe = false,
+            run = {
+                type(it, "hi", FAST_TAP_MS); settle(); type(it, " "); settle()
+                type(it, "there", FAST_TAP_MS); settle(); type(it, " ")
+            },
+            check = { p ->
+                val w = p.words.lastOrNull() ?: ""
+                if (!capitalised(w)) null else "over-capitalised mid-sentence: '${p.word}'"
+            }),
+
+        Scenario("word after a period is capitalised when swiped",
+            group = "Auto-capitalisation",
+            run = {
+                type(it, "hi", FAST_TAP_MS); settle(); type(it, ". "); settle()
+                swipe(it, "hel"); settle(); type(it, " ")
+            },
+            check = { p ->
+                val w = p.words.lastOrNull() ?: ""
+                if (capitalised(w)) null else "swiped sentence start not capitalised: '${p.word}'"
+            }),
+
+        Scenario("manual shift capitalises exactly one letter", needsSwipe = false,
+            run = {
+                type(it, "hi", FAST_TAP_MS); settle(); type(it, " "); settle()
+                shift(it); type(it, "abc", FAST_TAP_MS); settle(); type(it, " ")
+            },
+            check = { p ->
+                val w = p.words.lastOrNull() ?: ""
+                when {
+                    !capitalised(w) -> "shift did not capitalise: '$w'"
+                    w.drop(1).any { c -> c.isUpperCase() } -> "shift stuck on: '$w'"
+                    else -> null
+                }
+            }),
+
+        // --- punctuation and spacing -----------------------------------------------------
+
+        Scenario("a comma attaches to the word with no space before it",
+            group = "Punctuation", needsSwipe = false,
+            run = { type(it, "hi", FAST_TAP_MS); settle(); type(it, ",") },
+            check = { p ->
+                if (p.word.endsWith(",") && !p.word.contains(" ,")) null
+                else "comma spacing wrong: '${p.word}'"
+            }),
+
+        Scenario("a swipe after punctuation gets its own space",
+            group = "Punctuation",
+            run = {
+                swipe(it, "hel"); settle(); type(it, ". "); settle()
+                swipe(it, "cat"); settle(); type(it, " ")
+            },
+            check = { p ->
+                if (p.words.size == 2 && !p.text.contains("  ")) null
+                else "spacing after punctuation wrong: '${p.text}'"
+            }),
+
+        Scenario("no doubled space between two swiped words",
+            group = "Punctuation",
+            run = {
+                swipe(it, "hel"); settle(); type(it, " "); settle()
+                swipe(it, "cat"); settle(); type(it, " ")
+            },
+            check = { p -> if (!p.text.contains("  ")) null else "doubled space: '${p.text}'" }),
+
+        Scenario("an apostrophe stays inside the word",
+            group = "Punctuation", needsSwipe = false,
+            run = { type(it, "dont", SLOW_TAP_MS); settle(); type(it, " ") },
+            check = { p -> if (p.words.size == 1) null else "word split apart: '${p.word}'" }),
+
+        // --- everyday sentences ----------------------------------------------------------
+
+        Scenario("a mixed tap-and-swipe sentence keeps its word count",
+            group = "Everyday typing",
+            run = {
+                swipe(it, "hel"); settle(); type(it, " "); settle()
+                type(it, "cat", FAST_TAP_MS); settle(); type(it, " "); settle()
+                swipe(it, "dog"); settle(); type(it, " ")
+            },
+            check = { p ->
+                if (p.words.size == 3) null else "expected 3 words, got ${p.words.size}: '${p.word}'"
+            }),
+
+        Scenario("the same word twice produces two words",
+            group = "Everyday typing",
+            run = {
+                swipe(it, "cat"); settle(); type(it, " "); settle()
+                swipe(it, "cat"); settle(); type(it, " ")
+            },
+            check = { p ->
+                if (p.words.size == 2) null else "expected 2 words, got '${p.word}'"
+            }),
+
+        Scenario("a long swipe stays one word",
+            group = "Everyday typing",
+            run = { swipe(it, "keyboard"); settle(); type(it, " ") },
+            check = { p -> if (p.words.size == 1) null else "long swipe split: '${p.word}'" }),
+
+        Scenario("digits are typed verbatim",
+            group = "Everyday typing", needsSwipe = false,
+            run = { type(it, "2024", SLOW_TAP_MS); settle(); type(it, " ") },
+            check = { p -> if (p.lower == "2024") null else "digits mangled: '${p.word}'" }),
+
+        Scenario("backspace after a committed word edits it rather than the next one",
+            group = "Everyday typing",
+            run = {
+                swipe(it, "hel"); settle(); type(it, " "); settle()
+                tap(it, Constants.CODE_DELETE); settle()
+                tap(it, Constants.CODE_DELETE); settle()
+            },
+            check = { p ->
+                if (p.words.size <= 1) null else "backspace left two words: '${p.word}'"
+            }),
+
+        Scenario("typing continues cleanly after a backspace mid-sentence",
+            group = "Everyday typing",
+            run = {
+                swipe(it, "hel"); settle(); type(it, " "); settle()
+                swipe(it, "cat"); settle()
+                tap(it, Constants.CODE_DELETE); settle()
+                swipe(it, "dog"); settle(); type(it, " ")
+            },
+            check = { p ->
+                if (p.words.size == 2) null else "expected 2 words, got '${p.word}'"
             })
     )
 
@@ -417,7 +629,13 @@ object TapSwipeScenarios {
         var failed = 0
         var skipped = 0
 
+        var group = ""
         for (s in scenarios()) {
+            if (s.group.isNotEmpty() && s.group != group) {
+                group = s.group
+                sb.appendLine()
+                sb.appendLine("-- " + group)
+            }
             if (s.needsSwipe && !swipeReady) {
                 skipped++
                 sb.appendLine("[SKIP] ${s.name}")
