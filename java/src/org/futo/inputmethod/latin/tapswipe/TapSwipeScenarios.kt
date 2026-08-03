@@ -291,9 +291,40 @@ object TapSwipeScenarios {
                 if (p.words.size == 1) null else "expected one word, got '${p.word}'"
             }),
 
-        Scenario("swipe then tap commits what is shown",
-            run = { swipe(it, "bu"); settle(); type(it, "t") },
-            check = { p -> if (p.lower == "but") null else "expected 'but', got '${p.word}'" }),
+        run {
+            // The original bug: the display read "But", space was pressed, and "By" was committed -
+            // a tap schedules a TYPING suggestion query whose autocorrection wins at commit time.
+            //
+            // The check compares the committed word against what was actually on screen rather than
+            // against a hard-coded "but". Asserting the word made this flaky for a reason that means
+            // nothing: a two-key swipe is a genuinely ambiguous gesture, and one run decoded it as
+            // "By", giving "Byt". That is the decoder choosing a different word, not the commit
+            // path substituting one - which is the only thing this case is about.
+            var shown = ""
+            Scenario("swipe then tap commits what is shown",
+                group = "Word building",
+                run = { ime ->
+                    swipe(ime, "bu"); settle(); tap(ime, 't'.code); settle()
+                    shown = textBeforeCursor(ime).trim()
+                    type(ime, " ")
+                },
+                check = { p ->
+                    val committed = p.words.lastOrNull() ?: ""
+                    when {
+                        shown.isEmpty() -> "nothing was composed to compare against"
+                        committed.equals(shown, ignoreCase = false) -> null
+                        else -> "displayed '$shown' but committed '$committed'"
+                    }
+                })
+        },
+
+        Scenario("a tapped tail extends the swiped word rather than replacing it",
+            group = "Word building",
+            run = { swipe(it, "bu"); settle(); tap(it, 't'.code); settle() },
+            check = { p ->
+                // Whatever the decoder picks, the tap must lengthen the word, not restart it.
+                if (p.word.length >= 3) null else "tap did not extend the word: '${p.word}'"
+            }),
 
         Scenario("tap then swipe keeps the tapped prefix",
             run = { type(it, "s"); settle(); swipe(it, "hawn") },
@@ -552,16 +583,19 @@ object TapSwipeScenarios {
             var trace = ""
             Scenario("manual shift capitalises exactly one letter",
                 group = "Auto-capitalisation", needsSwipe = false,
+                // "cat", not "abc": ABC is a dictionary entry, so autocorrect uppercased the
+                // whole word and the case looked like stuck shift when shift was fine. The trace
+                // is what showed it - the layout returned to base right after the first letter.
                 run = { ime ->
                     type(ime, "hi", FAST_TAP_MS); settle(); type(ime, " "); settle()
                     trace = "beforeShift=" + shiftLabel(ime)
                     shift(ime); delay(FAST_TAP_MS)
                     trace += " afterShift=" + shiftLabel(ime)
+                    tap(ime, 'c'.code); delay(FAST_TAP_MS)
+                    trace += " afterC=" + shiftLabel(ime)
                     tap(ime, 'a'.code); delay(FAST_TAP_MS)
                     trace += " afterA=" + shiftLabel(ime)
-                    tap(ime, 'b'.code); delay(FAST_TAP_MS)
-                    trace += " afterB=" + shiftLabel(ime)
-                    tap(ime, 'c'.code); settle(); type(ime, " ")
+                    tap(ime, 't'.code); settle(); type(ime, " ")
                 },
                 check = { p ->
                     val w = p.words.lastOrNull() ?: ""
@@ -578,7 +612,7 @@ object TapSwipeScenarios {
             // fails and this one passes, the unshift works and something is holding auto-caps on.
             run = {
                 type(it, "hi", FAST_TAP_MS); settle(); type(it, ". "); settle()
-                type(it, "abc", FAST_TAP_MS); settle(); type(it, " ")
+                type(it, "cat", FAST_TAP_MS); settle(); type(it, " ")
             },
             check = { p ->
                 val w = p.words.lastOrNull() ?: ""

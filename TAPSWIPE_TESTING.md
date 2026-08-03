@@ -57,6 +57,52 @@ from the test context, and **stock `InputLogicTests` hangs identically**. The ha
 threading model this fork left behind when it moved to coroutines and Compose. Chasing it further
 was not worth it against a runner that exercises the real IME.
 
+## What the runner has actually found
+
+Worth recording, because the pattern is consistent: **most failures so far were the harness lying,
+not the keyboard breaking.** A synthetic driver that skips a layer reports green on everything that
+layer controls.
+
+| Reported as | Actually was |
+|---|---|
+| auto-capitalisation broken | harness sent literal lowercase; real taps send `key.getCode()` from the live keyboard, which is uppercase on a shifted layout |
+| manual shift stuck on (`ABC`) | shift was fine - the trace showed the layout return to base after the first letter. `ABC` is a dictionary entry, so autocorrect uppercased `Abc` |
+| session survived a cursor move | it did not; the check read `getTextBeforeCursor` in a scenario that parks the caret at position 0 |
+| swipe-then-tap committed the wrong word | the decoder picked a different word for an ambiguous two-key swipe. The check was asserting the word instead of the invariant |
+| word lost on swipe/space/swipe | real, but the window is under 50ms - see below |
+
+Three fidelity rules the harness has to keep, each learned by getting it wrong:
+
+1. **Resolve the code from the live keyboard, not from the character asked for.** A shifted layout
+   carries uppercase codes, so this is the only way capitalisation is exercised at all.
+2. **Send press, code, release.** The shift state machine lives entirely in `onPressKey` /
+   `onReleaseKey`; `KeyboardState.onEvent` ignores `CODE_SHIFT`. Capture the code *before* the
+   press, as `PointerTracker` does, since the press can flip the layout.
+3. **Send coordinates only where the real path does.** `PointerTracker` passes `NOT_A_COORDINATE`
+   unless the key has proximity correction, and `onCodeInput` subtracts the view padding - so raw
+   key centres land offset, and functional keys otherwise carry a spurious position into the
+   session.
+
+And one rule for the assertions: **assert the invariant, not the decoder's output.** The models are
+non-deterministic and short gestures are genuinely ambiguous. "The committed word equals what was
+displayed" is the property the but/by bug violated; "the committed word is `but`" is a test of the
+decoder's taste, and it flakes.
+
+## Known limitation: the swipe/space decode race
+
+Hitting space within ~50ms of finishing a swipe loses the word. The decode runs on a background
+thread; space reaches the main thread first, `onUpdateTailBatchInputCompleted` finds the session
+closed and drops the result, and since nothing had been composed yet the word never reaches the
+editor at all.
+
+Measured with a ladder at 0/50/100/200/350ms: lost at 0ms, safe from 50ms up. A thumb needs 150ms+
+just to travel to the space bar, so no finger can reach it. The fix would be holding separators
+until the decode lands - new state in the path that produced the ButBy and but/by regressions - and
+that is not a trade worth making for a window nobody can hit.
+
+The ladder still runs and reports `KNOWN` rather than `FAIL`. If the 50ms rung ever fails, decoding
+got slower and this judgement needs revisiting.
+
 ## Scenario matrix
 
 Each row is a bug that shipped, or an edge case identified while tracing. Until the instrumented
