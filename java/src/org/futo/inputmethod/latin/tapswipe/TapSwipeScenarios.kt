@@ -37,6 +37,9 @@ object TapSwipeScenarios {
     /** Comfortably below it. */
     private const val FAST_TAP_MS = 60L
 
+    /** Gaps to probe the swipe/space decode race at, shortest first. */
+    private val SPACE_RACE_GAPS = listOf(0L, 50L, 100L, 200L, 350L)
+
     private const val STEPS_PER_LEG = 6
     private const val MS_PER_STEP = 16
 
@@ -148,6 +151,17 @@ object TapSwipeScenarios {
         ime.currentInputConnection?.getTextBeforeCursor(200, 0)?.toString() ?: ""
     }
 
+    /**
+     * The whole field, not just what precedes the caret. A scenario that moves the cursor leaves
+     * most of the text *after* it, so asserting on [textBeforeCursor] alone would read as data loss
+     * when nothing was lost.
+     */
+    private suspend fun wholeField(ime: LatinIME): String = onMain {
+        val ic = ime.currentInputConnection ?: return@onMain ""
+        (ic.getTextBeforeCursor(500, 0)?.toString() ?: "") +
+                (ic.getTextAfterCursor(500, 0)?.toString() ?: "")
+    }
+
     /** Moves the caret, which must drop any open session. */
     private suspend fun moveCursorToStart(ime: LatinIME) = onMain {
         ime.currentInputConnection?.setSelection(0, 0)
@@ -173,7 +187,7 @@ object TapSwipeScenarios {
     // ---------------------------------------------------------------- the scenarios
 
     /** What a scenario gets to assert on: the editor's text plus the mode the word ended in. */
-    private class Probe(val text: String, val mode: TapSwipeMode) {
+    private class Probe(val text: String, val full: String, val mode: TapSwipeMode) {
         val word: String get() = text.trim()
         val lower: String get() = word.lowercase()
         val words: List<String> get() = word.split(Regex("\\s+")).filter { it.isNotEmpty() }
@@ -335,13 +349,18 @@ object TapSwipeScenarios {
                 else "second word grew from the first: '${p.word}'"
             }),
 
-        Scenario("rapid swipe, space, swipe produces two words",
-            run = {
-                swipe(it, "hel"); type(it, " "); swipe(it, "cat")   // no settle: races the decode
-            },
-            check = { p ->
-                if (p.words.size == 2) null else "expected two words, got '${p.word}'"
-            }),
+        // A ladder rather than one case. Hitting space before the decode lands loses the word
+        // outright, so what matters is not "does it fail" but *how much slack* a finger has. The
+        // first gap that passes is the real-world exposure window; below it the word vanishes.
+        *SPACE_RACE_GAPS.map { gap ->
+            Scenario("swipe, space, swipe survives a ${gap}ms gap",
+                run = {
+                    swipe(it, "hel"); delay(gap); type(it, " "); delay(gap); swipe(it, "cat")
+                },
+                check = { p ->
+                    if (p.words.size == 2) null else "word lost to the decode race: '${p.word}'"
+                })
+        }.toTypedArray(),
 
         Scenario("moving the cursor mid-word drops the session",
             run = {
@@ -351,8 +370,12 @@ object TapSwipeScenarios {
                 swipe(it, "dog")
             },
             check = { p ->
-                // The second word must be intact; the new stroke must not have rewritten it.
-                if (p.words.size >= 2) null else "session survived a cursor move: '${p.word}'"
+                // Reads the whole field: the caret is at the start, so everything the earlier
+                // strokes produced sits *after* it. What matters is that the new stroke composed a
+                // fresh word instead of rewriting the one the closed session had anchored.
+                val words = p.full.trim().split(Regex("\\s+")).filter { w -> w.isNotEmpty() }
+                if (words.size >= 3) null
+                else "session survived a cursor move, field is '${p.full.trim()}'"
             }),
 
         Scenario("a word never grows past the stroke cap",
@@ -405,7 +428,7 @@ object TapSwipeScenarios {
                 clearField(ime)
                 s.run(ime)
                 settle(SETTLE_MS + 100)
-                s.check(Probe(textBeforeCursor(ime), TapSwipeUiState.mode))
+                s.check(Probe(textBeforeCursor(ime), wholeField(ime), TapSwipeUiState.mode))
             } catch (e: Throwable) {
                 "threw: $e"
             }
