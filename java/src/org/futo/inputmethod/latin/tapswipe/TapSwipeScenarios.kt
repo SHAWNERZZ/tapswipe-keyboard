@@ -268,6 +268,19 @@ object TapSwipeScenarios {
 
     private fun capitalised(w: String) = w.isNotEmpty() && w[0].isUpperCase()
 
+    /**
+     * Shift state plus the auto-caps mode driving it.
+     *
+     * These two together say which branch of `KeyboardState.updateAlphabetShiftState` ran: it
+     * re-shifts whenever auto-caps is anything but OFF, and only unshifts when it is OFF. Reading
+     * the resulting text alone cannot tell "the unshift never fired" from "it fired and auto-caps
+     * immediately shifted again", and those are different bugs.
+     */
+    private fun shiftLabel(ime: LatinIME): String {
+        val shifted = if (keyboardIsShifted()) "SHIFT" else "base"
+        return shifted + "/caps=" + ime.debugAutoCapsState()
+    }
+
     private fun scenarios(): List<Scenario> = listOf(
 
         // --- word building --------------------------------------------------------------
@@ -533,18 +546,44 @@ object TapSwipeScenarios {
                 if (capitalised(w)) null else "swiped sentence start not capitalised: '${p.word}'"
             }),
 
-        Scenario("manual shift capitalises exactly one letter", needsSwipe = false,
+        run {
+            // Traced step by step: the text alone cannot distinguish an unshift that never fired
+            // from one that fired and was immediately undone by auto-caps.
+            var trace = ""
+            Scenario("manual shift capitalises exactly one letter",
+                group = "Auto-capitalisation", needsSwipe = false,
+                run = { ime ->
+                    type(ime, "hi", FAST_TAP_MS); settle(); type(ime, " "); settle()
+                    trace = "beforeShift=" + shiftLabel(ime)
+                    shift(ime); delay(FAST_TAP_MS)
+                    trace += " afterShift=" + shiftLabel(ime)
+                    tap(ime, 'a'.code); delay(FAST_TAP_MS)
+                    trace += " afterA=" + shiftLabel(ime)
+                    tap(ime, 'b'.code); delay(FAST_TAP_MS)
+                    trace += " afterB=" + shiftLabel(ime)
+                    tap(ime, 'c'.code); settle(); type(ime, " ")
+                },
+                check = { p ->
+                    val w = p.words.lastOrNull() ?: ""
+                    when {
+                        !capitalised(w) -> "shift did not capitalise: '$w' [$trace]"
+                        w.drop(1).any { c -> c.isUpperCase() } -> "shift stuck on: '$w' [$trace]"
+                        else -> null
+                    }
+                })
+        },
+
+        Scenario("shift releases after one letter at a sentence start", needsSwipe = false,
+            // Same mechanism, but where auto-caps would shift anyway. If the traced case above
+            // fails and this one passes, the unshift works and something is holding auto-caps on.
             run = {
-                type(it, "hi", FAST_TAP_MS); settle(); type(it, " "); settle()
-                shift(it); type(it, "abc", FAST_TAP_MS); settle(); type(it, " ")
+                type(it, "hi", FAST_TAP_MS); settle(); type(it, ". "); settle()
+                type(it, "abc", FAST_TAP_MS); settle(); type(it, " ")
             },
             check = { p ->
                 val w = p.words.lastOrNull() ?: ""
-                when {
-                    !capitalised(w) -> "shift did not capitalise: '$w'"
-                    w.drop(1).any { c -> c.isUpperCase() } -> "shift stuck on: '$w'"
-                    else -> null
-                }
+                if (!w.drop(1).any { c -> c.isUpperCase() }) null
+                else "auto-shift stuck on: '$w'"
             }),
 
         // --- punctuation and spacing -----------------------------------------------------

@@ -201,6 +201,15 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         this as LatinIMELegacy.SuggestionStripController,
     )
 
+    /**
+     * The auto-caps mode the shift machinery is currently seeing, for the scenario runner.
+     *
+     * `getCurrentAutoCapsState` is package-private on [LatinIMELegacy], and the diagnosis of a
+     * shift bug turns on this value: `KeyboardState.updateAlphabetShiftState` re-shifts instead of
+     * unshifting whenever it is anything but `CAP_MODE_OFF`.
+     */
+    fun debugAutoCapsState(): Int = latinIMELegacy.currentAutoCapsState
+
     val uixManager = UixManager(this)
 
     val sizingCalculator = KeyboardSizingCalculator(this, uixManager)
