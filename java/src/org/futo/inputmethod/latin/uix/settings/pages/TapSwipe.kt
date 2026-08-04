@@ -15,6 +15,7 @@ import org.futo.inputmethod.latin.SwipeSensitivitySetting
 import org.futo.inputmethod.latin.TapSwipeLegacyTapRunSetting
 import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
+import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
 import org.futo.inputmethod.latin.TapSwipeWholeWordBackspaceSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
@@ -80,6 +81,14 @@ val TapSwipeMenu = UserSettingsMenu(
                 steps = 14
             )
         },
+
+        // Tuning, but a toggle rather than a slider, so it sits with the other toggles.
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_real_tap_position,
+            subtitle = R.string.tapswipe_settings_real_tap_position_subtitle,
+            setting = TapSwipeRealTapPositionSetting,
+            icon = { Icon(painterResource(R.drawable.circle), contentDescription = null) }
+        ).copy(visibilityCheck = tapSwipeEnabled),
 
         userSettingToggleDataStore(
             title = R.string.tapswipe_settings_whole_word_backspace,

@@ -117,6 +117,28 @@ object TapSwipeScenarios {
         }
     }
 
+    /**
+     * Taps a fraction of the way across the key rather than dead centre, to exercise the real-tap
+     * position path. (0.5, 0.5) is the centre; (0.15, 0.5) is near the left edge.
+     */
+    private suspend fun tapOffCentre(ime: LatinIME, cp: Int, fracX: Float, fracY: Float) {
+        val key = findKey(cp) ?: return
+        val code = key.code
+        onMain {
+            val view = KeyboardSwitcher.getInstance().mainKeyboardView
+            val dx = view?.getKeyX(0) ?: 0
+            val dy = view?.getKeyY(0) ?: 0
+            ime.latinIMELegacy.onPressKey(code, 0, true)
+            ime.latinIMELegacy.onCodeInput(
+                code,
+                key.x + (key.width * fracX).toInt() - dx,
+                key.y + (key.height * fracY).toInt() - dy,
+                false
+            )
+            ime.latinIMELegacy.onReleaseKey(code, false)
+        }
+    }
+
     /** Types [s] at the given inter-tap gap, which is what decides peck vs fluent typing. */
     private suspend fun type(ime: LatinIME, s: String, gapMs: Long = FAST_TAP_MS) {
         for (c in s) {
@@ -317,6 +339,29 @@ object TapSwipeScenarios {
                     }
                 })
         },
+
+        Scenario("an off-centre tapped tail still extends the word",
+            group = "Word building",
+            // Exercises the real-tap-position path: the tap lands near the edge of the key rather
+            // than its centre, so the position fed to the decoder is one the key-centre lookup
+            // could never have produced.
+            run = { swipe(it, "bu"); settle(); tapOffCentre(it, 't'.code, 0.2f, 0.5f); settle() },
+            check = { p ->
+                if (p.word.length >= 3) null
+                else "off-centre tap did not extend the word: '${p.word}'"
+            }),
+
+        Scenario("an off-centre pecked word is still committed verbatim",
+            group = "Word building", needsSwipe = false,
+            run = {
+                tapOffCentre(it, 'z'.code, 0.2f, 0.4f); delay(SLOW_TAP_MS)
+                tapOffCentre(it, 'b'.code, 0.8f, 0.6f); delay(SLOW_TAP_MS)
+                tapOffCentre(it, 'q'.code, 0.3f, 0.7f); settle(); type(it, " ")
+            },
+            check = { p ->
+                // Peck words bypass the decoder entirely, so position must not affect them at all.
+                if (p.lower == "zbq") null else "peck word altered by tap position: '${p.word}'"
+            }),
 
         Scenario("a tapped tail extends the swiped word rather than replacing it",
             group = "Word building",

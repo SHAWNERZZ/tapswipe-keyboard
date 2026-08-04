@@ -274,6 +274,25 @@ val TapSwipeWholeWordBackspaceSetting =
     SettingsKey(booleanPreferencesKey("tapswipe_whole_word_backspace"), false)
 
 /**
+ * When on, a tap contributes the position it was actually touched rather than the centre of the key
+ * it resolved to.
+ *
+ * The decoder is shape-driven, so where within a key you land is real evidence: reaching short of
+ * "o" on the way to "p" is different from hitting it dead centre, and collapsing both to the centre
+ * throws that away. It matters most where taps and swipes fuse into one word, since the swipe
+ * contributes true positions and the taps previously did not - the tap stream was quantised to a
+ * grid while the swipe stream was continuous.
+ *
+ * Safe with respect to coordinate frames: `onCodeInput` coordinates have already been through
+ * `MainKeyboardView.getKeyX/getKeyY`, which subtract the view padding, and `verticalCorrection` is
+ * 0dp - so they land in the same keyboard frame as `getKeyXY`'s key centres and normalize
+ * identically. Falls back to the key centre whenever the coordinates are absent, which
+ * `PointerTracker` does for any key without proximity correction.
+ */
+val TapSwipeRealTapPositionSetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_real_tap_position"), true)
+
+/**
  * Master Mode: letter keys render as dots instead of letters. Named after the equivalent mode in
  * the original Nintype keyboard. Peck mode temporarily reveals the letters again.
  */
@@ -412,6 +431,36 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             val idx = info.letters.indexOf(Character.toLowerCase(codePoint).toChar())
             if (idx < 0 || idx >= info.xs.size || idx >= info.ys.size) return null
             return floatArrayOf(info.xs[idx], info.ys[idx])
+        }
+
+        /**
+         * Normalized `[x, y]` of an actual touch, or null if the layout is not ready or the
+         * coordinates are absent.
+         *
+         * Takes raw coordinates in the *keyboard* frame - which is what reaches
+         * `InputLogic.onCodeInput` after `getKeyX`/`getKeyY` strip the view padding - and puts them
+         * through the same normalizers the gesture path uses, so a tap and a swipe point at the
+         * same pixel produce the same model-space position.
+         */
+        @JvmStatic
+        fun normalizedTapPosition(rawX: Int, rawY: Int): FloatArray? {
+            if (rawX < 0 || rawY < 0) return null   // Constants.NOT_A_COORDINATE
+            val n = currentNormalizers() ?: return null
+            return floatArrayOf(n.x(rawX.toFloat()), n.y(rawY.toFloat()))
+        }
+
+        /**
+         * Pixel padding between the view frame the gesture path records in and the keyboard frame
+         * everything else uses. Non-zero means swipe points sit offset from the key centres the
+         * model was calibrated against. Debug readout only.
+         */
+        @JvmStatic
+        fun debugFrameOffset(): IntArray {
+            val kb = prevKeyboard ?: return intArrayOf(-1, -1, -1, -1)
+            return intArrayOf(
+                kb.mPadding.left, kb.mPadding.top, kb.mBaseWidth,
+                kb.mBaseHeight - kb.mPadding.bottom
+            )
         }
 
         /** The keyboard the decoder is currently configured for; used by the scenario runner. */

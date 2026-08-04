@@ -364,6 +364,23 @@ val MemoryDebugAction = Action(
                         }
                     }
 
+                    Text("Coordinate frames", style = DebugTitle)
+                    run {
+                        // Gesture points are recorded raw from MotionEvent (view frame); tap
+                        // coordinates and key centres are in the keyboard frame. A non-zero padding
+                        // here means the swipe stream sits offset from the key centres the model was
+                        // calibrated against - worth knowing before trusting swipe positions.
+                        val f = SwipeDecoderDictionary.debugFrameOffset()
+                        Text("view->keyboard padding = ${f[0]}px left, ${f[1]}px top", style = DebugLabel)
+                        Text("base size            = ${f[2]} x ${f[3]}", style = DebugLabel)
+                        if (f[2] > 0 && (f[0] != 0 || f[1] != 0)) {
+                            val fx = f[0].toFloat() / f[2]
+                            Text("swipe x offset       = ${"%.4f".format(fx)} of width", style = DebugLabel)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Text("Swipe Info", style = DebugTitle)
                     SwipeDecoderDictionary.appliedLayoutInfo.let { layout ->
                         if(useDataStoreValue(LegacySwipeSetting) == true) {

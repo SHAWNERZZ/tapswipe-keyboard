@@ -556,8 +556,19 @@ public final class InputLogic {
      * word and get decoded together with it. That is what makes "tap H, tap E, tap L, swipe L to
      * O" resolve to "hello".
      */
-    private void absorbTapIntoTapSwipeSession(final int codePoint) {
-        final float[] pos = SwipeDecoderDictionary.normalizedKeyPosition(codePoint);
+    private void absorbTapIntoTapSwipeSession(final int codePoint, final int rawX, final int rawY) {
+        // Where the finger actually landed, when we have it and the preference is on. The decoder
+        // reads shape, so an off-centre tap is evidence rather than noise - and it puts the tap
+        // stream in the same continuous space as the swipe stream they fuse with, instead of
+        // quantising taps to key centres while swipes stay continuous.
+        float[] pos = null;
+        if (DataStoreHelper.getSetting(
+                SwipeDecoderDictionaryKt.getTapSwipeRealTapPositionSetting())) {
+            pos = SwipeDecoderDictionary.normalizedTapPosition(rawX, rawY);
+        }
+        // Fall back to the key centre: PointerTracker reports NOT_A_COORDINATE for any key without
+        // proximity correction, and the layout may not be applied yet.
+        if (pos == null) pos = SwipeDecoderDictionary.normalizedKeyPosition(codePoint);
         if (pos == null) return; // not a letter on this layout; nothing decodable to record
 
         // uptimeMillis, not currentTimeMillis: gesture segment times derive from
@@ -1688,7 +1699,7 @@ public final class InputLogic {
                 final long tapNowMs = SystemClock.uptimeMillis();
                 mTapSwipeSession.noteTapTime(tapNowMs);
                 noteTapForLegacyRun(tapNowMs);
-                absorbTapIntoTapSwipeSession(codePoint);
+                absorbTapIntoTapSwipeSession(codePoint, event.mX, event.mY);
                 // Outside absorbTap deliberately: that method bails out for a code point the
                 // layout can't place, but the word still grew, so peck state must be re-evaluated
                 // regardless of whether the tap became decodable evidence.
