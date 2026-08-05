@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
+import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner
 import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
@@ -123,10 +124,30 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
             fontFamily = FontFamily.Monospace
         )
 
+        // Why words were turned away. Strict gates and broken gates look identical from a sample
+        // count of zero; this says which one it is.
+        Text(
+            TapSwipeLearner.Counters.summary(),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (TapSwipeLearner.Counters.lastRejectedWord.isNotEmpty()) {
+            Text(
+                "last rejected '${TapSwipeLearner.Counters.lastRejectedWord}'  " +
+                    "last margin ${"%.2f".format(TapSwipeLearner.Counters.lastMarginSeen)}",
+                modifier = Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         if (stats.isEmpty()) {
             Text(
                 "Nothing learned yet. Turn on \"Adaptive key geometry\" in TapSwipe settings and " +
-                    "swipe some words - only confident, single-stroke swipes count.",
+                    "swipe some words - only confident swipes with no overlapping strokes count.",
                 modifier = Modifier.padding(16.dp),
                 style = MaterialTheme.typography.bodyMedium
             )

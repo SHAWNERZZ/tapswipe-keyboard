@@ -54,6 +54,40 @@ object TapSwipeLearner {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /**
+     * Why words were turned away, since the last app start.
+     *
+     * The gates are deliberately strict, and strict gates are indistinguishable from broken ones
+     * when all you can see is that nothing was learned. These say which gate is doing it - in
+     * particular whether [MIN_MARGIN], which is a guess, is rejecting nearly everything.
+     */
+    object Counters {
+        @Volatile @JvmStatic var accepted = 0
+        @Volatile @JvmStatic var samples = 0
+        @Volatile @JvmStatic var tooShort = 0
+        @Volatile @JvmStatic var noSwipe = 0
+        @Volatile @JvmStatic var concurrent = 0
+        @Volatile @JvmStatic var wordMismatch = 0
+        @Volatile @JvmStatic var lowMargin = 0
+        @Volatile @JvmStatic var notAligned = 0
+        @Volatile @JvmStatic var implausible = 0
+        @Volatile @JvmStatic var lastRejectedWord = ""
+        @Volatile @JvmStatic var lastMarginSeen = 0f
+
+        @JvmStatic
+        fun summary(): String =
+            "accepted=$accepted (samples=$samples)  short=$tooShort  noSwipe=$noSwipe  " +
+            "concurrent=$concurrent  mismatch=$wordMismatch  lowMargin=$lowMargin  " +
+            "unaligned=$notAligned  implausible=$implausible"
+
+        @JvmStatic
+        fun reset() {
+            accepted = 0; samples = 0; tooShort = 0; noSwipe = 0; concurrent = 0
+            wordMismatch = 0; lowMargin = 0; notAligned = 0; implausible = 0
+            lastRejectedWord = ""; lastMarginSeen = 0f
+        }
+    }
+
     /** Save is debounced by sample count rather than time - writes are tiny and infrequent anyway. */
     private const val SAVE_EVERY_N_SAMPLES = 12
     private var samplesSinceSave = 0
@@ -71,12 +105,12 @@ object TapSwipeLearner {
         if (!isEnabled()) return
 
         val word = committedWord.trim()
-        if (word.length < MIN_WORD_LENGTH) return
+        if (word.length < MIN_WORD_LENGTH) { Counters.tooShort++; return }
 
         val strokes = session.strokes
         if (strokes.isEmpty()) return
         // A pure-tap word is peck-adjacent; the value here is in sloppy swiping.
-        if (strokes.none { it.kind == TapSwipeSession.Kind.SWIPE }) return
+        if (strokes.none { it.kind == TapSwipeSession.Kind.SWIPE }) { Counters.noSwipe++; return }
 
         val inputs = strokes
             .filter { !it.isEmpty }
@@ -88,6 +122,7 @@ object TapSwipeLearner {
         // Two thumbs at once: the decoder resolves their interleaving by lexicon, not by time, so
         // "time order equals letter order" - the premise the alignment rests on - does not hold.
         if (TapSwipeStrokeAligner.overlapsInTime(inputs)) {
+            Counters.concurrent++
             if (DEBUG) Log.d(TAG, "skipping '$word': concurrent strokes")
             return
         }
@@ -95,8 +130,20 @@ object TapSwipeLearner {
         // The decoder must have been confident, and about *this* word - a mismatch means the
         // committed text came from somewhere else (autocorrect, a picked suggestion) and the
         // margin we captured describes a different candidate.
-        if (!SwipeDecoderDictionary.lastDecodeWord.equals(word, ignoreCase = true)) return
-        if (SwipeDecoderDictionary.lastDecodeMargin < MIN_MARGIN) return
+        Counters.lastMarginSeen = SwipeDecoderDictionary.lastDecodeMargin
+        if (!SwipeDecoderDictionary.lastDecodeWord.equals(word, ignoreCase = true)) {
+            Counters.wordMismatch++
+            if (DEBUG) Log.d(TAG, "skipping '$word': decode was " +
+                "'${SwipeDecoderDictionary.lastDecodeWord}'")
+            return
+        }
+        if (SwipeDecoderDictionary.lastDecodeMargin < MIN_MARGIN) {
+            Counters.lowMargin++
+            Counters.lastRejectedWord = word
+            if (DEBUG) Log.d(TAG, "skipping '$word': margin " +
+                "${SwipeDecoderDictionary.lastDecodeMargin} < $MIN_MARGIN")
+            return
+        }
 
         val layoutKey = SwipeDecoderDictionary.currentTouchModelLayoutKey() ?: return
         val extent = SwipeDecoderDictionary.normalizedKeyHalfExtent() ?: return
@@ -114,8 +161,14 @@ object TapSwipeLearner {
         val keepTaps = DataStoreHelper.getSetting(TapSwipeRealTapPositionSetting)
         val attributions = if (keepTaps) aligned else aligned.filter { !it.fromTap }
 
-        if (attributions.isEmpty()) return
+        if (attributions.isEmpty()) {
+            Counters.notAligned++
+            Counters.lastRejectedWord = word
+            return
+        }
         if (!TapSwipeStrokeAligner.isPlausible(attributions, extent[0], extent[1])) {
+            Counters.implausible++
+            Counters.lastRejectedWord = word
             if (DEBUG) Log.d(TAG, "rejected implausible alignment for '$word'")
             return
         }
@@ -124,6 +177,8 @@ object TapSwipeLearner {
         for (a in attributions) {
             TapSwipeTouchModel.record(layoutKey, a.codePoint, a.dx, a.dy, a.weight, now)
         }
+        Counters.accepted++
+        Counters.samples += attributions.size
 
         if (DEBUG) {
             Log.d(TAG, "learned from '$word': " + attributions.joinToString {

@@ -785,8 +785,15 @@ object TapSwipeScenarios {
     )
 
     /**
-     * Writes a deliberately large offset for one key, reloads the layout, and checks the decode
-     * moves. Restores the model afterwards so a diagnostic never leaves learned state behind.
+     * Verifies that a learned shift actually reaches the decoder.
+     *
+     * The check is on the key positions installed into `setMode` - the encoder's `layout_keys`
+     * input - rather than on whether some word decodes differently. Those are different questions:
+     * the shift is capped at a quarter of a key, and a well-separated word can be entirely
+     * unmoved by that while the mechanism works perfectly. Asserting on the word would fail for a
+     * reason that says nothing, which is the trap the first version of this fell into.
+     *
+     * Restores the model afterwards, so a diagnostic never leaves learned state behind.
      */
     private suspend fun probeAdaptiveShift(ime: LatinIME): String {
         if (!DataStoreHelper.getSetting(TapSwipeAdaptiveGeometrySetting)) {
@@ -797,38 +804,52 @@ object TapSwipeScenarios {
         val extent = SwipeDecoderDictionary.normalizedKeyHalfExtent()
             ?: return "SKIP: no key extent"
 
-        // Snapshot, so the probe is non-destructive.
         val hadSamples = TapSwipeTouchModel.totalSamples()
+        val probeKey = 'l'.code
 
         clearField(ime)
         swipe(ime, "hel"); settle()
-        val before = textBeforeCursor(ime).trim()
+        val wordBefore = textBeforeCursor(ime).trim()
+        val installedBefore = SwipeDecoderDictionary.debugInstalledShift(probeKey)
 
-        // Enough weight to clear the confidence ramp outright, and a shift at the cap.
+        // Far past the cap and perfectly consistent, so only the cap can limit it.
         val shove = extent[0] * 2f * TapSwipeTouchModel.MAX_SHIFT_FRACTION * 4f
         val now = System.currentTimeMillis()
-        repeat(40) {
-            TapSwipeTouchModel.record(layoutKey, 'l'.code, shove, 0f, 1f, now)
-        }
+        repeat(40) { TapSwipeTouchModel.record(layoutKey, probeKey, shove, 0f, 1f, now) }
+
+        // Read the model's own verdict before touching anything else.
+        val modelShift = TapSwipeTouchModel.shiftFor(layoutKey, probeKey, extent[0], extent[1], now)
+
         onMain<Unit> { DictionaryFacilitatorImpl.swipeDecoderDictionary?.debugReinstallLayout() }
         settle(300)
+        val installedAfter = SwipeDecoderDictionary.debugInstalledShift(probeKey)
 
         clearField(ime)
         swipe(ime, "hel"); settle()
-        val after = textBeforeCursor(ime).trim()
+        val wordAfter = textBeforeCursor(ime).trim()
 
-        // Undo the probe regardless of outcome.
+        // Restore, whatever happened above.
         TapSwipeTouchModel.reset()
         onMain<Unit> { DictionaryFacilitatorImpl.swipeDecoderDictionary?.debugReinstallLayout() }
         settle(200)
         clearField(ime)
 
-        val applied = TapSwipeTouchModel.shiftFor(layoutKey, 'l'.code, extent[0], extent[1], now)
+        val decodeNote = if (wordBefore == wordAfter)
+            "decode unchanged ('$wordBefore') - expected for a capped shift"
+        else "decode moved '$wordBefore' -> '$wordAfter'"
+
         return when {
-            before.isEmpty() && after.isEmpty() -> "decoder produced nothing either way"
-            before != after -> "OK: '$before' -> '$after' (had $hadSamples samples)"
-            else -> "shift did not change the decode: still '$before'" +
-                    " (applied=" + (applied?.let { "%.4f".format(it[0]) } ?: "null") + ")"
+            modelShift == null ->
+                "model produced no shift from 40 consistent samples (had $hadSamples before)"
+            installedAfter == null ->
+                "no positions were installed - setMode was never reached"
+            kotlin.math.abs(installedAfter[0]) < 1e-6f ->
+                "model shift was ${"%.5f".format(modelShift[0])} but installed position moved " +
+                    "${"%.5f".format(installedAfter[0])} - the shift is not reaching layout_keys"
+            else ->
+                "OK: installed shift ${"%.5f".format(installedAfter[0])} " +
+                    "(model ${"%.5f".format(modelShift[0])}, " +
+                    "before ${"%.5f".format(installedBefore?.get(0) ?: 0f)}); $decodeNote"
         }
     }
 

@@ -525,6 +525,37 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         var lastDecodeMargin: Float = 0f
             private set
 
+        /**
+         * The key positions most recently handed to `setMode`, i.e. what the encoder's `layout_keys`
+         * tensor actually holds.
+         *
+         * Kept so the mechanism can be checked directly. Asserting on a decoded *word* instead
+         * conflates two questions - whether the shift reaches the model, and whether a shift that
+         * size is enough to change the answer - and the second can honestly be "no" while the
+         * feature works perfectly.
+         */
+        @Volatile
+        @JvmStatic
+        var lastAppliedCx: FloatArray? = null
+            private set
+
+        @Volatile
+        @JvmStatic
+        var lastAppliedCy: FloatArray? = null
+            private set
+
+        /** How far a letter's installed position sits from its nominal one, or null if unknown. */
+        @JvmStatic
+        fun debugInstalledShift(codePoint: Int): FloatArray? {
+            val info = appliedLayoutInfo
+            val cx = lastAppliedCx ?: return null
+            val cy = lastAppliedCy ?: return null
+            val idx = info.letters.indexOf(Character.toLowerCase(codePoint).toChar())
+            if (idx < 0 || idx >= cx.size || idx >= cy.size) return null
+            if (idx >= info.xs.size || idx >= info.ys.size) return null
+            return floatArrayOf(cx[idx] - info.xs[idx], cy[idx] - info.ys[idx])
+        }
+
         @JvmStatic
         fun noteDecodeOutcome(word: String, margin: Float) {
             lastDecodeWord = word
@@ -915,6 +946,8 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
                     lmModelPath=getFilePath(context, pend.layout.lm),
                     lmVocabPath=getFilePath(context, vocabFor(pend.layout.lm))
                 )
+                lastAppliedCx = adapted?.first ?: baseX
+                lastAppliedCy = adapted?.second ?: baseY
                 appliedScoring.value = d.scoring
                 appliedLayoutInfo = pend.layout
                 appliedTries = pend.tries.toLongArray()
