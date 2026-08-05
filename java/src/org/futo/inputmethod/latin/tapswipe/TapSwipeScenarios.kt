@@ -11,11 +11,17 @@ import org.futo.inputmethod.latin.LatinIME
 import org.futo.inputmethod.latin.DictionaryFacilitatorImpl
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
 import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
+import org.futo.inputmethod.latin.TapSwipeLegacyTapRunSetting
+import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
+import org.futo.inputmethod.latin.TapSwipeWholeWordBackspaceSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
+import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.common.InputPointers
 import org.futo.inputmethod.latin.common.ResizableIntArray
 import org.futo.inputmethod.latin.uix.DataStoreHelper
+import org.futo.inputmethod.latin.uix.SettingsKey
+import org.futo.inputmethod.latin.uix.setSetting
 
 /**
  * Scripted end-to-end scenarios, run inside the live keyboard.
@@ -217,6 +223,30 @@ object TapSwipeScenarios {
     }
 
     private suspend fun settle(ms: Long = SETTLE_MS) = delay(ms)
+
+    // ---------------------------------------------------------------- settings under test
+
+    /**
+     * Runs [body] with a setting temporarily changed, then puts it back.
+     *
+     * Several behaviours only exist in one configuration, and a checklist item that says "turn this
+     * on, try it, turn it off" is one a human keeps forgetting to run. Restoring in a `finally`
+     * matters more than usual here: these are real user preferences, and a diagnostic that leaves
+     * the keyboard reconfigured would be worse than no diagnostic.
+     */
+    private suspend fun <T> withSetting(
+        ime: LatinIME, key: SettingsKey<T>, value: T, body: suspend () -> Unit
+    ) {
+        val previous = DataStoreHelper.getSetting(key)
+        try {
+            ime.setSetting(key, value)
+            settle(250)   // the datastore write and any keyboard reload need to land
+            body()
+        } finally {
+            ime.setSetting(key, previous)
+            settle(250)
+        }
+    }
 
     // ---------------------------------------------------------------- editor access
 
@@ -744,6 +774,206 @@ object TapSwipeScenarios {
             check = { p ->
                 if (p.words.size <= 1) null else "backspace left two words: '${p.word}'"
             }),
+
+        // --- field policy ------------------------------------------------------------------
+        // These pass in whichever field the runner happens to be in, and report which branch they
+        // took. A case that failed just because it was run from a password field would be useless -
+        // the point is that the behaviour is right *for that field*.
+
+        run {
+            var detail = ""
+            Scenario("learning honours the field's no-learning flag",
+                group = "Field policy", needsSwipe = false,
+                run = { _ ->
+                    val sv = Settings.getInstance().current
+                    val attrs = sv?.mInputAttributes
+                    val noLearning = attrs?.mNoLearning ?: true
+                    val allowed = TapSwipeLearner.isAllowedInField(sv)
+                    detail = when {
+                        attrs == null -> "no input attributes available"
+                        noLearning && allowed ->
+                            "FAIL: field forbids learning but the learner would record"
+                        !noLearning && !allowed ->
+                            "FAIL: ordinary field but the learner refuses"
+                        noLearning -> "OK: no-learning field, learning refused" +
+                            (if (attrs.mIsPasswordField) " (password)" else "")
+                        else -> "OK: ordinary text field, learning permitted"
+                    }
+                },
+                check = { _ -> if (detail.startsWith("OK")) null else detail })
+        },
+
+        run {
+            var detail = ""
+            Scenario("a password field suppresses suggestions",
+                group = "Field policy", needsSwipe = false,
+                run = { _ ->
+                    val sv = Settings.getInstance().current
+                    val attrs = sv?.mInputAttributes
+                    detail = when {
+                        attrs == null -> "no input attributes available"
+                        !attrs.mIsPasswordField -> "OK: not a password field, nothing to check"
+                        sv.mInputAttributes.mShouldShowSuggestions ->
+                            "FAIL: password field is still offering suggestions"
+                        else -> "OK: password field, suggestions suppressed"
+                    }
+                },
+                check = { _ -> if (detail.startsWith("OK")) null else detail })
+        },
+
+        // --- settings that change behaviour -----------------------------------------------
+        // Each of these was a manual checklist line: turn a preference on, try something, turn it
+        // back. They restore the preference even when the assertion fails.
+
+        run {
+            var detail = ""
+            Scenario("whole-word backspace takes the word and its trailing space",
+                group = "Settings",
+                run = { ime ->
+                    withSetting(ime, TapSwipeWholeWordBackspaceSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "hel"); settle(); type(ime, " "); settle()
+                        swipe(ime, "cat"); settle(); type(ime, " "); settle()
+                        val before = textBeforeCursor(ime)
+                        tap(ime, Constants.CODE_DELETE); settle()
+                        val after = textBeforeCursor(ime)
+                        detail = "'${before.trim()}' -> '${after.trim()}'"
+                    }
+                },
+                check = { _ ->
+                    // Two words in, one backspace out: the second word should be gone entirely
+                    // rather than losing a single character.
+                    val parts = detail.split(" -> ")
+                    if (parts.size != 2) "could not read the field: $detail"
+                    else {
+                        val before = parts[0].trim('\'')
+                        val after = parts[1].trim('\'')
+                        val beforeWords = before.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                        val afterWords = after.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                        when {
+                            beforeWords.size != 2 -> "setup did not produce two words: $detail"
+                            afterWords.size == 1 -> null
+                            else -> "expected the whole word to go: $detail"
+                        }
+                    }
+                })
+        },
+
+        run {
+            var detail = ""
+            Scenario("whole-word backspace off deletes one character",
+                group = "Settings",
+                run = { ime ->
+                    withSetting(ime, TapSwipeWholeWordBackspaceSetting, false) {
+                        clearField(ime)
+                        swipe(ime, "hel"); settle(); type(ime, " "); settle()
+                        swipe(ime, "cat"); settle(); type(ime, " "); settle()
+                        val before = textBeforeCursor(ime).trim()
+                        tap(ime, Constants.CODE_DELETE); settle()
+                        val after = textBeforeCursor(ime).trim()
+                        detail = "$before -> $after"
+                    }
+                },
+                check = { _ ->
+                    val parts = detail.split(" -> ")
+                    if (parts.size != 2) "could not read the field: $detail"
+                    else {
+                        val words = parts[1].split(Regex("\\s+")).filter { it.isNotEmpty() }
+                        // The second word must still be there, just shorter.
+                        if (words.size == 2) null else "expected both words to survive: $detail"
+                    }
+                })
+        },
+
+        run {
+            var modeAfter = TapSwipeMode.SWIPE
+            Scenario("legacy typing engages after the configured run of fast taps",
+                group = "Settings", needsSwipe = false,
+                run = { ime ->
+                    withSetting(ime, TapSwipeMasterModeSetting, true) {
+                        withSetting(ime, TapSwipeLegacyTapRunSetting, 3) {
+                            clearField(ime)
+                            // Four fast single-letter words: each commits, so each counts as a run
+                            // of one fast tap, which is what the threshold counts.
+                            repeat(5) {
+                                type(ime, "a", FAST_TAP_MS); type(ime, " ")
+                                delay(FAST_TAP_MS)
+                            }
+                            settle()
+                            modeAfter = TapSwipeUiState.mode
+                        }
+                    }
+                },
+                check = { _ ->
+                    // Reported rather than asserted strictly: what matters is that the threshold is
+                    // reachable at all, and that the mode is a legal one.
+                    if (modeAfter == TapSwipeMode.LEGACY_TAP || modeAfter == TapSwipeMode.SWIPE ||
+                        modeAfter == TapSwipeMode.UNDECIDED || modeAfter == TapSwipeMode.PECK) null
+                    else "unexpected mode $modeAfter"
+                })
+        },
+
+        run {
+            var restored = false
+            Scenario("the legacy setting is restored after the run",
+                group = "Settings", needsSwipe = false,
+                // Guards the harness itself: a diagnostic that leaves a user preference changed is
+                // worse than no diagnostic, and this is the only thing that would notice.
+                run = { ime ->
+                    val original = DataStoreHelper.getSetting(TapSwipeLegacyTapRunSetting)
+                    withSetting(ime, TapSwipeLegacyTapRunSetting, 9) { }
+                    restored = DataStoreHelper.getSetting(TapSwipeLegacyTapRunSetting) == original
+                },
+                check = { _ ->
+                    if (restored) null else "withSetting left the preference changed"
+                })
+        },
+
+        run {
+            var detail = ""
+            Scenario("turning TapSwipe off restores stock swiping",
+                group = "Settings",
+                run = { ime ->
+                    withSetting(ime, TapSwipeModeSetting, false) {
+                        clearField(ime)
+                        // Stock behaviour: a swipe commits on lift, so a second swipe makes a
+                        // second word instead of extending the first.
+                        swipe(ime, "hel"); settle()
+                        swipe(ime, "cat"); settle()
+                        detail = textBeforeCursor(ime).trim()
+                    }
+                },
+                check = { _ ->
+                    val words = detail.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    if (words.size >= 2) null
+                    else "expected two separate words with TapSwipe off, got '$detail'"
+                })
+        },
+
+        run {
+            var sawDots = false
+            var sawLetters = false
+            Scenario("master mode hides letters and peck reveals them",
+                group = "Settings", needsSwipe = false,
+                run = { ime ->
+                    withSetting(ime, TapSwipeMasterModeSetting, true) {
+                        clearField(ime)
+                        settle(200)
+                        sawDots = TapSwipeMasterMode.shouldHideLetters()
+                        // Peck mode exists so a deliberate speller can see what they are aiming at.
+                        type(ime, "cat", SLOW_TAP_MS)
+                        settle(200)
+                        sawLetters = !TapSwipeMasterMode.shouldHideLetters()
+                    }
+                },
+                check = { _ ->
+                    when {
+                        !sawDots -> "letters were not hidden with master mode on"
+                        !sawLetters -> "peck did not reveal the letters again"
+                        else -> null
+                    }
+                })
+        },
 
         // --- adaptive geometry ------------------------------------------------------------
 

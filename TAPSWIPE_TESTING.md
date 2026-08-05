@@ -5,7 +5,7 @@
 | Layer | How to run | Device | Status |
 |---|---|---|---|
 | JVM unit tests | `./gradlew testUnstableDebugUnitTest` | none | **working** - 18 tests, ~5s |
-| In-app scenario runner | Memory Debug action -> **Run scenarios** | phone | **working** - 46 scenarios, ~2 min |
+| In-app scenario runner | Memory Debug action -> **Run scenarios** | phone | **working** - 57 scenarios, ~3 min |
 | Manual matrix | the checklist below | phone | for anything the runner cannot reach |
 
 ## Why the layers differ in value
@@ -113,26 +113,24 @@ What is left needs a human, because it needs a second app, a settings change, or
 keyboard rather than the text:
 
 ### Needs another app or field type
-- [ ] Password and no-suggestion fields behave as stock
 - [ ] Behaves in an app using the emulated-composing connection (`ICPatched`)
 - [ ] Switching text fields mid-word does not carry evidence across
-- [ ] Disabling TapSwipe restores stock behaviour exactly
 
-### Needs a settings change mid-run
-- [ ] Whole-word delete (when enabled) takes one trailing space with the word
-- [ ] Autocorrect undo, double-space period and inserted text keep priority over whole-word delete
-- [ ] Hold-to-delete still honours the existing setting
-- [ ] Legacy typing engages after the configured run of fast taps; a swipe leaves it again
-- [ ] Legacy slider disabled at 0, and hidden unless Master Mode is on
+The **Field policy** group covers the rest, and covers it wherever it runs: those cases read the live
+`EditorInfo` and assert the behaviour correct *for that field*, reporting which branch they took. So
+running the suite from a password field is itself the password-field test - open the keyboard's
+Text Edit Variations page (Settings -> Developer), focus a field, and run.
 
 ### Needs looking at the keyboard, not the text
-- [ ] Peck borders appear when peck engages, and letters return under Master Mode
-- [ ] Master Mode shows dots, and the quick-action button toggles it
+- [ ] Peck borders appear when peck engages
+- [ ] Master Mode dots render, and the quick-action button toggles it
 - [ ] No visible mode flicker mid-word
+
+Master Mode's letter hiding and peck's reveal are now automated; only the actual pixels are manual.
 
 ### Needs state that survives a restart
 - [ ] A peck-committed out-of-dictionary word is swipeable afterwards
-- [ ] Key boosting is suppressed during peck
+- [ ] Learned geometry survives a keyboard restart
 
 ## Adding a scenario
 

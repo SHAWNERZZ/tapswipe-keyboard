@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
 import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
+import org.futo.inputmethod.latin.settings.SettingsValues
 import org.futo.inputmethod.latin.uix.DataStoreHelper
 
 /**
@@ -71,6 +72,7 @@ object TapSwipeLearner {
         @Volatile @JvmStatic var lowMargin = 0
         @Volatile @JvmStatic var notAligned = 0
         @Volatile @JvmStatic var implausible = 0
+        @Volatile @JvmStatic var blockedByField = 0
         @Volatile @JvmStatic var lastRejectedWord = ""
         @Volatile @JvmStatic var lastMarginSeen = 0f
 
@@ -78,12 +80,13 @@ object TapSwipeLearner {
         fun summary(): String =
             "accepted=$accepted (samples=$samples)  short=$tooShort  noSwipe=$noSwipe  " +
             "concurrent=$concurrent  mismatch=$wordMismatch  lowMargin=$lowMargin  " +
-            "unaligned=$notAligned  implausible=$implausible"
+            "unaligned=$notAligned  implausible=$implausible  noLearnField=$blockedByField"
 
         @JvmStatic
         fun reset() {
             accepted = 0; samples = 0; tooShort = 0; noSwipe = 0; concurrent = 0
             wordMismatch = 0; lowMargin = 0; notAligned = 0; implausible = 0
+            blockedByField = 0
             lastRejectedWord = ""; lastMarginSeen = 0f
         }
     }
@@ -97,12 +100,36 @@ object TapSwipeLearner {
         DataStoreHelper.getSetting(TapSwipeAdaptiveGeometrySetting)
 
     /**
+     * Whether this field permits learning at all.
+     *
+     * `InputAttributes.mNoLearning` is the gate the rest of the keyboard already honours - it covers
+     * password fields, code fields, and any editor that sets
+     * `IME_FLAG_NO_PERSONALIZED_LEARNING`. Touch geometry is content-free, but per-key sample counts
+     * still say which letters someone used, and a feature that quietly ignored the established
+     * no-learning contract would be wrong regardless of how thin the signal is.
+     */
+    @JvmStatic
+    fun isAllowedInField(settingsValues: SettingsValues?): Boolean {
+        val attrs = settingsValues?.mInputAttributes ?: return false
+        return !attrs.mNoLearning
+    }
+
+    /**
      * @param committedWord what actually landed in the editor
      * @param session the session about to be discarded; its strokes are the raw evidence
      */
     @JvmStatic
-    fun onWordFinalized(context: Context, session: TapSwipeSession, committedWord: String) {
+    fun onWordFinalized(
+        context: Context,
+        session: TapSwipeSession,
+        committedWord: String,
+        settingsValues: SettingsValues?
+    ) {
         if (!isEnabled()) return
+        if (!isAllowedInField(settingsValues)) {
+            Counters.blockedByField++
+            return
+        }
 
         val word = committedWord.trim()
         if (word.length < MIN_WORD_LENGTH) { Counters.tooShort++; return }

@@ -493,7 +493,7 @@ public final class InputLogic {
      * Wrapped because it runs on the commit path: learning is a nice-to-have, and nothing about it
      * is worth failing a keystroke over.
      */
-    private void maybeLearnTapSwipeGeometry() {
+    private void maybeLearnTapSwipeGeometry(final SettingsValues settingsValues) {
         if (!TapSwipeLearner.isEnabled()) return;
         try {
             final LastComposedWord last = mLastComposedWord;
@@ -501,7 +501,7 @@ public final class InputLogic {
                     ? last.mCommittedWord.toString() : "";
             if (committed.isEmpty()) return;
             TapSwipeLearner.onWordFinalized(
-                    mImeHelper.getContext(), mTapSwipeSession, committed);
+                    mImeHelper.getContext(), mTapSwipeSession, committed, settingsValues);
         } catch (Throwable t) {
             Log.e(TAG, "tapswipe geometry learning failed", t);
         }
@@ -1822,7 +1822,7 @@ public final class InputLogic {
         if (isTapSwipeMode()) {
             // Learn before discarding: this is the first moment the word is settled, and the last
             // at which the strokes that produced it still exist.
-            maybeLearnTapSwipeGeometry();
+            maybeLearnTapSwipeGeometry(settingsValues);
             resetTapSwipeSession("finalizer: " + StringUtils.newSingleCodePointString(codePoint));
         }
 
