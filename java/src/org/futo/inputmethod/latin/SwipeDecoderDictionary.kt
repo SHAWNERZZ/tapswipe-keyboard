@@ -15,6 +15,7 @@ import org.futo.inputmethod.keyboard.Keyboard
 import org.futo.inputmethod.keyboard.internal.isAlphabet
 import org.futo.inputmethod.latin.common.ComposedData
 import org.futo.inputmethod.latin.common.InputPointers
+import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel
 import org.futo.inputmethod.latin.tapswipe.TapSwipeDecodeInput
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.settings.SettingsValues
@@ -293,6 +294,17 @@ val TapSwipeRealTapPositionSetting =
     SettingsKey(booleanPreferencesKey("tapswipe_real_tap_position"), true)
 
 /**
+ * Adaptive key geometry: feed the decoder key positions shifted toward where this user actually
+ * swipes, instead of the layout's nominal centres.
+ *
+ * Off by default. Unlike the other TapSwipe options this one accumulates state across sessions, so
+ * a bad interaction would follow the user around rather than ending with the current word - it
+ * earns an explicit opt-in.
+ */
+val TapSwipeAdaptiveGeometrySetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_adaptive_geometry"), false)
+
+/**
  * Master Mode: letter keys render as dots instead of letters. Named after the equivalent mode in
  * the original Nintype keyboard. Peck mode temporarily reveals the letters again.
  */
@@ -461,6 +473,62 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
                 kb.mPadding.left, kb.mPadding.top, kb.mBaseWidth,
                 kb.mBaseHeight - kb.mPadding.bottom
             )
+        }
+
+        /**
+         * Half the size of a typical letter key, in normalized layout space.
+         *
+         * The adaptive model expresses caps and scatter limits as fractions of a key, so it needs
+         * to know how big a key *is* in the space its offsets live in. Measured from the applied
+         * layout rather than the raw keyboard so it stays in the model's space even when the
+         * layout transform is not identity.
+         */
+        @JvmStatic
+        fun normalizedKeyHalfExtent(): FloatArray? {
+            val kb = prevKeyboard ?: return null
+            val info = appliedLayoutInfo
+            if (info.letters.isEmpty() || kb.mBaseWidth <= 0) return null
+            val key = kb.sortedKeys.firstOrNull { Character.isLetter(it.code) } ?: return null
+            val w = kb.mBaseWidth.toFloat()
+            val h = (kb.mBaseHeight - kb.mPadding.bottom).toFloat()
+            if (w <= 0f || h <= 0f) return null
+            val halfW = (key.width / w) * info.sx * 0.5f
+            val halfH = (key.height / h) * (4.0f / 3.0f) * info.sy * 0.5f
+            if (halfW <= 0f || halfH <= 0f) return null
+            return floatArrayOf(halfW, halfH)
+        }
+
+        /** Which bucket of learned geometry the current layout and orientation belong to. */
+        @JvmStatic
+        fun currentTouchModelLayoutKey(): String? {
+            val info = appliedLayoutInfo
+            if (info.letters.isEmpty()) return null
+            val kb = prevKeyboard ?: return null
+            val landscape = kb.mBaseWidth > (kb.mBaseHeight - kb.mPadding.bottom)
+            return TapSwipeTouchModel.layoutKey(info.letters, landscape)
+        }
+
+        /**
+         * The most recent decode's winning word and how far clear of the runner-up it was.
+         *
+         * Captured here because the margin exists only inside the decoder call - by the time the
+         * word commits, only the chosen string survives. Learning is gated on it: a word the beam
+         * search barely preferred is not evidence about aim.
+         */
+        @Volatile
+        @JvmStatic
+        var lastDecodeWord: String = ""
+            private set
+
+        @Volatile
+        @JvmStatic
+        var lastDecodeMargin: Float = 0f
+            private set
+
+        @JvmStatic
+        fun noteDecodeOutcome(word: String, margin: Float) {
+            lastDecodeWord = word
+            lastDecodeMargin = margin
         }
 
         /** The keyboard the decoder is currently configured for; used by the scenario runner. */
@@ -776,6 +844,13 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
 
         if (useHighBeam) appliedScoring.value = decoder.scoring
 
+        // Only the high-beam pass asks for more than one candidate, and it is the one that runs at
+        // the end of a stroke - which is exactly the decode a commit will be based on.
+        if (useHighBeam && results.isNotEmpty()) {
+            val margin = if (results.size > 1) results[0].score - results[1].score else Float.MAX_VALUE
+            noteDecodeOutcome(results[0].word, margin)
+        }
+
         if (BuildConfig.DEBUG || System.currentTimeMillis() < debugLogUntil) {
             Log.d("SwipeDecoderDictionary", "tapswipe $input beam=$beamWidth -> " +
                 results.joinToString { "${it.word}(${it.score})" })
@@ -784,16 +859,57 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         return resultsToSuggestions(results)
     }
 
+    /**
+     * Nominal key positions with each key's learned shift added, or null when the feature is off or
+     * there is nothing learned yet.
+     *
+     * Note this reads the extent from [appliedLayoutInfo], which is the *previous* layout at the
+     * moment of a layout change. That is only used for the cap and scatter scale, where a small
+     * discrepancy is harmless, and it self-corrects on the next reload.
+     */
+    private fun adaptPositions(
+        layout: LayoutInfoForModel, baseX: FloatArray, baseY: FloatArray
+    ): Pair<FloatArray, FloatArray>? {
+        if (!DataStoreHelper.getSetting(TapSwipeAdaptiveGeometrySetting)) return null
+        val extent = normalizedKeyHalfExtent() ?: return null
+        val kb = prevKeyboard ?: return null
+        val landscape = kb.mBaseWidth > (kb.mBaseHeight - kb.mPadding.bottom)
+        val key = TapSwipeTouchModel.layoutKey(layout.letters, landscape)
+        val now = System.currentTimeMillis()
+
+        var changed = false
+        val outX = baseX.copyOf()
+        val outY = baseY.copyOf()
+        for (i in layout.letters.indices) {
+            if (i >= outX.size || i >= outY.size) break
+            val shift = TapSwipeTouchModel.shiftFor(
+                key, layout.letters[i].code, extent[0], extent[1], now) ?: continue
+            outX[i] += shift[0]
+            outY[i] += shift[1]
+            changed = true
+        }
+        return if (changed) outX to outY else null
+    }
+
     data class PendingLayoutInfo(val layout: LayoutInfoForModel, val tries: List<Long>)
     private var pendingLayoutInfo: PendingLayoutInfo? = null
     private fun applyPendingLayoutInfo() {
         decoder?.let { d ->
             pendingLayoutInfo?.let { pend ->
                 //Log.d("SwipeDecoderDictionary", "Applying layout info: $pend")
+                // Personalized key positions, when the user has opted in. This is the whole point
+                // of the adaptive model: `cx`/`cy` become the encoder's `layout_keys` input, so
+                // shifting them here is how the decoder learns where this person actually types.
+                // Applied at layout-install time rather than per keystroke - learning is slow, and
+                // setMode reloads the decoder.
+                val baseX = pend.layout.xs.toFloatArray()
+                val baseY = pend.layout.ys.toFloatArray()
+                val adapted = adaptPositions(pend.layout, baseX, baseY)
+
                 d.setMode(
                     letters=pend.layout.letters,
-                    cx=pend.layout.xs.toFloatArray(),
-                    cy=pend.layout.ys.toFloatArray(),
+                    cx=adapted?.first ?: baseX,
+                    cy=adapted?.second ?: baseY,
                     tries=pend.tries.toLongArray(),
                     decoderPath=getFilePath(context, pend.layout.decoder),
                     lmModelPath=getFilePath(context, pend.layout.lm),
@@ -805,6 +921,19 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             }
             pendingLayoutInfo = null
         }
+    }
+
+    /**
+     * Re-pushes the current layout so freshly learned geometry takes effect.
+     *
+     * Normally personalized positions land on the next natural layout install. This forces it, for
+     * the scenario runner's mechanism check and for applying a reset immediately.
+     */
+    fun debugReinstallLayout() {
+        val info = appliedLayoutInfo
+        val tries = appliedTries ?: return
+        if (info.letters.isEmpty()) return
+        updateKeyboard(PendingLayoutInfo(info, tries.toList()))
     }
 
     fun updateKeyboard(pendingLayoutInfo: PendingLayoutInfo) {

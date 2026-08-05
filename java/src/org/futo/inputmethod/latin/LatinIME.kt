@@ -64,6 +64,8 @@ import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.BasicThemeProvider
 import org.futo.inputmethod.latin.uix.DataStoreHelper
+import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner
+import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel
 import org.futo.inputmethod.latin.uix.DynamicThemeProvider
 import org.futo.inputmethod.latin.uix.DynamicThemeProviderOwner
 import org.futo.inputmethod.latin.uix.EmojiTracker.useEmoji
@@ -403,6 +405,10 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
         DataStoreHelper.init(this)
 
+        // Learned touch geometry, read once at startup. Cheap (a few KB) and needed before the
+        // first setMode, which is where personalized key positions get installed.
+        TapSwipeTouchModel.load(this)
+
         val filter = IntentFilter(Intent.ACTION_USER_UNLOCKED)
         registerReceiver(unlockReceiver, filter)
 
@@ -662,6 +668,9 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         super.onFinishInput()
         latinIMELegacy.onFinishInput()
         uixManager.onInputFinishing()
+        // Flush learned geometry on the way out: the learner only writes every N samples, so a
+        // short editing session would otherwise lose everything it just learned.
+        TapSwipeLearner.flush(this)
     }
 
     private fun changeInputMethodSubtype(newSubtype: InputMethodSubtype?) {

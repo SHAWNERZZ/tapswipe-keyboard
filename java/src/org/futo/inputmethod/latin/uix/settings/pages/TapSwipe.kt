@@ -15,6 +15,7 @@ import org.futo.inputmethod.latin.SwipeSensitivitySetting
 import org.futo.inputmethod.latin.TapSwipeLegacyTapRunSetting
 import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
+import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
 import org.futo.inputmethod.latin.TapSwipeWholeWordBackspaceSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
@@ -23,11 +24,17 @@ import org.futo.inputmethod.latin.uix.settings.UserSetting
 import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.settings.userSettingDecorationOnly
+import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
+import org.futo.inputmethod.latin.uix.settings.userSettingNavigationItem
 import org.futo.inputmethod.latin.uix.settings.userSettingToggleDataStore
 import org.futo.inputmethod.latin.uix.theme.Typography
 import kotlin.math.roundToInt
 
 private val tapSwipeEnabled: @Composable () -> Boolean = { useDataStoreValue(TapSwipeModeSetting) }
+
+private val adaptiveGeometryEnabled: @Composable () -> Boolean = {
+    useDataStoreValue(TapSwipeModeSetting) && useDataStoreValue(TapSwipeAdaptiveGeometrySetting)
+}
 
 private val masterModeEnabled: @Composable () -> Boolean = {
     useDataStoreValue(TapSwipeModeSetting) && useDataStoreValue(TapSwipeMasterModeSetting)
@@ -81,6 +88,22 @@ val TapSwipeMenu = UserSettingsMenu(
                 steps = 14
             )
         },
+
+        // Learning sits directly above the page that shows what it learned, so the toggle and its
+        // evidence read as one thing rather than two unrelated rows.
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_adaptive_geometry,
+            subtitle = R.string.tapswipe_settings_adaptive_geometry_subtitle,
+            setting = TapSwipeAdaptiveGeometrySetting,
+            icon = { Icon(painterResource(R.drawable.circle), contentDescription = null) }
+        ).copy(visibilityCheck = tapSwipeEnabled),
+
+        userSettingNavigationItem(
+            title = R.string.tapswipe_settings_learned_geometry,
+            style = NavigationItemStyle.HomeSecondary,
+            navigateTo = "tapswipeGeometry",
+            icon = R.drawable.activity
+        ).copy(visibilityCheck = adaptiveGeometryEnabled),
 
         // Tuning, but a toggle rather than a slider, so it sits with the other toggles.
         userSettingToggleDataStore(

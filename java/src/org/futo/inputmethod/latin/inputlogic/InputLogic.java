@@ -54,6 +54,7 @@ import org.futo.inputmethod.latin.tapswipe.TapSwipeInputBuilder;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeMasterMode;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeMode;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState;
+import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeSession;
 import org.futo.inputmethod.latin.uix.DataStoreHelper;
 import org.futo.inputmethod.latin.common.Constants;
@@ -484,6 +485,26 @@ public final class InputLogic {
                     + lengthToDelete + " chars)");
         }
         return true;
+    }
+
+    /**
+     * Offers the just-finished word to the adaptive touch model.
+     *
+     * Wrapped because it runs on the commit path: learning is a nice-to-have, and nothing about it
+     * is worth failing a keystroke over.
+     */
+    private void maybeLearnTapSwipeGeometry() {
+        if (!TapSwipeLearner.isEnabled()) return;
+        try {
+            final LastComposedWord last = mLastComposedWord;
+            final String committed = (last != null && last.mCommittedWord != null)
+                    ? last.mCommittedWord.toString() : "";
+            if (committed.isEmpty()) return;
+            TapSwipeLearner.onWordFinalized(
+                    mImeHelper.getContext(), mTapSwipeSession, committed);
+        } catch (Throwable t) {
+            Log.e(TAG, "tapswipe geometry learning failed", t);
+        }
     }
 
     /** Discards the session. Safe to call unconditionally. */
@@ -1799,6 +1820,9 @@ public final class InputLogic {
         // was actually committed above. Clearing unconditionally here is deliberate - it is the
         // primary guard against strokes leaking into the next word.
         if (isTapSwipeMode()) {
+            // Learn before discarding: this is the first moment the word is settled, and the last
+            // at which the strokes that produced it still exist.
+            maybeLearnTapSwipeGeometry();
             resetTapSwipeSession("finalizer: " + StringUtils.newSingleCodePointString(codePoint));
         }
 

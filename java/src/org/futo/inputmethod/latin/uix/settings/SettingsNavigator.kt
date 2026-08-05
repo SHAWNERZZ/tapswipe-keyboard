@@ -23,6 +23,7 @@ import org.futo.inputmethod.latin.uix.actions.AllActions
 import org.futo.inputmethod.latin.uix.settings.pages.ActionEditorScreen
 import org.futo.inputmethod.latin.uix.settings.pages.ActionsScreen
 import org.futo.inputmethod.latin.uix.settings.pages.AdvancedParametersScreen
+import org.futo.inputmethod.latin.uix.settings.pages.TapSwipeGeometryScreen
 import org.futo.inputmethod.latin.uix.settings.pages.AlreadyPaidDialog
 import org.futo.inputmethod.latin.uix.settings.pages.BlacklistScreen
 import org.futo.inputmethod.latin.uix.settings.pages.BlacklistScreenLite
@@ -166,6 +167,7 @@ fun SettingsNavigator(
                 PersonalDictionaryLanguageList()
             }
             composable("advancedparams") { AdvancedParametersScreen(navController) }
+            composable("tapswipeGeometry") { TapSwipeGeometryScreen(navController) }
             composable("actionEdit") { ActionEditorScreen(navController) }
             SettingsMenus.forEach { menu ->
                 if(menu.registerNavPath) composable(menu.navPath) { UserSettingsMenuScreen(menu) }

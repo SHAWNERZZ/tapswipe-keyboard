@@ -8,7 +8,9 @@ import org.futo.inputmethod.keyboard.Key
 import org.futo.inputmethod.keyboard.Keyboard
 import org.futo.inputmethod.keyboard.KeyboardSwitcher
 import org.futo.inputmethod.latin.LatinIME
+import org.futo.inputmethod.latin.DictionaryFacilitatorImpl
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
+import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.common.InputPointers
@@ -743,6 +745,32 @@ object TapSwipeScenarios {
                 if (p.words.size <= 1) null else "backspace left two words: '${p.word}'"
             }),
 
+        // --- adaptive geometry ------------------------------------------------------------
+
+        run {
+            // Proves the learned shift actually reaches the decoder, without waiting weeks for real
+            // data to accumulate. Anecdotal on-device impressions cannot separate "the mechanism
+            // works" from "the mechanism is inert" - this can.
+            //
+            // A large synthetic offset is written for one key, the layout is reinstalled so the new
+            // positions cross into the model, and the same stroke is decoded before and after. If
+            // the output never changes, the shift is not reaching `layout_keys` and every result
+            // built on top of it is meaningless.
+            var detail = ""
+            Scenario("a synthetic key shift changes what the decoder produces",
+                group = "Adaptive geometry",
+                run = { ime ->
+                    detail = probeAdaptiveShift(ime)
+                },
+                check = { _ ->
+                    when {
+                        detail.startsWith("SKIP") -> null
+                        detail.startsWith("OK") -> null
+                        else -> detail
+                    }
+                })
+        },
+
         Scenario("typing continues cleanly after a backspace mid-sentence",
             group = "Everyday typing",
             run = {
@@ -755,6 +783,54 @@ object TapSwipeScenarios {
                 if (p.words.size == 2) null else "expected 2 words, got '${p.word}'"
             })
     )
+
+    /**
+     * Writes a deliberately large offset for one key, reloads the layout, and checks the decode
+     * moves. Restores the model afterwards so a diagnostic never leaves learned state behind.
+     */
+    private suspend fun probeAdaptiveShift(ime: LatinIME): String {
+        if (!DataStoreHelper.getSetting(TapSwipeAdaptiveGeometrySetting)) {
+            return "SKIP: adaptive key geometry is off"
+        }
+        val layoutKey = SwipeDecoderDictionary.currentTouchModelLayoutKey()
+            ?: return "SKIP: no layout applied"
+        val extent = SwipeDecoderDictionary.normalizedKeyHalfExtent()
+            ?: return "SKIP: no key extent"
+
+        // Snapshot, so the probe is non-destructive.
+        val hadSamples = TapSwipeTouchModel.totalSamples()
+
+        clearField(ime)
+        swipe(ime, "hel"); settle()
+        val before = textBeforeCursor(ime).trim()
+
+        // Enough weight to clear the confidence ramp outright, and a shift at the cap.
+        val shove = extent[0] * 2f * TapSwipeTouchModel.MAX_SHIFT_FRACTION * 4f
+        val now = System.currentTimeMillis()
+        repeat(40) {
+            TapSwipeTouchModel.record(layoutKey, 'l'.code, shove, 0f, 1f, now)
+        }
+        onMain<Unit> { DictionaryFacilitatorImpl.swipeDecoderDictionary?.debugReinstallLayout() }
+        settle(300)
+
+        clearField(ime)
+        swipe(ime, "hel"); settle()
+        val after = textBeforeCursor(ime).trim()
+
+        // Undo the probe regardless of outcome.
+        TapSwipeTouchModel.reset()
+        onMain<Unit> { DictionaryFacilitatorImpl.swipeDecoderDictionary?.debugReinstallLayout() }
+        settle(200)
+        clearField(ime)
+
+        val applied = TapSwipeTouchModel.shiftFor(layoutKey, 'l'.code, extent[0], extent[1], now)
+        return when {
+            before.isEmpty() && after.isEmpty() -> "decoder produced nothing either way"
+            before != after -> "OK: '$before' -> '$after' (had $hadSamples samples)"
+            else -> "shift did not change the decode: still '$before'" +
+                    " (applied=" + (applied?.let { "%.4f".format(it[0]) } ?: "null") + ")"
+        }
+    }
 
     // ---------------------------------------------------------------- runner
 
