@@ -27,6 +27,22 @@ class TapSwipeStrokeAlignerTest {
 
     private fun centreOf(cp: Int): FloatArray? = centres[cp]
 
+    private fun swipeStroke(
+        xs: FloatArray, ys: FloatArray, t0: Float = 0f
+    ) = TapSwipeStrokeAligner.StrokeInput(
+        TapSwipeSession.Kind.SWIPE, 0, xs, ys,
+        FloatArray(xs.size) { t0 + it * 16f }
+    )
+
+    private fun tapStroke(cp: Int, x: Float, y: Float, t: Float) =
+        TapSwipeStrokeAligner.StrokeInput(
+            TapSwipeSession.Kind.TAP, cp, floatArrayOf(x), floatArrayOf(y), floatArrayOf(t)
+        )
+
+    /** The old single-stroke call, kept so the existing cases read unchanged. */
+    private fun alignOne(word: String, xs: FloatArray, ys: FloatArray) =
+        TapSwipeStrokeAligner.align(word, listOf(swipeStroke(xs, ys)), ::centreOf)
+
     private val halfW = 0.1f
     private val halfH = 0.1f
 
@@ -51,7 +67,7 @@ class TapSwipeStrokeAlignerTest {
     @Test
     fun `a clean stroke through three keys attributes all three`() {
         val (xs, ys) = straightStroke()
-        val out = TapSwipeStrokeAligner.align("abc", xs, ys, ::centreOf)
+        val out = alignOne("abc", xs, ys)
 
         assertEquals(3, out.size)
         assertEquals(listOf('a'.code, 'b'.code, 'c'.code), out.map { it.codePoint })
@@ -60,7 +76,7 @@ class TapSwipeStrokeAlignerTest {
     @Test
     fun `a stroke landing dead on the centres reports no offset`() {
         val (xs, ys) = straightStroke()
-        val out = TapSwipeStrokeAligner.align("abc", xs, ys, ::centreOf)
+        val out = alignOne("abc", xs, ys)
 
         out.forEach {
             assertTrue("expected ~0 offset for '${it.codePoint.toChar()}', got ${it.dx},${it.dy}",
@@ -75,7 +91,7 @@ class TapSwipeStrokeAlignerTest {
     @Test
     fun `a stroke riding consistently low reports a downward offset`() {
         val (xs, ys) = straightStroke(dy = 0.05f)
-        val out = TapSwipeStrokeAligner.align("abc", xs, ys, ::centreOf)
+        val out = alignOne("abc", xs, ys)
 
         assertTrue(out.isNotEmpty())
         out.forEach {
@@ -89,26 +105,26 @@ class TapSwipeStrokeAlignerTest {
     fun `a word with a letter the layout cannot place is not aligned`() {
         val (xs, ys) = straightStroke()
         // 'z' has no centre - aligning anyway would shift every later letter's attribution.
-        assertTrue(TapSwipeStrokeAligner.align("azc", xs, ys, ::centreOf).isEmpty())
+        assertTrue(alignOne("azc", xs, ys).isEmpty())
     }
 
     @Test
     fun `a stroke with fewer points than letters is not aligned`() {
         val xs = floatArrayOf(0.1f, 0.5f)
         val ys = floatArrayOf(0.5f, 0.5f)
-        assertTrue(TapSwipeStrokeAligner.align("abc", xs, ys, ::centreOf).isEmpty())
+        assertTrue(alignOne("abc", xs, ys).isEmpty())
     }
 
     @Test
     fun `a two-letter minimum is enforced`() {
         val (xs, ys) = straightStroke()
-        assertTrue(TapSwipeStrokeAligner.align("a", xs, ys, ::centreOf).isEmpty())
+        assertTrue(alignOne("a", xs, ys).isEmpty())
     }
 
     @Test
     fun `attributions stay in letter order`() {
         val (xs, ys) = straightStroke()
-        val out = TapSwipeStrokeAligner.align("abc", xs, ys, ::centreOf)
+        val out = alignOne("abc", xs, ys)
         // A swipe visits its letters in sequence; an alignment that reorders them is wrong however
         // little it costs.
         assertEquals(out.map { it.codePoint }, out.map { it.codePoint }.distinct())
@@ -121,7 +137,7 @@ class TapSwipeStrokeAlignerTest {
         // Path far below the keys: the language model rescued the word, the geometry says nothing.
         val xs = floatArrayOf(0.1f, 0.3f, 0.5f, 0.7f, 0.9f)
         val ys = FloatArray(5) { 2.0f }
-        val out = TapSwipeStrokeAligner.align("abc", xs, ys, ::centreOf)
+        val out = alignOne("abc", xs, ys)
 
         assertFalse(TapSwipeStrokeAligner.isPlausible(out, halfW, halfH))
     }
@@ -129,7 +145,7 @@ class TapSwipeStrokeAlignerTest {
     @Test
     fun `a clean stroke is plausible`() {
         val (xs, ys) = straightStroke()
-        val out = TapSwipeStrokeAligner.align("abc", xs, ys, ::centreOf)
+        val out = alignOne("abc", xs, ys)
 
         assertTrue(TapSwipeStrokeAligner.isPlausible(out, halfW, halfH))
     }
@@ -139,12 +155,112 @@ class TapSwipeStrokeAlignerTest {
         assertFalse(TapSwipeStrokeAligner.isPlausible(emptyList(), halfW, halfH))
     }
 
+    // ---------------------------------------------------------------- multi-stroke
+
+    /**
+     * The common shape: swipe part of a word, tap the rest. Sequential strokes are ordered by the
+     * clock, so this attributes cleanly and must not be thrown away.
+     */
+    @Test
+    fun `a swipe followed by a tap attributes every letter`() {
+        // Swipe a to b, then tap c.
+        val xs = FloatArray(21) { 0.1f + (0.4f * it / 20f) }
+        val ys = FloatArray(21) { 0.5f }
+        val strokes = listOf(
+            swipeStroke(xs, ys, t0 = 0f),
+            tapStroke('c'.code, 0.9f, 0.5f, t = 400f)
+        )
+
+        val out = TapSwipeStrokeAligner.align("abc", strokes, ::centreOf)
+
+        assertEquals(3, out.size)
+        assertEquals(listOf('a'.code, 'b'.code, 'c'.code), out.map { it.codePoint })
+        assertTrue("the tapped letter should be marked as a tap",
+            out.first { it.codePoint == 'c'.code }.fromTap)
+    }
+
+    @Test
+    fun `a tapped letter reports its exact offset from the key centre`() {
+        val xs = FloatArray(21) { 0.1f + (0.4f * it / 20f) }
+        val ys = FloatArray(21) { 0.5f }
+        // Tap c well right of and below its centre (0.9, 0.5).
+        val strokes = listOf(
+            swipeStroke(xs, ys),
+            tapStroke('c'.code, 0.94f, 0.53f, t = 400f)
+        )
+
+        val c = TapSwipeStrokeAligner.align("abc", strokes, ::centreOf)
+            .first { it.codePoint == 'c'.code }
+
+        assertEquals(0.04f, c.dx, 1e-4f)
+        assertEquals(0.03f, c.dy, 1e-4f)
+    }
+
+    /**
+     * The anchoring property: a tap can only land on a letter matching its code point. A tap whose
+     * letter is nowhere in the word means the alignment cannot be trusted at all.
+     */
+    @Test
+    fun `a tap on a letter absent from the word blocks the alignment`() {
+        val xs = FloatArray(21) { 0.1f + (0.4f * it / 20f) }
+        val ys = FloatArray(21) { 0.5f }
+        val strokes = listOf(
+            swipeStroke(xs, ys),
+            tapStroke('c'.code, 0.9f, 0.5f, t = 400f)
+        )
+
+        // Word has no 'c' at all.
+        assertTrue(TapSwipeStrokeAligner.align("ab", strokes, ::centreOf).isEmpty())
+    }
+
+    @Test
+    fun `taps carry more weight than inferred swipe segments`() {
+        val xs = FloatArray(21) { 0.1f + (0.4f * it / 20f) }
+        val ys = FloatArray(21) { 0.5f }
+        val out = TapSwipeStrokeAligner.align(
+            "abc",
+            listOf(swipeStroke(xs, ys), tapStroke('c'.code, 0.9f, 0.5f, t = 400f)),
+            ::centreOf
+        )
+
+        val tap = out.first { it.fromTap }
+        assertTrue("tap weight should be full, was ${tap.weight}", tap.weight >= 1f)
+    }
+
+    // ---------------------------------------------------------------- concurrency
+
+    @Test
+    fun `sequential strokes are not treated as concurrent`() {
+        val a = swipeStroke(floatArrayOf(0.1f, 0.3f), floatArrayOf(0.5f, 0.5f), t0 = 0f)
+        val b = tapStroke('c'.code, 0.9f, 0.5f, t = 500f)
+
+        assertFalse(TapSwipeStrokeAligner.overlapsInTime(listOf(a, b)))
+    }
+
+    /** Two thumbs: the decoder orders these by lexicon, so the clock cannot attribute them. */
+    @Test
+    fun `overlapping strokes are detected as concurrent`() {
+        val a = swipeStroke(FloatArray(20) { 0.1f }, FloatArray(20) { 0.5f }, t0 = 0f)
+        val b = swipeStroke(FloatArray(20) { 0.9f }, FloatArray(20) { 0.5f }, t0 = 100f)
+
+        // a runs 0..304ms, b starts at 100ms.
+        assertTrue(TapSwipeStrokeAligner.overlapsInTime(listOf(a, b)))
+    }
+
+    @Test
+    fun `concurrency detection ignores stroke ordering in the list`() {
+        val a = swipeStroke(FloatArray(20) { 0.1f }, FloatArray(20) { 0.5f }, t0 = 0f)
+        val b = swipeStroke(FloatArray(20) { 0.9f }, FloatArray(20) { 0.5f }, t0 = 100f)
+
+        assertTrue(TapSwipeStrokeAligner.overlapsInTime(listOf(b, a)))
+    }
+
     // ---------------------------------------------------------------- weighting
 
     @Test
     fun `weights stay within range`() {
         val (xs, ys) = straightStroke()
-        val out = TapSwipeStrokeAligner.align("abc", xs, ys, ::centreOf)
+        val out = alignOne("abc", xs, ys)
 
         out.forEach {
             assertTrue("weight out of range: ${it.weight}", it.weight > 0f && it.weight <= 1f)
