@@ -80,6 +80,12 @@ private fun rememberModelRevision(): Int {
 @Composable
 fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController? = null) {
     val context = LocalContext.current
+
+    // Read the model before anything here touches it. Settings can be opened without the keyboard
+    // service ever having started, in which case nothing has loaded it yet - the page would show an
+    // empty model, and Reset would then write that emptiness over a perfectly good file.
+    LaunchedEffect(Unit) { TapSwipeTouchModel.ensureLoaded(context) }
+
     val revision = rememberModelRevision()
 
     var selected by remember { mutableStateOf<Int?>(null) }
@@ -180,6 +186,9 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.padding(horizontal = 16.dp)) {
             Button(onClick = {
+                // Belt and braces alongside the LaunchedEffect above: reset writes to disk, and
+                // resetting a model that was never read would discard what is on it.
+                TapSwipeTouchModel.ensureLoaded(context)
                 TapSwipeTouchModel.reset()
                 TapSwipeTouchModel.save(context)
                 selected = null

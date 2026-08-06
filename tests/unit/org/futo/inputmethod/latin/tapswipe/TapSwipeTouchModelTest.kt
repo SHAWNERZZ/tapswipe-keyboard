@@ -1,6 +1,7 @@
 package org.futo.inputmethod.latin.tapswipe
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -23,8 +24,13 @@ class TapSwipeTouchModelTest {
     private val now = 1_700_000_000_000L
     private val day = 24L * 60 * 60 * 1000
 
+    // resetForTests, not reset: this is a process-wide singleton, so the loaded flag would
+    // otherwise leak from whichever test ran first and decide the persistence cases by ordering.
     @Before
-    fun setUp() = TapSwipeTouchModel.reset()
+    fun setUp() = TapSwipeTouchModel.resetForTests()
+
+    private val tmpDir: java.io.File =
+        java.io.File(System.getProperty("java.io.tmpdir"), "tapswipe-model-test")
 
     private fun feed(cp: Int, dx: Float, dy: Float, n: Int, at: Long = now) {
         repeat(n) { TapSwipeTouchModel.record(layout, cp, dx, dy, 1f, at) }
@@ -129,6 +135,61 @@ class TapSwipeTouchModelTest {
 
         assertNull(shift('e'.code))
         assertEquals(0, TapSwipeTouchModel.totalSamples())
+    }
+
+    // ---------------------------------------------------------------- persistence guards
+
+    /**
+     * The most damaging thing this class could do: replace weeks of learned geometry with a blank
+     * model, because something read it before anything loaded it.
+     *
+     * `reset()` in setUp leaves the model loaded, so these drive `loaded` back to false the only
+     * way production can - by never having read a file - and check that a save is refused.
+     */
+    @Test
+    fun `a save is refused when the model was never loaded`() {
+        // The situation this guards: settings opened without the keyboard service ever starting,
+        // so the in-memory model is empty and does not reflect what is on disk. Saving there would
+        // replace a real model with a blank one.
+        assertFalse("setUp must leave the model unloaded", TapSwipeTouchModel.isLoaded())
+        feed('e'.code, 0.02f, 0f, 5)
+
+        TapSwipeTouchModel.save(tmpDir)
+
+        assertEquals("save must refuse while unloaded", 0, TapSwipeTouchModel.saveAttempts)
+    }
+
+    @Test
+    fun `a save proceeds once the model has been loaded`() {
+        TapSwipeTouchModel.ensureLoaded(tmpDir)
+        feed('e'.code, 0.02f, 0f, 5)
+
+        TapSwipeTouchModel.save(tmpDir)
+
+        assertEquals("save should have run once loaded", 1, TapSwipeTouchModel.saveAttempts)
+    }
+
+    @Test
+    fun `a reset is still savable, since resetting is intentional`() {
+        TapSwipeTouchModel.ensureLoaded(tmpDir)
+        feed('e'.code, 0.02f, 0f, 5)
+        TapSwipeTouchModel.reset()
+
+        TapSwipeTouchModel.save(tmpDir)
+
+        // Clearing the model must reach disk - otherwise "Reset learned geometry" would appear to
+        // work and then come back on the next launch.
+        assertEquals(1, TapSwipeTouchModel.saveAttempts)
+    }
+
+    /**
+     * Recording before a load must still work - the keyboard should never drop a sample - it just
+     * must not be allowed to persist over a file it has not read.
+     */
+    @Test
+    fun `recording still works before a load`() {
+        feed('e'.code, 0.01f, 0f, 5)
+        assertTrue(TapSwipeTouchModel.totalSamples() > 0)
     }
 
     // ---------------------------------------------------------------- bookkeeping

@@ -40,6 +40,7 @@ import org.futo.inputmethod.engine.general.mozcUserProfileDir
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.utils.readAllBytesCompat
 import org.futo.inputmethod.latin.uix.PreferenceUtils.getDefaultSharedPreferences
+import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardFileName
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryManager.Companion.onClipboardImportedFlow
 import org.futo.inputmethod.latin.uix.actions.clipboard.clipboardDir
@@ -185,6 +186,16 @@ object SettingsExporter {
     private const val clipboardFileName = ClipboardFileName
     private const val personalDictFileName = "userdictionary.json"
 
+    /**
+     * Learned TapSwipe key geometry.
+     *
+     * Worth carrying because it is the one thing here nothing can regenerate: it is an accumulated
+     * record of how one person's hands actually move, built up over weeks. Content-free - per-key
+     * offsets and counts, no text - so it adds no sensitivity to a file that already holds the
+     * personal dictionary and clipboard.
+     */
+    private const val tapSwipeTouchModelFileName = "tapswipe-touch-model.json"
+
     suspend fun exportSettings(
         context: Context,
         outputStream: OutputStream,
@@ -223,6 +234,14 @@ object SettingsExporter {
         run {
             zipOut.putNextEntry(ZipEntry(personalDictFileName))
             writePersonalDict(context, zipOut)
+            zipOut.closeEntry()
+        }
+
+        // Collect learned TapSwipe geometry
+        val touchModelFile = File(context.filesDir, tapSwipeTouchModelFileName)
+        if (touchModelFile.exists()) {
+            zipOut.putNextEntry(ZipEntry(tapSwipeTouchModelFileName))
+            touchModelFile.inputStream().use { it.copyTo(zipOut) }
             zipOut.closeEntry()
         }
 
@@ -367,6 +386,16 @@ object SettingsExporter {
 
                 entry.name == personalDictFileName -> {
                     readPersonalDict(context, zipIn, destructive)
+                }
+
+                entry.name == tapSwipeTouchModelFileName -> {
+                    File(context.filesDir, tapSwipeTouchModelFileName).outputStream().use {
+                        zipIn.copyTo(it)
+                    }
+                    // The model is read once and cached, so a restore into a running process has to
+                    // be told to re-read - otherwise the imported file sits on disk behind a stale
+                    // in-memory copy, and the next save would overwrite it.
+                    TapSwipeTouchModel.reloadFromDisk(context)
                 }
 
                 entry.name == clipboardFileName -> {

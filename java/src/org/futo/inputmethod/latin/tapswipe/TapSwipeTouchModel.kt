@@ -141,35 +141,89 @@ object TapSwipeTouchModel {
 
     // ---------------------------------------------------------------- persistence
 
+    /**
+     * Reads the model from disk if it has not been read yet. Idempotent, so every entry point that
+     * touches the model can call it without coordinating.
+     *
+     * That matters more than it looks. The keyboard service and the settings UI live in the same
+     * process, but either can start it: opening settings without having used the keyboard leaves
+     * the model unread, and anything reading it then sees an empty model that does not reflect
+     * disk. Making load cheap and idempotent means no caller has to know which component won the
+     * race.
+     */
     @JvmStatic
-    fun load(context: Context) {
+    fun ensureLoaded(context: Context) = ensureLoaded(context.filesDir)
+
+    /**
+     * Directory-based rather than Context-based: nothing here needs an Android Context, only
+     * somewhere to put a file. Taking the directory keeps the persistence rules - above all the
+     * refusal in [save] - reachable from plain JVM tests.
+     */
+    @JvmStatic
+    fun ensureLoaded(dir: File) {
         synchronized(lock) {
             if (loaded) return
-            loaded = true
-            val file = File(context.filesDir, FILE_NAME)
-            if (!file.exists()) return
+            val file = File(dir, FILE_NAME)
             try {
+                // readFully() rather than a File.exists() check: AtomicFile keeps a .bak from an
+                // interrupted write, and only readFully() knows to recover from it. Testing
+                // exists() on the main path would silently discard a recoverable model.
                 val text = AtomicFile(file).readFully().toString(Charsets.UTF_8)
                 model = json.decodeFromString(ModelFile.serializer(), text)
                 revision++
+                if (DEBUG_PERSIST) {
+                    Log.d(TAG, "loaded touch model: ${totalSamplesLocked()} samples")
+                }
+            } catch (e: java.io.FileNotFoundException) {
+                // Nothing saved yet - a normal first run, not a problem.
+                model = ModelFile()
             } catch (e: Throwable) {
                 // A corrupt model is not worth taking the keyboard down for - start over.
                 Log.e(TAG, "could not read touch model, starting fresh", e)
                 model = ModelFile()
             }
+            loaded = true
         }
     }
 
+    /** Kept for the existing call site in LatinIME. */
+    @JvmStatic
+    fun load(context: Context) = ensureLoaded(context.filesDir)
+
+    /**
+     * Discards what is in memory and re-reads from disk. For a settings restore, which replaces the
+     * file underneath a process that has already read it.
+     */
+    @JvmStatic
+    fun reloadFromDisk(context: Context) {
+        synchronized(lock) { loaded = false }
+        ensureLoaded(context.filesDir)
+    }
+
+    private const val DEBUG_PERSIST = true
+
     /** Writes synchronously; callers are expected to be off the main thread. */
     @JvmStatic
-    fun save(context: Context) {
+    fun save(context: Context) = save(context.filesDir)
+
+    @JvmStatic
+    fun save(dir: File) {
         val text: String
         synchronized(lock) {
+            // Never write a model that was never read. Whatever is in memory would be a blank
+            // model rather than the user's, and writing it would destroy weeks of learning that
+            // is sitting intact on disk. This is the single most damaging thing this class could
+            // do, so it is refused outright rather than guarded at each call site.
+            if (!loaded) {
+                Log.w(TAG, "refusing to save a touch model that was never loaded")
+                return
+            }
             if (!dirty) return
             text = json.encodeToString(model)
             dirty = false
+            saveAttempts++
         }
-        val atomic = AtomicFile(File(context.filesDir, FILE_NAME))
+        val atomic = AtomicFile(File(dir, FILE_NAME))
         var out: java.io.FileOutputStream? = null
         try {
             out = atomic.startWrite()
@@ -343,8 +397,47 @@ object TapSwipeTouchModel {
 
     /** Total samples across every layout - for "is this thing even learning" at a glance. */
     @JvmStatic
-    fun totalSamples(): Int = synchronized(lock) {
+    fun totalSamples(): Int = synchronized(lock) { totalSamplesLocked() }
+
+    private fun totalSamplesLocked(): Int =
         model.layouts.values.sumOf { layout -> layout.keys.values.sumOf { it.count } }
+
+    /** True once the model has been read from disk. */
+    @JvmStatic
+    fun isLoaded(): Boolean = synchronized(lock) { loaded }
+
+    /** True when there are unsaved changes. */
+    @JvmStatic
+    fun isDirty(): Boolean = synchronized(lock) { dirty }
+
+    /**
+     * Times a save got past the guards and serialized the model.
+     *
+     * The obvious observable - [isDirty] - cannot serve, because a failed write deliberately marks
+     * the model dirty again so the next attempt retries. This counts intent rather than outcome,
+     * which is what distinguishes "refused to save" from "tried and the disk said no".
+     */
+    @Volatile
+    @JvmStatic
+    var saveAttempts: Int = 0
+        private set
+
+    /**
+     * Clears everything including the loaded flag.
+     *
+     * Test-only. Production must never clear `loaded` on its own: a reset leaves an intentionally
+     * empty model that still has to be written, and forgetting it was loaded would make [save]
+     * refuse to persist the user's reset.
+     */
+    @JvmStatic
+    fun resetForTests() {
+        synchronized(lock) {
+            model = ModelFile()
+            dirty = false
+            loaded = false
+            saveAttempts = 0
+            revision++
+        }
     }
 
     @JvmStatic

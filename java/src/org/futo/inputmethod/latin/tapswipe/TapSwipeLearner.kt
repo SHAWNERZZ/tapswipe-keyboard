@@ -126,6 +126,9 @@ object TapSwipeLearner {
         settingsValues: SettingsValues?
     ) {
         if (!isEnabled()) return
+        // Cheap and idempotent, but load-before-record is load-bearing: recording into an unread
+        // model and then saving would replace the file with only this session's samples.
+        TapSwipeTouchModel.ensureLoaded(context)
         if (!isAllowedInField(settingsValues)) {
             Counters.blockedByField++
             return
