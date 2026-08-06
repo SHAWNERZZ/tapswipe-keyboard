@@ -73,6 +73,49 @@ object TapSwipeLearner {
     @Volatile
     private var lastBatch: LearnedBatch? = null
 
+    /**
+     * The most recent word learned from, kept so the settings page can replay it.
+     *
+     * Holds the stroke path as well as the attributions, because seeing the gesture redrawn is what
+     * makes the attribution legible - a list of offsets says nothing about which part of a swipe
+     * produced them. Downsampled and capped, so this stays a few hundred bytes rather than a
+     * transcript of everything typed.
+     */
+    class LastLearned(
+        val word: String,
+        val attributions: List<TapSwipeStrokeAligner.Attribution>,
+        val pathX: FloatArray,
+        val pathY: FloatArray,
+        val wasCorrection: Boolean
+    )
+
+    @Volatile
+    @JvmStatic
+    var lastLearned: LastLearned? = null
+        private set
+
+    /** Points retained for replay. Enough to read the shape, far fewer than a raw stroke. */
+    private const val REPLAY_POINTS = 64
+
+    /** Flattens the strokes in time order, thinned to [REPLAY_POINTS]. */
+    private fun replayPath(
+        inputs: List<TapSwipeStrokeAligner.StrokeInput>
+    ): Pair<FloatArray, FloatArray> {
+        val xs = ArrayList<Float>()
+        val ys = ArrayList<Float>()
+        for (stroke in inputs.sortedBy { it.startT }) {
+            for (i in stroke.x.indices) { xs.add(stroke.x[i]); ys.add(stroke.y[i]) }
+        }
+        if (xs.size <= REPLAY_POINTS) return xs.toFloatArray() to ys.toFloatArray()
+        val ox = FloatArray(REPLAY_POINTS)
+        val oy = FloatArray(REPLAY_POINTS)
+        for (i in 0 until REPLAY_POINTS) {
+            val src = (i.toLong() * (xs.size - 1) / (REPLAY_POINTS - 1)).toInt()
+            ox[i] = xs[src]; oy[i] = ys[src]
+        }
+        return ox to oy
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -226,7 +269,7 @@ object TapSwipeLearner {
             return
         }
 
-        commit(context, layoutKey, word, attributions, weightScale = 1f)
+        commit(context, layoutKey, word, attributions, weightScale = 1f, inputs = inputs)
         Counters.accepted++
     }
 
@@ -238,7 +281,8 @@ object TapSwipeLearner {
         layoutKey: String,
         word: String,
         attributions: List<TapSwipeStrokeAligner.Attribution>,
-        weightScale: Float
+        weightScale: Float,
+        inputs: List<TapSwipeStrokeAligner.StrokeInput>
     ) {
         val now = System.currentTimeMillis()
         for (a in attributions) {
@@ -246,6 +290,8 @@ object TapSwipeLearner {
                 layoutKey, a.codePoint, a.dx, a.dy, a.weight * weightScale, now)
         }
         lastBatch = LearnedBatch(layoutKey, word, attributions, weightScale)
+        val (px, py) = replayPath(inputs)
+        lastLearned = LastLearned(word, attributions, px, py, wasCorrection = weightScale != 1f)
         Counters.samples += attributions.size
 
         if (DEBUG) {
@@ -320,7 +366,7 @@ object TapSwipeLearner {
             return
         }
 
-        commit(context, layoutKey, word, attributions, CORRECTION_WEIGHT)
+        commit(context, layoutKey, word, attributions, CORRECTION_WEIGHT, inputs)
         Counters.corrected++
     }
 

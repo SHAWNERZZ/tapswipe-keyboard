@@ -1,20 +1,27 @@
 package org.futo.inputmethod.latin.uix.settings.pages
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,26 +29,40 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
 import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner
 import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.sqrt
 
@@ -49,20 +70,72 @@ import kotlin.math.sqrt
  * What the keyboard has learned about where this person's fingers land.
  *
  * Built to be falsifiable rather than decorative. The adaptive model is otherwise invisible - a few
- * hundredths of a unit of shift buried in a tensor - so without a way to look at it there is no
- * way to tell "learning nothing", "learning noise", and "learning correctly" apart.
+ * hundredths of a unit of shift buried in a tensor - so without a way to look at it there is no way
+ * to tell "learning nothing", "learning noise", and "learning correctly" apart.
  *
- * Three things are on screen at once for every key, because they answer different questions:
+ * Per key: a rounded outline for the key itself, a hollow ring at its nominal centre, a filled dot
+ * at the target learning has moved it to, and an ellipse for the spread of the measurements. The
+ * gap between ring and dot is the safety machinery working - when a key is capped or suppressed for
+ * scatter, the raw measurement and the applied shift disagree, and both are shown, because
+ * otherwise a suppressed key looks identical to one with no data.
  *
- *  - the **hollow ring** is the nominal key centre, the layout's idea of where the key is;
- *  - the **filled dot** is where the shift actually applied puts it, after caps and confidence;
- *  - the **ellipse** is the spread of the measurements, so a confidently-wrong key is visibly
- *    different from an honestly-uncertain one.
- *
- * The gap between the ring and the dot is the safety machinery working. When a key is capped or
- * suppressed for scatter, the raw measurement and the applied shift disagree, and both are shown -
- * otherwise a suppressed key would look exactly like a key with no data.
+ * Everything is sized in dp. An earlier version passed raw floats to the draw calls, which Compose
+ * treats as **pixels**, so on a 3x-density screen every marker rendered at a third of its intended
+ * size and the labels were unreadable.
  */
+
+// ---------------------------------------------------------------- geometry helpers
+
+/** Maps normalized layout space onto the canvas, with room for a key's worth of margin. */
+private class HeatmapTransform(
+    val canvas: Size,
+    val minX: Float, val minY: Float,
+    val spanX: Float, val spanY: Float,
+    val halfW: Float, val halfH: Float
+) {
+    private val padX = halfW * 1.6f
+    private val padY = halfH * 1.6f
+    private val worldW = spanX + padX * 2
+    private val worldH = spanY + padY * 2
+
+    val scaleX = if (worldW > 0f) canvas.width / worldW else 0f
+    val scaleY = if (worldH > 0f) canvas.height / worldH else 0f
+
+    fun x(nx: Float) = (nx - minX + padX) * scaleX
+    fun y(ny: Float) = (ny - minY + padY) * scaleY
+
+    val keyW get() = halfW * 2 * scaleX
+    val keyH get() = halfH * 2 * scaleY
+
+    companion object {
+        fun of(canvas: Size, xs: List<Float>, ys: List<Float>, halfW: Float, halfH: Float):
+                HeatmapTransform? {
+            if (canvas.width <= 0f || canvas.height <= 0f) return null
+            if (xs.isEmpty() || ys.isEmpty()) return null
+            val minX = xs.min()
+            val minY = ys.min()
+            return HeatmapTransform(
+                canvas, minX, minY,
+                max(1e-4f, xs.max() - minX), max(1e-4f, ys.max() - minY),
+                halfW, halfH
+            )
+        }
+    }
+}
+
+/** Aspect ratio the mini keyboard should be drawn at, so it looks like the real thing. */
+private fun keyboardAspect(xs: List<Float>, ys: List<Float>, halfW: Float, halfH: Float): Float {
+    if (xs.isEmpty() || ys.isEmpty()) return 2.6f
+    val w = (xs.max() - xs.min()) + halfW * 3.2f
+    val h = (ys.max() - ys.min()) + halfH * 3.2f
+    if (h <= 0f) return 2.6f
+    return (w / h).coerceIn(1.2f, 4.5f)
+}
+
+/** Fraction of the animation spent redrawing the gesture before attribution begins. */
+private const val PATH_PHASE = 0.45f
+
+// ---------------------------------------------------------------- screen
 
 /** Polls the model's revision counter so the page updates while you type in another app. */
 @Composable
@@ -87,10 +160,8 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
     LaunchedEffect(Unit) { TapSwipeTouchModel.ensureLoaded(context) }
 
     val revision = rememberModelRevision()
-
     var selected by remember { mutableStateOf<Int?>(null) }
 
-    // Recomputed whenever the model changes. Cheap - a few dozen keys.
     val layoutKey = SwipeDecoderDictionary.currentTouchModelLayoutKey()
     val extent = SwipeDecoderDictionary.normalizedKeyHalfExtent()
     val layoutInfo = SwipeDecoderDictionary.appliedLayoutInfo
@@ -100,6 +171,10 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
         else TapSwipeTouchModel.statsFor(layoutKey, extent[0], extent[1], System.currentTimeMillis())
     }
     val byCodePoint = remember(stats) { stats.associateBy { it.codePoint } }
+
+    val replay = remember { Animatable(0f) }
+    var replayData by remember { mutableStateOf<TapSwipeLearner.LastLearned?>(null) }
+    val scope = rememberCoroutineScope()
 
     ScrollableList {
         ScreenTitle("Learned key geometry", showBack = true, navController = navController)
@@ -114,50 +189,19 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
             return@ScrollableList
         }
 
+        val totalSamples = stats.sumOf { it.count }
         Text(
-            "Each key shows its nominal centre (ring) and where your typing has moved it (dot). " +
-                "The ellipse is how consistent you are - a wide one means there is no habit to learn.",
+            "$totalSamples samples across ${stats.size} keys",
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.titleSmall
+        )
+        Text(
+            "Ring = where the key is. Dot = where your typing has moved it. " +
+                "Ellipse = how consistent you are — a wide one means there is no habit to learn.",
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-
-        val totalSamples = stats.sumOf { it.count }
-        Text(
-            "$totalSamples samples across ${stats.size} keys  ·  layout $layoutKey",
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelMedium,
-            fontFamily = FontFamily.Monospace
-        )
-
-        // Why words were turned away. Strict gates and broken gates look identical from a sample
-        // count of zero; this says which one it is.
-        Text(
-            TapSwipeLearner.Counters.summary(),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        if (TapSwipeLearner.Counters.lastRejectedWord.isNotEmpty()) {
-            Text(
-                "last rejected '${TapSwipeLearner.Counters.lastRejectedWord}'  " +
-                    "last margin ${"%.2f".format(TapSwipeLearner.Counters.lastMarginSeen)}",
-                modifier = Modifier.padding(horizontal = 16.dp),
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        if (stats.isEmpty()) {
-            Text(
-                "Nothing learned yet. Turn on \"Adaptive key geometry\" in TapSwipe settings and " +
-                    "swipe some words - only confident swipes with no overlapping strokes count.",
-                modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
 
         GeometryHeatmap(
             letters = layoutInfo.letters,
@@ -168,20 +212,57 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
             byCodePoint = byCodePoint,
             selected = selected,
             onSelect = { selected = if (selected == it) null else it },
+            replayProgress = replay.value,
+            replayData = replayData,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
-                .aspectRatio(2.2f)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         )
 
-        Legend()
+        ReplayControls(
+            playing = replay.isRunning,
+            onPlay = {
+                replayData = TapSwipeLearner.lastLearned
+                scope.launch {
+                    replay.snapTo(0f)
+                    // Slow enough to follow: the stroke draws, then each letter is attributed in
+                    // turn. Fast enough that watching it twice is not a chore.
+                    replay.animateTo(1f, tween(durationMillis = 3200, easing = LinearEasing))
+                }
+            }
+        )
 
-        selected?.let { cp ->
-            KeyDetail(cp, byCodePoint[cp], extent[0], extent[1])
+        if (stats.isEmpty()) {
+            Text(
+                "Nothing learned yet. Turn on “Adaptive key geometry” in TapSwipe settings and " +
+                    "swipe some words — only confident swipes with no overlapping strokes count.",
+                modifier = Modifier.padding(16.dp),
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-        TopMoversTable(stats, extent[0], extent[1]) { selected = it }
+        selected?.let { cp -> KeyDetail(cp, byCodePoint[cp], extent[0], extent[1]) }
+
+        if (stats.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            TopMoversTable(stats, extent[0], extent[1]) { selected = it }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            TapSwipeLearner.Counters.summary(),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            "layout $layoutKey",
+            modifier = Modifier.padding(horizontal = 16.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -201,6 +282,32 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
 }
 
 @Composable
+private fun ReplayControls(playing: Boolean, onPlay: () -> Unit) {
+    val last = TapSwipeLearner.lastLearned
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        OutlinedButton(onClick = onPlay, enabled = last != null && !playing) {
+            Text(if (playing) "Playing…" else "Replay last learned word")
+        }
+        Text(
+            if (last != null) {
+                "Redraws the gesture that taught it “${last.word}”, then shows which part of the " +
+                    "stroke was attributed to each letter and how far off centre it landed." +
+                    (if (last.wasCorrection) " That one came from a correction, so it counted " +
+                        "for extra." else "")
+            } else {
+                "Once a swipe has been learned from, this replays it — showing which part of the " +
+                    "stroke was attributed to each letter."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp, bottom = 8.dp)
+        )
+    }
+}
+
+// ---------------------------------------------------------------- the heatmap
+
+@Composable
 private fun GeometryHeatmap(
     letters: String,
     xs: List<Float>,
@@ -210,140 +317,197 @@ private fun GeometryHeatmap(
     byCodePoint: Map<Int, TapSwipeTouchModel.KeyStats>,
     selected: Int?,
     onSelect: (Int) -> Unit,
+    replayProgress: Float,
+    replayData: TapSwipeLearner.LastLearned?,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
-    // The layout's own normalized coordinates drive the drawing, so this is the real key
-    // arrangement rather than a hard-coded QWERTY mock - it stays correct on any layout.
-    val minX = xs.minOrNull() ?: 0f
-    val maxX = xs.maxOrNull() ?: 1f
-    val minY = ys.minOrNull() ?: 0f
-    val maxY = ys.maxOrNull() ?: 1f
-    val spanX = max(1e-4f, maxX - minX)
-    val spanY = max(1e-4f, maxY - minY)
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
 
-    var canvasSize by remember { mutableStateOf(Size.Zero) }
+    var boxSize by remember { mutableStateOf(IntSize.Zero) }
+
+    // One transform, shared by drawing and hit-testing, so a tap always selects the key drawn under
+    // the finger.
+    val transform = remember(boxSize, xs, ys, halfW, halfH) {
+        HeatmapTransform.of(
+            Size(boxSize.width.toFloat(), boxSize.height.toFloat()), xs, ys, halfW, halfH
+        )
+    }
+
+    val ringPx = with(density) { 5.dp.toPx() }
+    val dotBasePx = with(density) { 3.dp.toPx() }
+    val dotGrowPx = with(density) { 3.5.dp.toPx() }
+    val thinPx = with(density) { 1.dp.toPx() }
+    val boldPx = with(density) { 2.dp.toPx() }
 
     Box(
         modifier = modifier
+            .aspectRatio(keyboardAspect(xs, ys, halfW, halfH))
             .clip(RoundedCornerShape(12.dp))
             .background(scheme.surfaceVariant.copy(alpha = 0.35f))
-            .clickable(enabled = false) {}
+            .onSizeChanged { boxSize = it }
+            .pointerInput(transform, letters) {
+                detectTapGestures { tap ->
+                    val t = transform ?: return@detectTapGestures
+                    var best = -1
+                    var bestD = Float.MAX_VALUE
+                    for (i in letters.indices) {
+                        if (i >= xs.size || i >= ys.size) break
+                        val d = hypot(t.x(xs[i]) - tap.x, t.y(ys[i]) - tap.y)
+                        if (d < bestD) { bestD = d; best = i }
+                    }
+                    // Only count taps that landed near something.
+                    if (best >= 0 && bestD < t.keyW) onSelect(letters[best].code)
+                }
+            }
     ) {
-        Canvas(modifier = Modifier.fillMaxWidth().height(1000.dp).let { Modifier.fillMaxWidth() }
-            .aspectRatio(2.2f)) {
-            canvasSize = size
-            val padX = size.width * 0.06f
-            val padY = size.height * 0.10f
-            val w = size.width - padX * 2
-            val h = size.height - padY * 2
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val t = transform ?: return@Canvas
 
-            fun px(nx: Float) = padX + ((nx - minX) / spanX) * w
-            fun py(ny: Float) = padY + ((ny - minY) / spanY) * h
-
-            // Scale factors converting normalized offsets into on-screen pixels.
-            val sx = w / spanX
-            val sy = h / spanY
-
+            // Keys first, so every marker sits on top of its own key.
             for (i in letters.indices) {
                 if (i >= xs.size || i >= ys.size) break
                 val cp = letters[i].code
-                val cxp = px(xs[i])
-                val cyp = py(ys[i])
+                val cx = t.x(xs[i])
+                val cy = t.y(ys[i])
+                val isSel = selected == cp
+
+                drawRoundRect(
+                    color = if (isSel) scheme.primary.copy(alpha = 0.18f)
+                            else scheme.onSurfaceVariant.copy(alpha = 0.07f),
+                    topLeft = Offset(cx - t.keyW / 2 + thinPx, cy - t.keyH / 2 + thinPx),
+                    size = Size(
+                        (t.keyW - thinPx * 2).coerceAtLeast(1f),
+                        (t.keyH - thinPx * 2).coerceAtLeast(1f)
+                    ),
+                    cornerRadius = CornerRadius(thinPx * 3)
+                )
+
+                val label = measurer.measure(
+                    AnnotatedString(letters[i].toString()),
+                    style = TextStyle(
+                        fontSize = 11.sp,
+                        color = if (isSel) scheme.primary else scheme.onSurfaceVariant
+                    ),
+                    maxLines = 1
+                )
+                drawText(
+                    label,
+                    topLeft = Offset(cx - label.size.width / 2f, cy - t.keyH / 2 + thinPx * 2)
+                )
+            }
+
+            // Learned state per key.
+            for (i in letters.indices) {
+                if (i >= xs.size || i >= ys.size) break
+                val cp = letters[i].code
+                val cx = t.x(xs[i])
+                val cy = t.y(ys[i])
                 val st = byCodePoint[cp]
                 val isSel = selected == cp
 
-                val ringColour = if (isSel) scheme.primary
-                    else scheme.onSurfaceVariant.copy(alpha = 0.45f)
-
                 if (st != null) {
-                    // Spread ellipse first, so markers draw over it.
-                    val ex = st.spreadX * sx
-                    val ey = st.spreadY * sy
-                    if (ex > 0.5f || ey > 0.5f) {
+                    val ex = st.spreadX * t.scaleX
+                    val ey = st.spreadY * t.scaleY
+                    if (ex > 1f || ey > 1f) {
                         drawOval(
-                            color = scheme.tertiary.copy(alpha = 0.16f),
-                            topLeft = Offset(cxp - ex, cyp - ey),
+                            color = scheme.tertiary.copy(alpha = 0.18f),
+                            topLeft = Offset(cx - ex, cy - ey),
                             size = Size(ex * 2, ey * 2)
                         )
                     }
 
-                    val dxp = cxp + st.appliedDx * sx
-                    val dyp = cyp + st.appliedDy * sy
+                    val dx = cx + st.appliedDx * t.scaleX
+                    val dy = cy + st.appliedDy * t.scaleY
+                    val colour = shiftColour(st, halfW, halfH, scheme.primary, scheme.error)
 
-                    // Line from nominal to applied, so direction reads at a glance.
-                    drawLine(
-                        color = shiftColour(st, halfW, halfH, scheme.primary, scheme.error),
-                        start = Offset(cxp, cyp),
-                        end = Offset(dxp, dyp),
-                        strokeWidth = 2f
-                    )
-                    drawCircle(
-                        color = shiftColour(st, halfW, halfH, scheme.primary, scheme.error),
-                        radius = 3f + 3f * st.confidence,
-                        center = Offset(dxp, dyp)
-                    )
+                    drawLine(colour, Offset(cx, cy), Offset(dx, dy), strokeWidth = boldPx)
+                    drawCircle(colour, dotBasePx + dotGrowPx * st.confidence, Offset(dx, dy))
                 }
 
                 drawCircle(
-                    color = ringColour,
-                    radius = 4f,
-                    center = Offset(cxp, cyp),
-                    style = Stroke(width = if (isSel) 2.5f else 1.2f)
+                    color = if (isSel) scheme.primary
+                            else scheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    radius = ringPx,
+                    center = Offset(cx, cy),
+                    style = Stroke(width = if (isSel) boldPx else thinPx)
                 )
             }
-        }
 
-        // Tap targets, laid over the canvas.
-        if (canvasSize != Size.Zero) {
-            KeyTapOverlay(letters, xs, ys, minX, spanX, minY, spanY, canvasSize, onSelect)
+            if (replayProgress > 0f && replayData != null) {
+                drawReplay(t, replayData, replayProgress, scheme, boldPx, dotBasePx, measurer)
+            }
         }
     }
 }
 
 /**
- * Invisible hit targets over the canvas. Compose has no per-shape hit testing on a Canvas, so
- * selection is done with a transparent Box per key rather than by hand-rolling coordinate maths in
- * a pointer handler.
+ * Animates the stroke that produced the last learned word, then the attribution of each letter.
+ *
+ * Two phases. Up to [PATH_PHASE] the gesture is redrawn as it was made; after that each letter is
+ * attributed in turn, with a line from the point of the stroke assigned to it back to that key's
+ * nominal centre. The second phase is the part worth seeing - it is the entire basis on which an
+ * offset gets recorded, and it is otherwise completely invisible.
  */
-@Composable
-private fun KeyTapOverlay(
-    letters: String,
-    xs: List<Float>, ys: List<Float>,
-    minX: Float, spanX: Float, minY: Float, spanY: Float,
-    canvas: Size,
-    onSelect: (Int) -> Unit
+private fun DrawScope.drawReplay(
+    t: HeatmapTransform,
+    data: TapSwipeLearner.LastLearned,
+    progress: Float,
+    scheme: ColorScheme,
+    boldPx: Float,
+    dotPx: Float,
+    measurer: TextMeasurer
 ) {
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val padX = canvas.width * 0.06f
-    val padY = canvas.height * 0.10f
-    val w = canvas.width - padX * 2
-    val h = canvas.height - padY * 2
-    val hit = 18f
+    val n = data.pathX.size
+    if (n < 2) return
 
-    Box(modifier = Modifier.fillMaxWidth()) {
-        for (i in letters.indices) {
-            if (i >= xs.size || i >= ys.size) break
-            val cp = letters[i].code
-            val cxp = padX + ((xs[i] - minX) / spanX) * w
-            val cyp = padY + ((ys[i] - minY) / spanY) * h
-            with(density) {
-                Box(
-                    modifier = Modifier
-                        .padding(start = (cxp - hit).toDp(), top = (cyp - hit).toDp())
-                        .height((hit * 2).toDp())
-                        .clickable { onSelect(cp) }
-                ) {
-                    Text(
-                        letters[i].toString(),
-                        fontSize = 9.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(start = hit.toDp() - 3.dp)
-                    )
-                }
-            }
-        }
+    val pathPhase = (progress / PATH_PHASE).coerceIn(0f, 1f)
+    val drawTo = ((n - 1) * pathPhase).toInt().coerceAtLeast(1)
+
+    val path = Path().apply {
+        moveTo(t.x(data.pathX[0]), t.y(data.pathY[0]))
+        for (i in 1..drawTo) lineTo(t.x(data.pathX[i]), t.y(data.pathY[i]))
     }
+    drawPath(path, color = scheme.tertiary, style = Stroke(width = boldPx * 1.5f))
+
+    // Leading edge, so the direction of travel is obvious while it draws.
+    if (pathPhase < 1f) {
+        drawCircle(
+            scheme.tertiary, dotPx * 1.4f,
+            Offset(t.x(data.pathX[drawTo]), t.y(data.pathY[drawTo]))
+        )
+        return
+    }
+
+    val attrs = data.attributions
+    if (attrs.isEmpty()) return
+    val attrPhase = ((progress - PATH_PHASE) / (1f - PATH_PHASE)).coerceIn(0f, 1f)
+    val shown = (attrs.size * attrPhase).toInt().coerceAtMost(attrs.size)
+
+    for (i in 0 until shown) {
+        val a = attrs[i]
+        val centre = SwipeDecoderDictionary.normalizedKeyPosition(a.codePoint) ?: continue
+        val cx = t.x(centre[0])
+        val cy = t.y(centre[1])
+        val ax = t.x(centre[0] + a.dx)
+        val ay = t.y(centre[1] + a.dy)
+
+        // Taps are exact; swipe points are inferred, so they read as the weaker claim.
+        val colour = if (a.fromTap) scheme.primary else scheme.tertiary
+        val alpha = 0.35f + 0.65f * a.weight
+
+        drawLine(colour.copy(alpha = alpha), Offset(ax, ay), Offset(cx, cy), strokeWidth = boldPx)
+        drawCircle(colour.copy(alpha = alpha), dotPx * 1.2f, Offset(ax, ay))
+        drawCircle(colour.copy(alpha = alpha), dotPx * 0.6f, Offset(cx, cy))
+    }
+
+    val label = measurer.measure(
+        AnnotatedString(data.word),
+        style = TextStyle(fontSize = 13.sp, color = scheme.onSurface),
+        maxLines = 1
+    )
+    drawText(label, topLeft = Offset(dotPx * 2, dotPx * 2))
 }
 
 /** Red once a key is pushing against its cap - the shift is being limited rather than followed. */
@@ -356,43 +520,32 @@ private fun shiftColour(
     return if (atCap) capped else normal
 }
 
-@Composable
-private fun Legend() {
-    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-        Text("ring = nominal centre   ·   dot = learned target (size = confidence)",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("ellipse = spread of your taps   ·   red = shift is hitting its cap",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
+// ---------------------------------------------------------------- detail panels
 
 @Composable
 private fun KeyDetail(
     codePoint: Int, st: TapSwipeTouchModel.KeyStats?, halfW: Float, halfH: Float
 ) {
-    Column(modifier = Modifier.padding(16.dp)) {
-        Text("Key '${codePoint.toChar()}'", style = MaterialTheme.typography.titleSmall)
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text("Key “${codePoint.toChar()}”", style = MaterialTheme.typography.titleSmall)
         if (st == null) {
             Text("No samples yet.", style = MaterialTheme.typography.bodySmall)
             return
         }
-        val pctX = if (halfW > 0) st.meanDx / (halfW * 2f) * 100f else 0f
-        val pctY = if (halfH > 0) st.meanDy / (halfH * 2f) * 100f else 0f
-        val apctX = if (halfW > 0) st.appliedDx / (halfW * 2f) * 100f else 0f
-        val apctY = if (halfH > 0) st.appliedDy / (halfH * 2f) * 100f else 0f
+        val pctX = pct(st.meanDx, halfW)
+        val pctY = pct(st.meanDy, halfH)
+        val apctX = pct(st.appliedDx, halfW)
+        val apctY = pct(st.appliedDy, halfH)
 
         // Percentages of key size, not raw normalized units - "12% left of centre" is a thing you
         // can picture; "-0.0083" is not.
         MonoLine("measured   ${fmtPct(pctX)} x, ${fmtPct(pctY)} y  (of key size)")
         MonoLine("applied    ${fmtPct(apctX)} x, ${fmtPct(apctY)} y")
-        MonoLine("spread     ${fmtPct(if (halfW > 0) st.spreadX / (halfW * 2f) * 100f else 0f)} x, " +
-                 "${fmtPct(if (halfH > 0) st.spreadY / (halfH * 2f) * 100f else 0f)} y")
+        MonoLine("spread     ${fmtPct(pct(st.spreadX, halfW))} x, ${fmtPct(pct(st.spreadY, halfH))} y")
         MonoLine("confidence ${"%.2f".format(st.confidence)}   samples ${st.count}")
         if (abs(apctX) < abs(pctX) * 0.9f || abs(apctY) < abs(pctY) * 0.9f) {
             Text(
-                "Applied shift is smaller than measured - held back by confidence, scatter, or the cap.",
+                "Applied shift is smaller than measured — held back by confidence, scatter, or the cap.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -400,13 +553,14 @@ private fun KeyDetail(
     }
 }
 
+private fun pct(v: Float, half: Float) = if (half > 0f) v / (half * 2f) * 100f else 0f
+
 @Composable
 private fun TopMoversTable(
     stats: List<TapSwipeTouchModel.KeyStats>,
     halfW: Float, halfH: Float,
     onSelect: (Int) -> Unit
 ) {
-    if (stats.isEmpty()) return
     val ranked = remember(stats) {
         stats.sortedByDescending { sqrt(it.appliedDx * it.appliedDx + it.appliedDy * it.appliedDy) }
             .take(10)
@@ -415,23 +569,26 @@ private fun TopMoversTable(
         Text("Most-shifted keys", style = MaterialTheme.typography.titleSmall)
         Spacer(modifier = Modifier.height(4.dp))
         ranked.forEach { st ->
-            val dx = if (halfW > 0) st.appliedDx / (halfW * 2f) * 100f else 0f
-            val dy = if (halfH > 0) st.appliedDy / (halfH * 2f) * 100f else 0f
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onSelect(st.codePoint) }
-                    .padding(vertical = 2.dp),
+                    .padding(vertical = 3.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("'${st.codePoint.toChar()}'",
+                Text(
+                    "“${st.codePoint.toChar()}”",
                     style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace)
-                Text("${fmtPct(dx)} x  ${fmtPct(dy)} y   n=${st.count}",
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    "${fmtPct(pct(st.appliedDx, halfW))} x  " +
+                        "${fmtPct(pct(st.appliedDy, halfH))} y   n=${st.count}",
                     style = MaterialTheme.typography.labelMedium,
                     fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -439,10 +596,7 @@ private fun TopMoversTable(
 
 @Composable
 private fun MonoLine(text: String) {
-    Text(text,
-        style = MaterialTheme.typography.labelMedium,
-        fontFamily = FontFamily.Monospace)
+    Text(text, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace)
 }
 
-private fun fmtPct(v: Float): String =
-    (if (v >= 0) "+" else "") + "%.1f%%".format(v)
+private fun fmtPct(v: Float): String = (if (v >= 0) "+" else "") + "%.1f%%".format(v)
