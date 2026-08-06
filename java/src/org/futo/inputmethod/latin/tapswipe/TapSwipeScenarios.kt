@@ -224,6 +224,24 @@ object TapSwipeScenarios {
 
     private suspend fun settle(ms: Long = SETTLE_MS) = delay(ms)
 
+    /**
+     * Waits for a condition instead of assuming a fixed delay is enough.
+     *
+     * Some state is driven by a settings *flow* rather than written synchronously, so a scenario
+     * that flips a preference and immediately asserts is racing the collector. Polling for the
+     * effect keeps the assertion about behaviour rather than about how fast a coroutine got
+     * scheduled.
+     */
+    private suspend fun awaitUntil(timeoutMs: Long = 1500L, cond: () -> Boolean): Boolean {
+        var waited = 0L
+        while (waited < timeoutMs) {
+            if (cond()) return true
+            delay(50)
+            waited += 50
+        }
+        return cond()
+    }
+
     // ---------------------------------------------------------------- settings under test
 
     /**
@@ -825,60 +843,100 @@ object TapSwipeScenarios {
         // One backspace, right after a word finishes, should pop its last stroke rather than
         // deleting a raw character or (with whole-word backspace on) the whole word outright.
 
-        Scenario("backspace right after a swipe pops its last stroke, not the whole word",
-            group = "Grace reopen",
-            run = {
-                swipe(it, "hel"); settle(); type(it, " "); settle()
-                tap(it, Constants.CODE_DELETE); settle()
-            },
-            check = { p ->
-                if (p.word.isNotEmpty() && p.words.size <= 1) null
-                else "expected the word trimmed in place, got '${p.word}'"
-            }),
+        run {
+            var before = ""
+            Scenario("backspace right after a word pops its last stroke",
+                group = "Grace reopen",
+                // A word of two strokes, deliberately. A single swipe *is* one stroke, so popping
+                // it correctly empties the word - which would make "trimmed in place" untestable.
+                run = { ime ->
+                    swipe(ime, "bu"); settle(); tap(ime, 't'.code); settle()
+                    type(ime, " "); settle()
+                    before = textBeforeCursor(ime).trim()
+                    tap(ime, Constants.CODE_DELETE); settle()
+                },
+                check = { p ->
+                    when {
+                        before.isEmpty() -> "setup produced no word"
+                        p.word.isEmpty() -> "the whole word went instead of one stroke"
+                        p.word.length >= before.length -> "nothing was removed: '$before' -> '${p.word}'"
+                        else -> null
+                    }
+                })
+        },
 
-        Scenario("grace reopen still works with whole-word backspace on",
-            group = "Grace reopen",
-            run = { ime ->
-                withSetting(ime, TapSwipeWholeWordBackspaceSetting, true) {
+        run {
+            var before = ""
+            Scenario("grace reopen still fires with whole-word backspace on",
+                group = "Grace reopen",
+                run = { ime ->
+                    withSetting(ime, TapSwipeWholeWordBackspaceSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "bu"); settle(); tap(ime, 't'.code); settle()
+                        type(ime, " "); settle()
+                        before = textBeforeCursor(ime).trim()
+                        tap(ime, Constants.CODE_DELETE); settle()
+                    }
+                },
+                check = { p ->
+                    when {
+                        before.isEmpty() -> "setup produced no word"
+                        // The point of tier 0: the word is edited, not deleted wholesale.
+                        p.word.isEmpty() -> "whole-word backspace fired instead of the grace reopen"
+                        else -> null
+                    }
+                })
+        },
+
+        run {
+            var afterFirst = ""
+            Scenario("a number loses its space, then one digit, never the whole run",
+                group = "Grace reopen", needsSwipe = false,
+                // The reported case: an accidental space after a phone number, then an instinctive
+                // backspace. The first press must only take the user back to the end of the number.
+                run = { ime ->
+                    withSetting(ime, TapSwipeWholeWordBackspaceSetting, true) {
+                        clearField(ime)
+                        type(ime, "5551234", SLOW_TAP_MS); settle(); type(ime, " "); settle()
+                        tap(ime, Constants.CODE_DELETE); settle()
+                        afterFirst = textBeforeCursor(ime).trim()
+                        tap(ime, Constants.CODE_DELETE); settle()
+                    }
+                },
+                check = { p ->
+                    when {
+                        afterFirst != "5551234" ->
+                            "first backspace should have taken only the space, got '$afterFirst'"
+                        p.lower != "555123" ->
+                            "second backspace should have taken one digit, got '${p.word}'"
+                        else -> null
+                    }
+                })
+        },
+
+        run {
+            var firstWordBefore = ""
+            Scenario("the grace window closes once the next word starts",
+                group = "Grace reopen",
+                run = { ime ->
                     swipe(ime, "hel"); settle(); type(ime, " "); settle()
+                    firstWordBefore = textBeforeCursor(ime).trim()
+                    swipe(ime, "cat"); settle(); type(ime, " "); settle()
                     tap(ime, Constants.CODE_DELETE); settle()
-                }
-            },
-            check = { p ->
-                // The whole word must NOT be gone - that is exactly the behaviour this tier
-                // replaces for a word you just finished.
-                if (p.word.isNotEmpty()) null
-                else "whole-word backspace fired instead of the grace reopen"
-            }),
-
-        Scenario("a numeric word finalized by a space still loses one digit at a time",
-            group = "Grace reopen", needsSwipe = false,
-            run = { ime ->
-                withSetting(ime, TapSwipeWholeWordBackspaceSetting, true) {
-                    type(ime, "5551234", SLOW_TAP_MS); settle(); type(ime, " "); settle()
-                    tap(ime, Constants.CODE_DELETE); settle()
-                }
-            },
-            check = { p ->
-                // The user's own case: a mistyped last digit should cost one digit, not the
-                // whole number, even with whole-word backspace on.
-                if (p.lower == "555123") null
-                else "expected '555123', got '${p.word}' - lost more than one digit"
-            }),
-
-        Scenario("the grace window closes once the next word starts",
-            group = "Grace reopen",
-            run = {
-                swipe(it, "hel"); settle(); type(it, " "); settle()
-                swipe(it, "cat"); settle(); type(it, " "); settle()
-                tap(it, Constants.CODE_DELETE); settle()
-            },
-            check = { p ->
-                // Backspace here belongs to "cat", the second word - "hel" must be untouched by
-                // a stale grace record from the first.
-                if (p.words.getOrNull(0) == "Hel" || p.words.getOrNull(0)?.lowercase() == "hel") null
-                else "first word was disturbed: '${p.word}'"
-            }),
+                },
+                check = { p ->
+                    // Compared against what the decoder actually produced, not a hard-coded word -
+                    // asserting the decoder's taste is how these flake for reasons that mean
+                    // nothing.
+                    val first = p.words.firstOrNull() ?: ""
+                    when {
+                        firstWordBefore.isEmpty() -> "setup produced no first word"
+                        !first.equals(firstWordBefore, ignoreCase = true) ->
+                            "first word changed from '$firstWordBefore' to '$first'"
+                        else -> null
+                    }
+                })
+        },
 
         Scenario("moving the cursor away closes the grace window",
             group = "Grace reopen",
@@ -934,26 +992,31 @@ object TapSwipeScenarios {
 
         run {
             var detail = ""
-            Scenario("whole-word backspace off deletes one character",
+            Scenario("with whole-word backspace off, a second press takes one character",
                 group = "Settings",
+                // The *first* press after a word finishes is always the tier-0 grace reopen, which
+                // is deliberately independent of this setting. The record is single-use, so the
+                // second press is the one this setting governs.
                 run = { ime ->
                     withSetting(ime, TapSwipeWholeWordBackspaceSetting, false) {
                         clearField(ime)
                         swipe(ime, "hel"); settle(); type(ime, " "); settle()
                         swipe(ime, "cat"); settle(); type(ime, " "); settle()
-                        val before = textBeforeCursor(ime).trim()
-                        tap(ime, Constants.CODE_DELETE); settle()
-                        val after = textBeforeCursor(ime).trim()
-                        detail = "$before -> $after"
+                        tap(ime, Constants.CODE_DELETE); settle()   // grace: pops "cat"
+                        val mid = textBeforeCursor(ime).trim()
+                        tap(ime, Constants.CODE_DELETE); settle()   // ordinary: one character
+                        detail = "$mid -> ${textBeforeCursor(ime).trim()}"
                     }
                 },
                 check = { _ ->
                     val parts = detail.split(" -> ")
-                    if (parts.size != 2) "could not read the field: $detail"
-                    else {
-                        val words = parts[1].split(Regex("\\s+")).filter { it.isNotEmpty() }
-                        // The second word must still be there, just shorter.
-                        if (words.size == 2) null else "expected both words to survive: $detail"
+                    when {
+                        parts.size != 2 -> "could not read the field: $detail"
+                        parts[0].isEmpty() -> "grace reopen removed everything: $detail"
+                        // One character off the remaining word, not the whole thing.
+                        parts[1].length != parts[0].length - 1 ->
+                            "expected one character removed: $detail"
+                        else -> null
                     }
                 })
         },
@@ -1024,16 +1087,26 @@ object TapSwipeScenarios {
         },
 
         run {
+            var flagArrived = false
             var sawDots = false
             var sawLetters = false
             Scenario("master mode hides letters and peck reveals them",
-                group = "Settings", needsSwipe = false,
+                group = "Settings",
                 run = { ime ->
                     withSetting(ime, TapSwipeMasterModeSetting, true) {
                         clearField(ime)
-                        settle(200)
+                        // The flag is kept in sync by a settings-flow collector rather than written
+                        // synchronously, so wait for it rather than assuming a delay covers it.
+                        flagArrived = awaitUntil { TapSwipeMasterMode.enabled }
+
+                        // A swipe first, deliberately: TapSwipeUiState.mode is a global that an
+                        // earlier scenario can leave in PECK or LEGACY_TAP, both of which reveal
+                        // letters by design. Without this the case fails on leaked state.
+                        swipe(ime, "hel"); settle()
                         sawDots = TapSwipeMasterMode.shouldHideLetters()
-                        // Peck mode exists so a deliberate speller can see what they are aiming at.
+
+                        clearField(ime)
+                        // Peck exists so a deliberate speller can see what they are aiming at.
                         type(ime, "cat", SLOW_TAP_MS)
                         settle(200)
                         sawLetters = !TapSwipeMasterMode.shouldHideLetters()
@@ -1041,7 +1114,8 @@ object TapSwipeScenarios {
                 },
                 check = { _ ->
                     when {
-                        !sawDots -> "letters were not hidden with master mode on"
+                        !flagArrived -> "the master mode flag never reached the keyboard"
+                        !sawDots -> "letters were not hidden while swiping with master mode on"
                         !sawLetters -> "peck did not reveal the letters again"
                         else -> null
                     }
