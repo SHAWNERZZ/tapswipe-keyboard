@@ -462,6 +462,11 @@ public final class InputLogic {
         // same way again, and a stale reference must not survive to be misread later.
         mTapSwipeGraceRecord = null;
 
+        // Whatever geometry was learned from this word described a word the user is now undoing.
+        // Retracted before the validity checks below, deliberately: the rejection is real whether
+        // or not the reopen itself can proceed.
+        TapSwipeLearner.onWordRejected(record.committedWord);
+
         if (SystemClock.uptimeMillis() - record.createdAtMs > TAPSWIPE_GRACE_MAX_MS) {
             if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe grace reopen: expired");
             return false;
@@ -651,6 +656,24 @@ public final class InputLogic {
                     mImeHelper.getContext(), mTapSwipeSession, committed, settingsValues);
         } catch (Throwable t) {
             Log.e(TAG, "tapswipe geometry learning failed", t);
+        }
+    }
+
+    /**
+     * Offers a manually picked word to the adaptive touch model as ground truth.
+     *
+     * Wrapped like its tier-1 counterpart: learning is a nice-to-have and must never take down a
+     * keystroke.
+     */
+    private void maybeLearnTapSwipeCorrection(final SettingsValues settingsValues,
+            final String pickedWord) {
+        if (!isTapSwipeMode() || !TapSwipeLearner.isEnabled()) return;
+        if (TextUtils.isEmpty(pickedWord)) return;
+        try {
+            TapSwipeLearner.onWordCorrected(
+                    mImeHelper.getContext(), mTapSwipeSession, pickedWord, settingsValues);
+        } catch (Throwable t) {
+            Log.e(TAG, "tapswipe correction learning failed", t);
         }
     }
 
@@ -1145,9 +1168,20 @@ public final class InputLogic {
             return inputTransaction;
         }
 
+        // TapSwipe tier 2: picking a suggestion tells us what the gesture actually meant, while the
+        // original strokes are still intact. Must run before commitChosenWord, which ends the
+        // composing region and lets validate-on-read discard the session.
+        maybeLearnTapSwipeCorrection(settingsValues, suggestion);
+
         commitChosenWord(settingsValues, suggestion, LastComposedWord.COMMIT_TYPE_MANUAL_PICK,
                 LastComposedWord.NOT_A_SEPARATOR, suggestionInfo.isKindOf(SuggestedWordInfo.KIND_TYPED) ? 3 : 1);
         mConnection.endBatchEdit();
+
+        // The word is over. Same reasoning as the separator path: clear unconditionally rather than
+        // relying on validate-on-read to notice later, so strokes cannot reach the next word.
+        if (isTapSwipeMode()) {
+            resetTapSwipeSession("suggestion picked");
+        }
         // Don't allow cancellation of manual pick
         mLastComposedWord.deactivate();
         // Space state must be updated before calling updateShiftState

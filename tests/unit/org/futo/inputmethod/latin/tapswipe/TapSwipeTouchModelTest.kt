@@ -137,6 +137,69 @@ class TapSwipeTouchModelTest {
         assertEquals(0, TapSwipeTouchModel.totalSamples())
     }
 
+    // ---------------------------------------------------------------- retraction
+
+    /**
+     * Retraction has to be arithmetically exact, or every correction would leave a residue that
+     * accumulates into a bias nobody typed.
+     */
+    @Test
+    fun `retracting every sample returns a key to unseen`() {
+        feed('e'.code, 0.02f, 0.01f, 6)
+        assertNotNull(shift('e'.code))
+
+        repeat(6) { TapSwipeTouchModel.retract(layout, 'e'.code, 0.02f, 0.01f, 1f, now) }
+
+        assertNull("the key should read as unseen again", shift('e'.code))
+        assertEquals(0, TapSwipeTouchModel.totalSamples())
+    }
+
+    @Test
+    fun `retracting one sample leaves the rest intact`() {
+        feed('e'.code, 0.02f, 0f, 10)
+
+        TapSwipeTouchModel.retract(layout, 'e'.code, 0.02f, 0f, 1f, now)
+
+        val stats = TapSwipeTouchModel.statsFor(layout, halfW, halfH, now)
+        val e = stats.first { it.codePoint == 'e'.code }
+        assertEquals(9, e.count)
+        // Nine identical samples still average to the same offset they always did.
+        assertEquals(0.02f, e.meanDx, 1e-4f)
+    }
+
+    /**
+     * A correction retracts the mistaken word's samples and records the right ones. The mistaken
+     * geometry must leave nothing behind, or the key ends up pulled between two answers.
+     */
+    @Test
+    fun `a retracted sample stops influencing the mean`() {
+        // Learned from a misread word: consistently to the right.
+        feed('e'.code, 0.03f, 0f, 8)
+        // Then corrected: the truth was to the left.
+        repeat(8) { TapSwipeTouchModel.retract(layout, 'e'.code, 0.03f, 0f, 1f, now) }
+        feed('e'.code, -0.03f, 0f, 8)
+
+        val s = shift('e'.code)
+        assertNotNull(s)
+        assertTrue("expected the corrected direction to win outright, got ${s!![0]}", s[0] < 0f)
+    }
+
+    @Test
+    fun `retracting a key that was never recorded is harmless`() {
+        TapSwipeTouchModel.retract(layout, 'q'.code, 0.02f, 0f, 1f, now)
+        assertNull(shift('q'.code))
+    }
+
+    @Test
+    fun `retracting more than was recorded cannot drive weight negative`() {
+        feed('e'.code, 0.02f, 0f, 2)
+
+        repeat(10) { TapSwipeTouchModel.retract(layout, 'e'.code, 0.02f, 0f, 1f, now) }
+
+        assertNull(shift('e'.code))
+        assertEquals(0, TapSwipeTouchModel.totalSamples())
+    }
+
     // ---------------------------------------------------------------- persistence guards
 
     /**

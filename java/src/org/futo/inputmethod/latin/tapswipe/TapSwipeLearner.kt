@@ -53,6 +53,26 @@ object TapSwipeLearner {
     /** Words this short are dominated by their endpoints and carry little shape information. */
     private const val MIN_WORD_LENGTH = 3
 
+    /**
+     * Extra weight for a sample whose word the user named explicitly.
+     *
+     * Not because the gesture is better - it is the same sloppy stroke either way - but because the
+     * *label* is certain. An accepted decode only tells us the decoder agreed with itself; a picked
+     * correction tells us what the person actually meant.
+     */
+    private const val CORRECTION_WEIGHT = 1.5f
+
+    /** What was recorded for the most recent word, so it can be taken back if that word is undone. */
+    private class LearnedBatch(
+        val layoutKey: String,
+        val word: String,
+        val attributions: List<TapSwipeStrokeAligner.Attribution>,
+        val weightScale: Float
+    )
+
+    @Volatile
+    private var lastBatch: LearnedBatch? = null
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -73,6 +93,8 @@ object TapSwipeLearner {
         @Volatile @JvmStatic var notAligned = 0
         @Volatile @JvmStatic var implausible = 0
         @Volatile @JvmStatic var blockedByField = 0
+        @Volatile @JvmStatic var corrected = 0
+        @Volatile @JvmStatic var retracted = 0
         @Volatile @JvmStatic var lastRejectedWord = ""
         @Volatile @JvmStatic var lastMarginSeen = 0f
 
@@ -80,13 +102,14 @@ object TapSwipeLearner {
         fun summary(): String =
             "accepted=$accepted (samples=$samples)  short=$tooShort  noSwipe=$noSwipe  " +
             "concurrent=$concurrent  mismatch=$wordMismatch  lowMargin=$lowMargin  " +
-            "unaligned=$notAligned  implausible=$implausible  noLearnField=$blockedByField"
+            "unaligned=$notAligned  implausible=$implausible  noLearnField=$blockedByField\n" +
+            "corrected=$corrected  retracted=$retracted"
 
         @JvmStatic
         fun reset() {
             accepted = 0; samples = 0; tooShort = 0; noSwipe = 0; concurrent = 0
             wordMismatch = 0; lowMargin = 0; notAligned = 0; implausible = 0
-            blockedByField = 0
+            blockedByField = 0; corrected = 0; retracted = 0
             lastRejectedWord = ""; lastMarginSeen = 0f
         }
     }
@@ -203,19 +226,36 @@ object TapSwipeLearner {
             return
         }
 
+        commit(context, layoutKey, word, attributions, weightScale = 1f)
+        Counters.accepted++
+    }
+
+    /**
+     * Records a batch and remembers it, so a correction moments later can take it back.
+     */
+    private fun commit(
+        context: Context,
+        layoutKey: String,
+        word: String,
+        attributions: List<TapSwipeStrokeAligner.Attribution>,
+        weightScale: Float
+    ) {
         val now = System.currentTimeMillis()
         for (a in attributions) {
-            TapSwipeTouchModel.record(layoutKey, a.codePoint, a.dx, a.dy, a.weight, now)
+            TapSwipeTouchModel.record(
+                layoutKey, a.codePoint, a.dx, a.dy, a.weight * weightScale, now)
         }
-        Counters.accepted++
+        lastBatch = LearnedBatch(layoutKey, word, attributions, weightScale)
         Counters.samples += attributions.size
 
         if (DEBUG) {
-            Log.d(TAG, "learned from '$word': " + attributions.joinToString {
-                "${it.codePoint.toChar()}${if (it.fromTap) "*" else ""}" +
-                    "(${"%.4f".format(it.dx)},${"%.4f".format(it.dy)}" +
-                    " w=${"%.2f".format(it.weight)})"
-            })
+            Log.d(TAG, "learned from '$word'" +
+                (if (weightScale != 1f) " (x$weightScale)" else "") + ": " +
+                attributions.joinToString {
+                    "${it.codePoint.toChar()}${if (it.fromTap) "*" else ""}" +
+                        "(${"%.4f".format(it.dx)},${"%.4f".format(it.dy)}" +
+                        " w=${"%.2f".format(it.weight)})"
+                })
         }
 
         samplesSinceSave += attributions.size
@@ -224,6 +264,90 @@ object TapSwipeLearner {
             val app = context.applicationContext
             scope.launch { TapSwipeTouchModel.save(app) }
         }
+    }
+
+    /**
+     * Tier 2, positive: the user named the word the gesture meant.
+     *
+     * Called when a suggestion is picked for a word that is still composing, so the strokes are the
+     * *original* ones - the same gesture, now with a label we know is right. That makes it better
+     * evidence than anything [onWordFinalized] collects, and it is the case where learning has the
+     * most to correct, since the decoder demonstrably read this gesture wrong.
+     *
+     * The confidence gates that guard accepted words are therefore skipped: the decode margin and
+     * the decode-matches-committed check both exist to establish that the decoder was probably
+     * right, and here the user has overruled it. The plausibility check stays - it guards against
+     * someone picking an unrelated next-word prediction, where the stroke never went near the
+     * letters and the offsets would be meaningless.
+     */
+    @JvmStatic
+    fun onWordCorrected(
+        context: Context,
+        session: TapSwipeSession,
+        correctedWord: String,
+        settingsValues: SettingsValues?
+    ) {
+        if (!isEnabled()) return
+        TapSwipeTouchModel.ensureLoaded(context)
+        if (!isAllowedInField(settingsValues)) { Counters.blockedByField++; return }
+
+        val word = correctedWord.trim()
+        if (word.length < MIN_WORD_LENGTH) { Counters.tooShort++; return }
+
+        val strokes = session.strokes
+        if (strokes.isEmpty()) return
+        if (strokes.none { it.kind == TapSwipeSession.Kind.SWIPE }) { Counters.noSwipe++; return }
+
+        val inputs = strokes
+            .filter { !it.isEmpty }
+            .map { TapSwipeStrokeAligner.StrokeInput(it.kind, it.codePoint, it.x, it.y, it.t) }
+        if (inputs.isEmpty()) return
+        if (TapSwipeStrokeAligner.overlapsInTime(inputs)) { Counters.concurrent++; return }
+
+        val layoutKey = SwipeDecoderDictionary.currentTouchModelLayoutKey() ?: return
+        val extent = SwipeDecoderDictionary.normalizedKeyHalfExtent() ?: return
+
+        val aligned = TapSwipeStrokeAligner.align(word, inputs) { cp ->
+            SwipeDecoderDictionary.normalizedKeyPosition(cp)
+        }
+        val keepTaps = DataStoreHelper.getSetting(TapSwipeRealTapPositionSetting)
+        val attributions = if (keepTaps) aligned else aligned.filter { !it.fromTap }
+
+        if (attributions.isEmpty()) { Counters.notAligned++; return }
+        if (!TapSwipeStrokeAligner.isPlausible(attributions, extent[0], extent[1])) {
+            Counters.implausible++
+            if (DEBUG) Log.d(TAG, "rejected implausible correction for '$word'")
+            return
+        }
+
+        commit(context, layoutKey, word, attributions, CORRECTION_WEIGHT)
+        Counters.corrected++
+    }
+
+    /**
+     * Tier 2, negative: a word we just learned from turned out to be wrong.
+     *
+     * Called when a finished word is reopened for editing, which is the user saying the committed
+     * text was not what they meant. Whatever geometry was recorded for it describes a misreading,
+     * so it is taken back rather than left to drag the affected keys toward a word nobody typed.
+     *
+     * Only the immediately preceding batch is retractable, and only if it is for this word. Holding
+     * a longer history would mean guessing which edit undid which sample.
+     */
+    @JvmStatic
+    fun onWordRejected(word: String) {
+        if (!isEnabled()) return
+        val batch = lastBatch ?: return
+        if (!batch.word.equals(word.trim(), ignoreCase = true)) return
+        lastBatch = null
+
+        val now = System.currentTimeMillis()
+        for (a in batch.attributions) {
+            TapSwipeTouchModel.retract(
+                batch.layoutKey, a.codePoint, a.dx, a.dy, a.weight * batch.weightScale, now)
+        }
+        Counters.retracted++
+        if (DEBUG) Log.d(TAG, "retracted what was learned from '${batch.word}'")
     }
 
     /** Flush on the way out, so a session's last few words are not lost. */

@@ -277,6 +277,44 @@ object TapSwipeTouchModel {
     }
 
     /**
+     * Removes a sample previously passed to [record].
+     *
+     * Used when a word is corrected moments after being learned from: the geometry recorded for it
+     * described a word the user did not mean, so leaving it in would teach the wrong lesson from a
+     * gesture we now know was misread.
+     *
+     * Exact reversal relies on decay being negligible over the seconds between learning a word and
+     * rejecting it - [decayInPlace] scales by elapsed wall-clock time, which over that interval is
+     * indistinguishable from 1. Sums are clamped at zero regardless, since float arithmetic that
+     * drifted negative would produce a nonsense mean.
+     */
+    @JvmStatic
+    fun retract(
+        layoutKey: String, codePoint: Int, dx: Float, dy: Float, weight: Float, nowMs: Long
+    ) {
+        if (weight <= 0f || !dx.isFinite() || !dy.isFinite()) return
+        synchronized(lock) {
+            val accum = model.layouts[layoutKey]?.keys?.get(codePoint.toString()) ?: return
+            decayInPlace(accum, nowMs)
+
+            accum.sumW = max(0f, accum.sumW - weight)
+            accum.sumWdx -= weight * dx
+            accum.sumWdy -= weight * dy
+            accum.sumWdx2 = max(0f, accum.sumWdx2 - weight * dx * dx)
+            accum.sumWdy2 = max(0f, accum.sumWdy2 - weight * dy * dy)
+            accum.count = max(0, accum.count - 1)
+
+            // Nothing left worth keeping: drop the entry so it reads as unseen rather than as a
+            // key with a confident-looking zero.
+            if (accum.sumW <= 1e-6f) {
+                model.layouts[layoutKey]?.keys?.remove(codePoint.toString())
+            }
+            dirty = true
+        }
+        revision++
+    }
+
+    /**
      * Applies wall-clock decay up to [nowMs]. Called on read as well as write, so a key that has
      * not been touched in months reports faded evidence rather than whatever it held when last
      * written.
