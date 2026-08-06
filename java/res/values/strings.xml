@@ -293,6 +293,7 @@ mobile devices. [CHAR LIMIT=25] -->
     <string name="action_master_mode_title">Master Mode</string>
     <string name="tapswipe_settings_master_mode">Master Mode</string>
     <string name="tapswipe_settings_master_mode_subtitle">Show letter keys as dots. Peck mode brings the letters back while you spell a word out.</string>
+    <string name="tapswipe_settings_apostrophe_layout_note">Languages offers a layout with a thin apostrophe key beside L, matching the original Nintype — redirect a swipe along the right edge to force an apostrophe, keeping “its” and “it’s” apart. It trades away the English/QWERTY decoder refinement, which is fixed at 26 keys, so contractions may need the apostrophe swiped rather than inferred.</string>
     <string name="tapswipe_settings_adaptive_geometry">Adaptive key geometry</string>
     <string name="tapswipe_settings_adaptive_geometry_subtitle">Learn where your fingers actually land while swiping, and tell the decoder. Helps most with fast, sloppy swiping.</string>
     <string name="tapswipe_settings_learned_geometry">Learned key geometry</string>

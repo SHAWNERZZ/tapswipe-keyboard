@@ -95,7 +95,7 @@ val TapSwipeMenu = UserSettingsMenu(
             title = R.string.tapswipe_settings_adaptive_geometry,
             subtitle = R.string.tapswipe_settings_adaptive_geometry_subtitle,
             setting = TapSwipeAdaptiveGeometrySetting,
-            icon = { Icon(painterResource(R.drawable.circle), contentDescription = null) }
+            icon = { Icon(painterResource(R.drawable.move), contentDescription = null) }
         ).copy(visibilityCheck = tapSwipeEnabled),
 
         userSettingNavigationItem(
@@ -157,6 +157,11 @@ val TapSwipeMenu = UserSettingsMenu(
             Spacer(Modifier.height(16.dp))
             Text(
                 stringResource(R.string.tapswipe_settings_learning_note),
+                style = Typography.Small,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+            )
+            Text(
+                stringResource(R.string.tapswipe_settings_apostrophe_layout_note),
                 style = Typography.Small,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
             )

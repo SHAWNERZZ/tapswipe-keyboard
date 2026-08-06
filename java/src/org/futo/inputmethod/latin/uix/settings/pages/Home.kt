@@ -80,7 +80,10 @@ val HomeScreenLite = UserSettingsMenu(
             title = TapSwipeMenu.title,
             style = NavigationItemStyle.HomePrimary,
             navigateTo = TapSwipeMenu.navPath,
-            icon = R.drawable.swipe_icon
+            // Not swipe_icon: the Swipe typing entry directly above uses it, and two identical
+            // icons side by side read as one duplicated row. A touch point with directions out of
+            // it is also the better fit - this section is about taps and swipes as one model.
+            icon = R.drawable.direction_arrows
         ),
 
         userSettingNavigationItem(
