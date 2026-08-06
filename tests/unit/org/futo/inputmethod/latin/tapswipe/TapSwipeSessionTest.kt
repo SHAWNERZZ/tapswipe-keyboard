@@ -243,6 +243,83 @@ class TapSwipeSessionTest {
         assertEquals("", s.literalText)
     }
 
+    // ---------------------------------------------------------------- restoreStrokes
+
+    /**
+     * The grace-reopen path's whole reason to exist: rebuild a session from a snapshot taken
+     * before an earlier reset, so a stroke can be popped from a word that already committed.
+     */
+    @Test
+    fun `restoreStrokes rebuilds a session closed by reset`() {
+        val original = session()
+        original.swipe()
+        original.tap('t'.code)
+        val snapshot = original.strokes.toList()
+        original.reset("finalized")
+        assertFalse(original.isOpen)
+
+        val revived = session()
+        revived.restoreStrokes(snapshot)
+
+        assertTrue(revived.isOpen)
+        assertEquals(2, revived.strokes.size)
+    }
+
+    @Test
+    fun `restoreStrokes leaves an already-open session untouched`() {
+        val s = session()
+        s.tap('a'.code)
+        val snapshot = listOf(
+            TapSwipeSession.Stroke(
+                TapSwipeSession.Kind.SWIPE, TapSwipeSession.Hand.LEFT,
+                floatArrayOf(0.1f), floatArrayOf(0.1f), floatArrayOf(0f), 0
+            )
+        )
+
+        // Restoring into a session that already has strokes would merge two words' evidence -
+        // exactly the runaway-word bug class this class exists to prevent.
+        s.restoreStrokes(snapshot)
+
+        assertEquals(1, s.strokes.size)
+    }
+
+    @Test
+    fun `restoring an empty snapshot is a no-op`() {
+        val s = session()
+        assertFalse(s.isOpen)
+
+        s.restoreStrokes(emptyList())
+
+        assertFalse(s.isOpen)
+    }
+
+    @Test
+    fun `a restored session can still be popped and re-emptied`() {
+        val original = session()
+        original.tap('a'.code)
+        val snapshot = original.strokes.toList()
+        original.reset("finalized")
+
+        val revived = session()
+        revived.restoreStrokes(snapshot)
+
+        assertTrue(revived.popLastStroke())
+        assertFalse(revived.isOpen)
+    }
+
+    @Test
+    fun `restoreStrokes bumps the generation`() {
+        val s = session()
+        val before = s.generation
+        s.restoreStrokes(listOf(
+            TapSwipeSession.Stroke(
+                TapSwipeSession.Kind.TAP, TapSwipeSession.Hand.LEFT,
+                floatArrayOf(0.5f), floatArrayOf(0.5f), floatArrayOf(0f), 'a'.code
+            )
+        ))
+        assertNotEquals(before, s.generation)
+    }
+
     @Test
     fun `hands route to the left and right decoder streams`() {
         val s = session()

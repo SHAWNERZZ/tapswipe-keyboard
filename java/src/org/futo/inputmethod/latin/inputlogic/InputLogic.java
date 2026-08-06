@@ -377,6 +377,137 @@ public final class InputLogic {
         }
     }
 
+    /**
+     * Snapshot of a just-finalized TapSwipe word, kept briefly so one backspace can reopen it for
+     * stroke-level editing instead of either doing nothing useful or (with whole-word backspace on)
+     * deleting the whole thing outright.
+     *
+     * Deliberately separate from {@link #mTapSwipeSession}, which still gets fully reset at every
+     * finalize exactly as before - this is a read-mostly side record, not a second copy of the live
+     * session's lifecycle, so it cannot reintroduce the stroke-leakage class of bug that
+     * {@code reset()} exists to prevent.
+     */
+    private static final class TapSwipeGraceRecord {
+        final java.util.List<TapSwipeSession.Stroke> strokes;
+        final String committedWord;
+        final String separator;
+        /** Cursor position right after {@link #committedWord}, before {@link #separator} lands. */
+        final int selStartAfterWord;
+        final long createdAtMs;
+
+        TapSwipeGraceRecord(java.util.List<TapSwipeSession.Stroke> strokes, String committedWord,
+                String separator, int selStartAfterWord, long createdAtMs) {
+            this.strokes = strokes;
+            this.committedWord = committedWord;
+            this.separator = separator;
+            this.selStartAfterWord = selStartAfterWord;
+            this.createdAtMs = createdAtMs;
+        }
+    }
+
+    /**
+     * How long a finalized word stays reopenable. This is a backstop, not the real gate - the real
+     * gate is that the cursor must still sit exactly where the commit left it and nothing else may
+     * have started composing, which the consult-time check below verifies directly. The time cap
+     * only guards against a pathologically long-lived editor session where the cursor never moves.
+     */
+    private static final long TAPSWIPE_GRACE_MAX_MS = 15_000L;
+
+    private TapSwipeGraceRecord mTapSwipeGraceRecord = null;
+
+    /**
+     * Captures the word that is about to finalize, before {@link #resetTapSwipeSession} clears its
+     * evidence. Called from the same spot that already reads {@link #mLastComposedWord} to feed the
+     * geometry learner, since both need the same "word just settled" moment.
+     */
+    private void captureTapSwipeGraceRecord() {
+        final java.util.List<TapSwipeSession.Stroke> strokes = mTapSwipeSession.getStrokes();
+        if (strokes.isEmpty()) {
+            mTapSwipeGraceRecord = null;
+            return;
+        }
+        final LastComposedWord last = mLastComposedWord;
+        final String committedWord = (last != null && last.mCommittedWord != null)
+                ? last.mCommittedWord.toString() : "";
+        if (committedWord.isEmpty()) {
+            mTapSwipeGraceRecord = null;
+            return;
+        }
+        final String separator = (last.mSeparatorString != null) ? last.mSeparatorString : "";
+        mTapSwipeGraceRecord = new TapSwipeGraceRecord(
+                new java.util.ArrayList<>(strokes), committedWord, separator,
+                mConnection.getExpectedSelectionStart(), SystemClock.uptimeMillis());
+    }
+
+    /**
+     * Tier 0 (recently finalized): reopens a word for stroke-level editing right after it commits.
+     *
+     * A backspace the instant after commit is almost always "that's not what I meant", and popping
+     * the last stroke is more useful a response than either neighbouring tier: whole-word delete is
+     * too blunt for a word you just finished, and a plain character delete operates on decoded or
+     * autocorrected text that may not even resemble what was typed.
+     *
+     * Reconstructs the exact pre-commit state - composing word set back to what was committed,
+     * session strokes restored - and then delegates to {@link #handleTapSwipeStrokeUndo}, so there
+     * is exactly one place that pops a stroke and rewrites the word, not two copies of that logic
+     * that could drift apart.
+     *
+     * @return true if a grace record existed, matched the live editor exactly, and was consumed.
+     */
+    private boolean handleTapSwipeGraceReopen(final Event event,
+            final InputTransaction inputTransaction) {
+        final TapSwipeGraceRecord record = mTapSwipeGraceRecord;
+        if (record == null) return false;
+        // Single-use regardless of outcome: a record that fails validation now will only fail the
+        // same way again, and a stale reference must not survive to be misread later.
+        mTapSwipeGraceRecord = null;
+
+        if (SystemClock.uptimeMillis() - record.createdAtMs > TAPSWIPE_GRACE_MAX_MS) {
+            if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe grace reopen: expired");
+            return false;
+        }
+
+        final int expectedSelStart = record.selStartAfterWord + record.separator.length();
+        if (mConnection.getExpectedSelectionStart() != expectedSelStart) {
+            if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe grace reopen: cursor moved");
+            return false;
+        }
+
+        final int span = record.committedWord.length() + record.separator.length();
+        final CharSequence before = mConnection.getTextBeforeCursor(span, 0);
+        if (before == null || !TextUtils.equals(before, record.committedWord + record.separator)) {
+            if (DEBUG_TAPSWIPE) {
+                Log.d(TAG, "tapswipe grace reopen: text no longer matches, found '" + before + "'");
+            }
+            return false;
+        }
+
+        mConnection.deleteTextBeforeCursor(span);
+        if (!TextUtils.isEmpty(record.committedWord)) {
+            unlearnWord(record.committedWord, inputTransaction.mSettingsValues,
+                    Constants.EVENT_REVERT);
+        }
+
+        final int[] codePoints = StringUtils.toCodePointArray(record.committedWord);
+        mWordComposer.setComposingWord(codePoints, mImeHelper.getCodepointCoordinates(codePoints));
+        setComposingTextInternal(getTextWithUnderline(record.committedWord), 1);
+
+        mTapSwipeSession.restoreStrokes(record.strokes);
+        mTapSwipeSession.noteComposingWrite(
+                record.committedWord, mConnection.getExpectedSelectionStart());
+
+        if (DEBUG_TAPSWIPE) {
+            Log.d(TAG, "tapswipe grace reopen: '" + record.committedWord + "' ("
+                    + record.strokes.size() + " stroke(s) restored)");
+        }
+
+        // State now matches exactly what it would have been one keystroke earlier, before the word
+        // committed - so the ordinary mid-word path takes it from here.
+        final boolean handled = handleTapSwipeStrokeUndo(event, inputTransaction);
+        refreshTapSwipePeckIndicator();
+        return handled;
+    }
+
     public boolean isTapSwipeWholeWordBackspace() {
         return isTapSwipeMode()
                 && DataStoreHelper.getSetting(
@@ -476,6 +607,12 @@ public final class InputLogic {
         final int lengthToDelete = before.length() - end;
         final String removed = before.subSequence(end, wordEnd).toString();
 
+        // A phone number or a run of symbols was never a decoded "word" in the first place - there
+        // is nothing here whole-word delete is meant to undo, and bulk-deleting a long number
+        // because the last digit was mistyped is a bad trade. Falls through to a plain
+        // character-at-a-time delete instead.
+        if (!containsLetter(removed)) return false;
+
         unlearnWord(removed, inputTransaction.mSettingsValues, Constants.EVENT_BACKSPACE);
         mConnection.deleteTextBeforeCursor(lengthToDelete);
         StatsUtils.onBackspaceWordDelete(lengthToDelete);
@@ -485,6 +622,16 @@ public final class InputLogic {
                     + lengthToDelete + " chars)");
         }
         return true;
+    }
+
+    private static boolean containsLetter(final String s) {
+        int i = 0;
+        while (i < s.length()) {
+            final int cp = s.codePointAt(i);
+            if (Character.isLetter(cp)) return true;
+            i += Character.charCount(cp);
+        }
+        return false;
     }
 
     /**
@@ -725,6 +872,7 @@ public final class InputLogic {
         mEnteredText = null;
         mWordBeingCorrectedByCursor = null;
         numCursorUpdatesSinceInputStarted = 0;
+        mTapSwipeGraceRecord = null;
         mConnection.finishComposingText(); // On screen rotation in case we were composing, finish composition before resetting
         mConnection.onStartInput();
         if (!mWordComposer.getTypedWord().isEmpty()) {
@@ -1823,6 +1971,7 @@ public final class InputLogic {
             // Learn before discarding: this is the first moment the word is settled, and the last
             // at which the strokes that produced it still exist.
             maybeLearnTapSwipeGeometry(settingsValues);
+            captureTapSwipeGraceRecord();
             resetTapSwipeSession("finalizer: " + StringUtils.newSingleCodePointString(codePoint));
         }
 
@@ -2154,6 +2303,16 @@ public final class InputLogic {
 
             // No cancelling of commit/double space/swap: we have a regular backspace.
             // We should backspace one char and restart suggestion if at the end of a word.
+            // TapSwipe tier 0: right after a word finalizes, one backspace reopens it for
+            // stroke-level editing rather than falling to whole-word or character delete. Placed
+            // after the revert branches above deliberately - undoing an autocorrect, a double-space
+            // period or an inserted ".com" is a one-press undo of the *previous keystroke* and must
+            // keep priority, matching tier 2's own ordering rationale below.
+            if (isTapSwipeMode() && !event.isKeyRepeat() && !mConnection.hasSelection()
+                    && handleTapSwipeGraceReopen(event, inputTransaction)) {
+                return;
+            }
+
             // TapSwipe tier 2: a committed word is removed whole rather than a character at a
             // time. Placed after the revert branches above deliberately - undoing an autocorrect,
             // a double-space period or an inserted ".com" is a one-press undo of the *previous

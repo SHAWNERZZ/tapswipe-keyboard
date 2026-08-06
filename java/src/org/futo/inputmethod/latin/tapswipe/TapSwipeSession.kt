@@ -161,6 +161,29 @@ class TapSwipeSession {
     }
 
     /**
+     * Re-populates the session from a snapshot taken before an earlier [reset].
+     *
+     * Used only by the TapSwipe grace-reopen path: a backspace right after a word commits gets one
+     * more chance to pop a stroke, by rebuilding the exact pre-commit evidence rather than adding a
+     * second history mechanism alongside this one. The caller is responsible for re-establishing
+     * composing state and the anchor afterwards - this restores only the strokes themselves.
+     *
+     * Refuses (loudly) to run on a session that already has strokes. Restoring into an open session
+     * would merge two words' evidence into one, which is exactly the runaway-word bug class this
+     * class exists to prevent.
+     */
+    fun restoreStrokes(strokes: List<Stroke>) {
+        if (isOpen) {
+            Log.e(TAG, "restoreStrokes called on an open session (${strokesInternal.size} " +
+                    "strokes already present) - ignoring to avoid merging two words' evidence")
+            return
+        }
+        if (strokes.isEmpty()) return
+        strokesInternal.addAll(strokes)
+        generation++
+    }
+
+    /**
      * Validate-on-read. Call before *every* use of the session.
      *
      * @param isComposingWord whether the editor still has a composing word

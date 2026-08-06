@@ -821,6 +821,79 @@ object TapSwipeScenarios {
                 check = { _ -> if (detail.startsWith("OK")) null else detail })
         },
 
+        // --- grace reopen (tier 0) ----------------------------------------------------------
+        // One backspace, right after a word finishes, should pop its last stroke rather than
+        // deleting a raw character or (with whole-word backspace on) the whole word outright.
+
+        Scenario("backspace right after a swipe pops its last stroke, not the whole word",
+            group = "Grace reopen",
+            run = {
+                swipe(it, "hel"); settle(); type(it, " "); settle()
+                tap(it, Constants.CODE_DELETE); settle()
+            },
+            check = { p ->
+                if (p.word.isNotEmpty() && p.words.size <= 1) null
+                else "expected the word trimmed in place, got '${p.word}'"
+            }),
+
+        Scenario("grace reopen still works with whole-word backspace on",
+            group = "Grace reopen",
+            run = { ime ->
+                withSetting(ime, TapSwipeWholeWordBackspaceSetting, true) {
+                    swipe(ime, "hel"); settle(); type(ime, " "); settle()
+                    tap(ime, Constants.CODE_DELETE); settle()
+                }
+            },
+            check = { p ->
+                // The whole word must NOT be gone - that is exactly the behaviour this tier
+                // replaces for a word you just finished.
+                if (p.word.isNotEmpty()) null
+                else "whole-word backspace fired instead of the grace reopen"
+            }),
+
+        Scenario("a numeric word finalized by a space still loses one digit at a time",
+            group = "Grace reopen", needsSwipe = false,
+            run = { ime ->
+                withSetting(ime, TapSwipeWholeWordBackspaceSetting, true) {
+                    type(ime, "5551234", SLOW_TAP_MS); settle(); type(ime, " "); settle()
+                    tap(ime, Constants.CODE_DELETE); settle()
+                }
+            },
+            check = { p ->
+                // The user's own case: a mistyped last digit should cost one digit, not the
+                // whole number, even with whole-word backspace on.
+                if (p.lower == "555123") null
+                else "expected '555123', got '${p.word}' - lost more than one digit"
+            }),
+
+        Scenario("the grace window closes once the next word starts",
+            group = "Grace reopen",
+            run = {
+                swipe(it, "hel"); settle(); type(it, " "); settle()
+                swipe(it, "cat"); settle(); type(it, " "); settle()
+                tap(it, Constants.CODE_DELETE); settle()
+            },
+            check = { p ->
+                // Backspace here belongs to "cat", the second word - "hel" must be untouched by
+                // a stale grace record from the first.
+                if (p.words.getOrNull(0) == "Hel" || p.words.getOrNull(0)?.lowercase() == "hel") null
+                else "first word was disturbed: '${p.word}'"
+            }),
+
+        Scenario("moving the cursor away closes the grace window",
+            group = "Grace reopen",
+            run = {
+                swipe(it, "hel"); settle(); type(it, " "); settle()
+                moveCursorToStart(it); settle()
+                tap(it, Constants.CODE_DELETE); settle()
+            },
+            check = { p ->
+                // The cursor moved to the start; backspace there must not reach forward and pop a
+                // stroke out of a word the cursor is no longer next to.
+                if (p.text.trim().lowercase().let { w -> w == "hel" || w.isEmpty() }) null
+                else "backspace acted on the wrong position: '${p.text}'"
+            }),
+
         // --- settings that change behaviour -----------------------------------------------
         // Each of these was a manual checklist line: turn a preference on, try something, turn it
         // back. They restore the preference even when the assertion fails.
