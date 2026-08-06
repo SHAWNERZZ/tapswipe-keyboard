@@ -5,7 +5,7 @@
 | Layer | How to run | Device | Status |
 |---|---|---|---|
 | JVM unit tests | `./gradlew testUnstableDebugUnitTest` | none | **working** - 18 tests, ~5s |
-| In-app scenario runner | Memory Debug action -> **Run scenarios** | phone | **working** - 57 scenarios, ~3 min |
+| In-app scenario runner | Memory Debug action -> **Run scenarios** | phone | **working** - 62 scenarios, ~3 min |
 | Manual matrix | the checklist below | phone | for anything the runner cannot reach |
 
 ## Why the layers differ in value
