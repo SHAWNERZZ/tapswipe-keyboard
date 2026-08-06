@@ -843,27 +843,22 @@ object TapSwipeScenarios {
         // One backspace, right after a word finishes, should pop its last stroke rather than
         // deleting a raw character or (with whole-word backspace on) the whole word outright.
 
-        run {
-            var before = ""
-            Scenario("backspace right after a word pops its last stroke",
-                group = "Grace reopen",
-                // A word of two strokes, deliberately. A single swipe *is* one stroke, so popping
-                // it correctly empties the word - which would make "trimmed in place" untestable.
-                run = { ime ->
-                    swipe(ime, "bu"); settle(); tap(ime, 't'.code); settle()
-                    type(ime, " "); settle()
-                    before = textBeforeCursor(ime).trim()
-                    tap(ime, Constants.CODE_DELETE); settle()
-                },
-                check = { p ->
-                    when {
-                        before.isEmpty() -> "setup produced no word"
-                        p.word.isEmpty() -> "the whole word went instead of one stroke"
-                        p.word.length >= before.length -> "nothing was removed: '$before' -> '${p.word}'"
-                        else -> null
-                    }
-                })
-        },
+        Scenario("backspace right after a word pops its last stroke",
+            group = "Grace reopen", needsSwipe = false,
+            // A pecked word, deliberately. Popping a stroke off a *swiped* word re-runs the
+            // decoder on what remains, and it can legitimately return the same word - dropping the
+            // 't' from "but" leaves a b-to-u swipe, which decodes to "but" again. Asserting the
+            // text got shorter would then be asserting the decoder's taste, which is the trap this
+            // file's own rule warns about. Peck words never reach the decoder, so the result is
+            // exact.
+            run = {
+                type(it, "cat", SLOW_TAP_MS); settle(); type(it, " "); settle()
+                tap(it, Constants.CODE_DELETE); settle()
+            },
+            check = { p ->
+                if (p.lower == "ca") null
+                else "expected 'ca' after popping the last tap, got '${p.word}'"
+            }),
 
         run {
             var before = ""
@@ -991,31 +986,40 @@ object TapSwipeScenarios {
         },
 
         run {
+            var lengths = listOf<Int>()
             var detail = ""
-            Scenario("with whole-word backspace off, a second press takes one character",
+            Scenario("with whole-word backspace off, later presses take one character each",
                 group = "Settings",
                 // The *first* press after a word finishes is always the tier-0 grace reopen, which
                 // is deliberately independent of this setting. The record is single-use, so the
-                // second press is the one this setting governs.
+                // presses after it are the ones this setting governs.
+                //
+                // Lengths are measured untrimmed: the character removed straight after the grace
+                // reopen is the separating space, and trimming would hide it and make two different
+                // states look identical.
                 run = { ime ->
                     withSetting(ime, TapSwipeWholeWordBackspaceSetting, false) {
                         clearField(ime)
                         swipe(ime, "hel"); settle(); type(ime, " "); settle()
                         swipe(ime, "cat"); settle(); type(ime, " "); settle()
+
                         tap(ime, Constants.CODE_DELETE); settle()   // grace: pops "cat"
-                        val mid = textBeforeCursor(ime).trim()
-                        tap(ime, Constants.CODE_DELETE); settle()   // ordinary: one character
-                        detail = "$mid -> ${textBeforeCursor(ime).trim()}"
+                        val a = textBeforeCursor(ime)
+                        tap(ime, Constants.CODE_DELETE); settle()   // ordinary: the space
+                        val b = textBeforeCursor(ime)
+                        tap(ime, Constants.CODE_DELETE); settle()   // ordinary: one letter
+                        val c = textBeforeCursor(ime)
+
+                        lengths = listOf(a.length, b.length, c.length)
+                        detail = "'$a' -> '$b' -> '$c'"
                     }
                 },
                 check = { _ ->
-                    val parts = detail.split(" -> ")
                     when {
-                        parts.size != 2 -> "could not read the field: $detail"
-                        parts[0].isEmpty() -> "grace reopen removed everything: $detail"
-                        // One character off the remaining word, not the whole thing.
-                        parts[1].length != parts[0].length - 1 ->
-                            "expected one character removed: $detail"
+                        lengths.size != 3 -> "could not read the field"
+                        lengths[0] == 0 -> "grace reopen removed everything: $detail"
+                        lengths[1] != lengths[0] - 1 || lengths[2] != lengths[1] - 1 ->
+                            "expected one character per press: $detail"
                         else -> null
                     }
                 })

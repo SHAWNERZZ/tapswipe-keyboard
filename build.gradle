@@ -248,11 +248,11 @@ android {
         debug {
             minifyEnabled false
             shrinkResources false
-            // This fork publishes the unstable *debug* APK as its release artifact, so it must be
-            // signed with our own key rather than the shared keystore committed upstream. When
-            // keystore.properties is absent (any clone but the maintainer's) releaseSigning falls
-            // back to signingConfigs.debug, so this is identical to upstream behaviour there.
-            signingConfig releaseSigning
+            // Signed with the shared keystore committed upstream, as FUTO's own builds are.
+            // A fork-specific key was tried and reverted: it buys provenance nobody is checking,
+            // and costs an uninstall-and-restore on every switch between this build and any other
+            // build of the same package, which is a real tax on comparing against upstream.
+            signingConfig signingConfigs.debug
         }
         release {
             minifyEnabled true
