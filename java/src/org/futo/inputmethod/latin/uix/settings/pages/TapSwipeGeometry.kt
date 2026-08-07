@@ -225,9 +225,14 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
                 replayData = TapSwipeLearner.lastLearned
                 scope.launch {
                     replay.snapTo(0f)
-                    // Slow enough to follow: the stroke draws, then each letter is attributed in
-                    // turn. Fast enough that watching it twice is not a chore.
-                    replay.animateTo(1f, tween(durationMillis = 3200, easing = LinearEasing))
+                    // Length follows the word's real duration, slowed, so a hurried word replays
+                    // hurried and a deliberate one replays deliberate. Clamped at both ends: too
+                    // short to follow is useless, and a long pause mid-word should not mean sitting
+                    // through it. Relative timing within the word is preserved either way, which is
+                    // the part that says something about the input.
+                    val gestureMs = (replayData?.durationMs ?: 0f) * 2.5f
+                    val totalMs = (gestureMs / PATH_PHASE).toInt().coerceIn(1600, 6000)
+                    replay.animateTo(1f, tween(durationMillis = totalMs, easing = LinearEasing))
                 }
             }
         )
@@ -443,12 +448,17 @@ private fun GeometryHeatmap(
 }
 
 /**
- * Animates the stroke that produced the last learned word, then the attribution of each letter.
+ * Replays the last learned word, then shows how each letter was attributed.
  *
- * Two phases. Up to [PATH_PHASE] the gesture is redrawn as it was made; after that each letter is
- * attributed in turn, with a line from the point of the stroke assigned to it back to that key's
- * nominal centre. The second phase is the part worth seeing - it is the entire basis on which an
- * offset gets recorded, and it is otherwise completely invisible.
+ * The gesture phase runs on the **recorded timestamps**, not at a uniform rate. Taps and swipes are
+ * separate events that happened at particular moments, and flattening them into one evenly-drawn
+ * polyline misrepresented the input twice over: a tap became a line joining it to wherever the
+ * finger had last been, and the pause before it disappeared. When a tap landed relative to a swipe
+ * is part of what the aligner had to work with, so the replay honours it.
+ *
+ * The attribution phase then draws, for each letter, a line from the point of the stroke assigned to
+ * it back to that key's nominal centre - which is precisely the offset that gets recorded, and is
+ * otherwise completely invisible.
  */
 private fun DrawScope.drawReplay(
     t: HeatmapTransform,
@@ -459,26 +469,58 @@ private fun DrawScope.drawReplay(
     dotPx: Float,
     measurer: TextMeasurer
 ) {
-    val n = data.pathX.size
-    if (n < 2) return
+    val segments = data.segments
+    if (segments.isEmpty()) return
 
-    val pathPhase = (progress / PATH_PHASE).coerceIn(0f, 1f)
-    val drawTo = ((n - 1) * pathPhase).toInt().coerceAtLeast(1)
+    val t0 = segments.minOf { it.startT }
+    val t1 = segments.maxOf { it.endT }
+    val span = (t1 - t0).coerceAtLeast(1f)
 
-    val path = Path().apply {
-        moveTo(t.x(data.pathX[0]), t.y(data.pathY[0]))
-        for (i in 1..drawTo) lineTo(t.x(data.pathX[i]), t.y(data.pathY[i]))
+    val gesturePhase = (progress / PATH_PHASE).coerceIn(0f, 1f)
+    val now = t0 + span * gesturePhase
+
+    for (seg in segments) {
+        if (seg.startT > now) continue
+
+        if (seg.isTap) {
+            // A tap is an instant, drawn as a mark rather than a line. It flashes larger for a
+            // moment after it lands, so its place in the sequence is visible rather than inferred.
+            val age = ((now - seg.startT) / (span * 0.18f)).coerceIn(0f, 1f)
+            val pop = 1f + (1f - age) * 1.1f
+            drawCircle(
+                scheme.primary, dotPx * 1.3f * pop,
+                Offset(t.x(seg.x[0]), t.y(seg.y[0]))
+            )
+            drawCircle(
+                scheme.primary.copy(alpha = 0.35f * (1f - age)),
+                dotPx * 3f * pop,
+                Offset(t.x(seg.x[0]), t.y(seg.y[0])),
+                style = Stroke(width = boldPx)
+            )
+            continue
+        }
+
+        // Swipe: draw only as far as this moment reaches.
+        var upTo = 0
+        while (upTo + 1 < seg.t.size && seg.t[upTo + 1] <= now) upTo++
+        if (upTo < 1) continue
+
+        val path = Path().apply {
+            moveTo(t.x(seg.x[0]), t.y(seg.y[0]))
+            for (i in 1..upTo) lineTo(t.x(seg.x[i]), t.y(seg.y[i]))
+        }
+        drawPath(path, color = scheme.tertiary, style = Stroke(width = boldPx * 1.5f))
+
+        // Leading edge while this stroke is still in progress, so direction of travel is obvious.
+        if (gesturePhase < 1f && seg.endT > now) {
+            drawCircle(
+                scheme.tertiary, dotPx * 1.4f,
+                Offset(t.x(seg.x[upTo]), t.y(seg.y[upTo]))
+            )
+        }
     }
-    drawPath(path, color = scheme.tertiary, style = Stroke(width = boldPx * 1.5f))
 
-    // Leading edge, so the direction of travel is obvious while it draws.
-    if (pathPhase < 1f) {
-        drawCircle(
-            scheme.tertiary, dotPx * 1.4f,
-            Offset(t.x(data.pathX[drawTo]), t.y(data.pathY[drawTo]))
-        )
-        return
-    }
+    if (gesturePhase < 1f) return
 
     val attrs = data.attributions
     if (attrs.isEmpty()) return

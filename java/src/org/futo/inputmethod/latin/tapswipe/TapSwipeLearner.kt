@@ -11,6 +11,8 @@ import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
 import org.futo.inputmethod.latin.settings.SettingsValues
 import org.futo.inputmethod.latin.uix.DataStoreHelper
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Turns accepted swipes into evidence for [TapSwipeTouchModel].
@@ -76,47 +78,91 @@ object TapSwipeLearner {
     /**
      * The most recent word learned from, kept so the settings page can replay it.
      *
-     * Holds the stroke path as well as the attributions, because seeing the gesture redrawn is what
-     * makes the attribution legible - a list of offsets says nothing about which part of a swipe
-     * produced them. Downsampled and capped, so this stays a few hundred bytes rather than a
-     * transcript of everything typed.
+     * Holds the strokes as separate timed segments rather than one flattened path, because a tap
+     * and a swipe are different events and drawing them as one polyline misrepresents what
+     * happened - a tap became a line joining it to wherever the finger had been. Timestamps are
+     * kept so a replay can honour the gaps too: when a tap landed relative to a swipe is part of
+     * what the aligner had to work with.
+     *
+     * Thinned and capped, so this stays a few hundred bytes rather than a transcript of typing.
      */
+    class ReplaySegment(
+        val isTap: Boolean,
+        /** Code point for a tap; meaningless for a swipe. */
+        val codePoint: Int,
+        val x: FloatArray,
+        val y: FloatArray,
+        /** Milliseconds from the start of the word. */
+        val t: FloatArray
+    ) {
+        val startT: Float get() = if (t.isEmpty()) 0f else t[0]
+        val endT: Float get() = if (t.isEmpty()) 0f else t[t.size - 1]
+    }
+
     class LastLearned(
         val word: String,
         val attributions: List<TapSwipeStrokeAligner.Attribution>,
-        val pathX: FloatArray,
-        val pathY: FloatArray,
+        val segments: List<ReplaySegment>,
         val wasCorrection: Boolean
-    )
+    ) {
+        /** Wall-clock length of the whole word, so a replay can run at a faithful relative speed. */
+        val durationMs: Float
+            get() {
+                if (segments.isEmpty()) return 0f
+                val start = segments.minOf { it.startT }
+                val end = segments.maxOf { it.endT }
+                return (end - start).coerceAtLeast(0f)
+            }
+    }
 
     @Volatile
     @JvmStatic
     var lastLearned: LastLearned? = null
         private set
 
-    /** Points retained for replay. Enough to read the shape, far fewer than a raw stroke. */
-    private const val REPLAY_POINTS = 64
+    /** Points retained across all swipe segments. Enough to read the shape, far fewer than raw. */
+    private const val REPLAY_POINTS = 96
 
-    /** Flattens the strokes in time order, thinned to [REPLAY_POINTS]. */
-    private fun replayPath(
+    /**
+     * Copies the strokes for replay, in time order, thinning swipes to fit the budget.
+     *
+     * Taps are never thinned - they are one point each, and they are the events whose timing
+     * matters most for understanding an alignment.
+     */
+    private fun replaySegments(
         inputs: List<TapSwipeStrokeAligner.StrokeInput>
-    ): Pair<FloatArray, FloatArray> {
-        val xs = ArrayList<Float>()
-        val ys = ArrayList<Float>()
-        for (stroke in inputs.sortedBy { it.startT }) {
-            for (i in stroke.x.indices) { xs.add(stroke.x[i]); ys.add(stroke.y[i]) }
-        }
-        if (xs.size <= REPLAY_POINTS) return xs.toFloatArray() to ys.toFloatArray()
-        val ox = FloatArray(REPLAY_POINTS)
-        val oy = FloatArray(REPLAY_POINTS)
-        for (i in 0 until REPLAY_POINTS) {
-            val src = (i.toLong() * (xs.size - 1) / (REPLAY_POINTS - 1)).toInt()
-            ox[i] = xs[src]; oy[i] = ys[src]
-        }
-        return ox to oy
-    }
+    ): List<ReplaySegment> {
+        val ordered = inputs.sortedBy { it.startT }
+        val swipePoints = ordered.filter { it.kind != TapSwipeSession.Kind.SWIPE }
+            .let { taps -> ordered.sumOf { it.x.size } - taps.sumOf { it.x.size } }
+        val budget = REPLAY_POINTS.coerceAtLeast(1)
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        return ordered.mapNotNull { stroke ->
+            if (stroke.x.isEmpty()) return@mapNotNull null
+            val isTap = stroke.kind == TapSwipeSession.Kind.TAP
+            if (isTap) {
+                return@mapNotNull ReplaySegment(
+                    true, Character.toLowerCase(stroke.codePoint),
+                    floatArrayOf(stroke.x[0]), floatArrayOf(stroke.y[0]),
+                    floatArrayOf(if (stroke.t.isNotEmpty()) stroke.t[0] else 0f)
+                )
+            }
+            val share = if (swipePoints <= budget) stroke.x.size
+                        else max(2, stroke.x.size * budget / max(1, swipePoints))
+            val take = min(stroke.x.size, share)
+            val ox = FloatArray(take)
+            val oy = FloatArray(take)
+            val ot = FloatArray(take)
+            for (i in 0 until take) {
+                val src = if (take == 1) 0
+                          else (i.toLong() * (stroke.x.size - 1) / (take - 1)).toInt()
+                ox[i] = stroke.x[src]
+                oy[i] = stroke.y[src]
+                ot[i] = if (src < stroke.t.size) stroke.t[src] else 0f
+            }
+            ReplaySegment(false, 0, ox, oy, ot)
+        }
+    }
 
     /**
      * Why words were turned away, since the last app start.
@@ -156,6 +202,8 @@ object TapSwipeLearner {
             lastRejectedWord = ""; lastMarginSeen = 0f
         }
     }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Save is debounced by sample count rather than time - writes are tiny and infrequent anyway. */
     private const val SAVE_EVERY_N_SAMPLES = 12
@@ -290,8 +338,8 @@ object TapSwipeLearner {
                 layoutKey, a.codePoint, a.dx, a.dy, a.weight * weightScale, now)
         }
         lastBatch = LearnedBatch(layoutKey, word, attributions, weightScale)
-        val (px, py) = replayPath(inputs)
-        lastLearned = LastLearned(word, attributions, px, py, wasCorrection = weightScale != 1f)
+        lastLearned = LastLearned(
+            word, attributions, replaySegments(inputs), wasCorrection = weightScale != 1f)
         Counters.samples += attributions.size
 
         if (DEBUG) {
