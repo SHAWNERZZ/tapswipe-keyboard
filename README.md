@@ -13,21 +13,18 @@
 
 Builds are published on the [Releases page](https://github.com/SHAWNERZZ/tapswipe-keyboard/releases).
 It installs alongside the official FUTO Keyboard rather than replacing it, and everything is off by
-default — enable it at **Settings → TapSwipe**.
+default - enable it at **Settings -> TapSwipe**.
 
-APKs are signed with this fork's own key, which is deliberately **not** a FUTO key:
-
-```
-CN=TapSwipe Keyboard, O=SHAWNERZZ, C=US
-SHA-256: 66:DA:06:46:8B:58:26:C3:EB:11:B8:34:B9:6E:A2:78:87:0A:7B:98:E8:39:C5:33:C5:8E:CE:3B:FD:15:AC:97
-```
+APKs are signed with the shared keystore committed to the upstream repository, as FUTO's own builds
+are. That keystore is public, so a signature here proves nothing about who built the APK - only that
+it was not tampered with after signing.
 
 ## What's different
 
 A reimplementation of the input model from the old **Nintype** keyboard, built on top of FUTO's
 neural swipe decoder. Two behaviours differ fundamentally from the upstream keyboard:
 
-- **Taps and swipes compose into one word.** `tap H, tap E, tap L, swipe L→O` decodes as "hello".
+- **Taps and swipes compose into one word.** `tap H, tap E, tap L, swipe L->O` decodes as "hello".
   Both hands can swipe at once; the decoder resolves the interleaving through the lexicon.
 - **Only a separator finalizes a word.** Lifting a finger never commits. Space, punctuation, or
   Enter ends the word; until then every new tap or swipe re-decodes the whole thing.
@@ -36,14 +33,40 @@ Plus a **peck mode** for words that contain no swipe: tap a word out slowly and 
 skips autocorrect, is committed exactly as typed, and is learned so you can swipe it next time. This
 is how you enter a word the dictionary doesn't know. Key borders mark it while it's active.
 
-**Master Mode** renders letter keys as dots — once you're typing by shape rather than reading keys,
+**Master Mode** renders letter keys as dots - once you're typing by shape rather than reading keys,
 the letters are just noise. Peck mode brings them back while you spell something out, and if you
 simply tap away for a few words the keyboard concludes you want a normal keyboard and restores the
 letters until you swipe again. There's an action-bar button to toggle it.
 
-Everything is behind a setting (Settings → TapSwipe → "TapSwipe input model"), off by default,
+**Backspace edits the thing you just did.** While a word is being built it removes the last tap or
+swipe rather than the last character, so a mis-swipe can be redone without losing what came before
+it. That holds for a moment after the word finishes too, which is usually when you notice it came
+out wrong. Whole-word delete is available as a setting for older words, and never applies to a run
+of digits or symbols with no letters - deleting an entire phone number because the last digit was
+mistyped is not a trade worth making.
+
+**Adaptive key geometry** (opt-in) learns where your fingers actually land and tells the decoder,
+which takes key positions as a runtime input. It aims at fast, sloppy swiping - the case that needs
+help - so a deliberately spelled word teaches it nothing. Once a word is accepted, its stroke is
+aligned against the letters it produced to work out which part of the path was aiming at which key,
+which reaches the middle of a word where corner-cutting actually happens. Corrections teach it more
+than accepted words do: picking a suggestion supplies the right answer for a gesture the decoder
+demonstrably misread, and backspacing into a word takes back what was learned from it. Shifts are
+capped, confidence-gated, suppressed on keys you hit inconsistently, and faded on elapsed time.
+Settings -> TapSwipe -> **Learned key geometry** draws the model over your layout and can replay
+the last word it learned from, at the timing you actually typed it.
+
+An optional **QWERTY (Nintype apostrophe)** layout puts a thin apostrophe key in the gap right of L,
+so redirecting a swipe along the right edge keeps "its" and "it's" apart. The gap it uses already
+exists on stock QWERTY, folded invisibly into L's tap area, so no other key moves. It does turn off
+FUTO's English/QWERTY decoder refinement, which is fixed at 26 keys - about half a point of top-1
+accuracy by [their paper's numbers](https://arxiv.org/abs/2606.25247), the same as already happens
+on Dvorak and AZERTY.
+
+Everything is behind a setting (Settings -> TapSwipe -> "TapSwipe input model"), off by default,
 so the stock behaviour is one toggle away. Design notes, the reasoning behind each decision, and a
-full record of the bugs found along the way are in [TAPSWIPE_PLAN.md](TAPSWIPE_PLAN.md).
+full record of the bugs found along the way are in [TAPSWIPE_PLAN.md](TAPSWIPE_PLAN.md); the testing
+approach is in [TAPSWIPE_TESTING.md](TAPSWIPE_TESTING.md).
 
 ## Licensing
 
