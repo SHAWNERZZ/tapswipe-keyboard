@@ -142,6 +142,18 @@ val DefaultBottomRow = Row(
     )
 )
 
+/**
+ * The bottom row without its comma key, for when a gesture provides the comma instead.
+ *
+ * Nothing replaces the gap: the space key is [KeyWidth.Grow], so it simply takes the freed width,
+ * which is the point - the gesture buys back space rather than leaving a hole.
+ */
+val BottomRowWithoutComma = Row(
+    bottom = DefaultBottomRow.bottom!!.filterNot {
+        it is ContextualKey && (it.fallbackKey as? BaseKey)?.spec == ","
+    }
+)
+
 enum class NumberRowMode {
     UserConfigurable,
     AlwaysEnabled,
@@ -324,7 +336,13 @@ data class Keyboard(
         assert(rows.count { it.isLetterRow } in 1..8) { "Keyboard must contain between 1 and 8 letter rows" }
     }
 
-    fun getEffectiveRows(numberRowMode: Int) = rows.toMutableList().apply {
+    /**
+     * @param hideCommaKey drop the comma from the default bottom row, letting the space key grow
+     *   into it. Only affects the *default* bottom row - a layout that defines its own is left
+     *   alone, since removing a key someone placed deliberately would be presumptuous.
+     */
+    @JvmOverloads
+    fun getEffectiveRows(numberRowMode: Int, hideCommaKey: Boolean = false) = rows.toMutableList().apply {
         if(find { it.isNumberRow } == null) {
             add(0, when(numberRowMode) {
                 Settings.NUMBER_ROW_MODE_CLASSIC -> DefaultNumberRowClassic
@@ -356,7 +374,7 @@ data class Keyboard(
 
 
             // Add default bottom row
-            add(DefaultBottomRow)
+            add(if (hideCommaKey) BottomRowWithoutComma else DefaultBottomRow)
         }
 
         ensureRowsValid(this)

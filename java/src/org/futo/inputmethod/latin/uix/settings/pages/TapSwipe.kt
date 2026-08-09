@@ -17,6 +17,7 @@ import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
 import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
+import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import org.futo.inputmethod.latin.TapSwipeWpmSetting
 import org.futo.inputmethod.latin.TapSwipeWholeWordBackspaceSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
@@ -122,6 +123,13 @@ val TapSwipeMenu = UserSettingsMenu(
             subtitle = R.string.tapswipe_settings_whole_word_backspace_subtitle,
             setting = TapSwipeWholeWordBackspaceSetting,
             icon = { Icon(painterResource(R.drawable.delete), contentDescription = null) }
+        ).copy(visibilityCheck = tapSwipeEnabled),
+
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_nintype_gestures,
+            subtitle = R.string.tapswipe_settings_nintype_gestures_subtitle,
+            setting = TapSwipeNintypeGesturesSetting,
+            icon = { Icon(painterResource(R.drawable.direction_arrows), contentDescription = null) }
         ).copy(visibilityCheck = tapSwipeEnabled),
 
         userSettingToggleDataStore(

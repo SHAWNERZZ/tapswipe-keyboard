@@ -64,6 +64,7 @@ import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.BasicThemeProvider
 import org.futo.inputmethod.latin.uix.DataStoreHelper
+import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner
 import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel
 import org.futo.inputmethod.latin.uix.DynamicThemeProvider
@@ -435,6 +436,14 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
                 activeColorScheme.value = themeOption.obtainColors(this@LatinIME)
 
                 updateDrawableProvider(activeColorScheme.value)
+                invalidateKeyboard()
+            }
+        }
+
+        launchJob {
+            // Nintype gestures change the bottom row itself - the comma key is removed and the
+            // space key grows into it - so this needs a full keyboard rebuild, not a repaint.
+            getSettingFlow(TapSwipeNintypeGesturesSetting).collect {
                 invalidateKeyboard()
             }
         }

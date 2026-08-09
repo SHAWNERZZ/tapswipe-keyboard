@@ -39,6 +39,8 @@ import org.futo.inputmethod.latin.SuggestedWords
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo
 import org.futo.inputmethod.latin.SuggestionBlacklist
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
+import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
+import org.futo.inputmethod.latin.tapswipe.NintypeGestures
 import org.futo.inputmethod.latin.WordComposer
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.common.InputPointers
@@ -615,6 +617,29 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     }
 
     override fun onEndBatchInput(batchPointers: InputPointers?) {
+        // Whole-stroke shortcuts are claimed here, before the tail decode is dispatched. That is
+        // the last moment nothing has been written for this gesture: mid-stroke updates only
+        // refresh the suggestion strip (see onGetSuggestedWordsInternal, which acts on composing
+        // text solely for TAIL_BATCH), so there is no composing word to unwind.
+        if (helper.context.getSetting(TapSwipeNintypeGesturesSetting)) {
+            val shortcut = NintypeGestures.match(batchPointers, helper.keyboardSwitcher.keyboard)
+            if (shortcut != null) {
+                // Routed through the ordinary keypress path rather than committed directly, so it
+                // behaves exactly as tapping the key would - finalizing any word in progress,
+                // applying auto-spacing rules, and updating shift state.
+                onEvent(
+                    Event.createSoftwareKeypressEvent(
+                        shortcut.codePoint,
+                        Event.NOT_A_KEY_CODE,
+                        Constants.NOT_A_COORDINATE,
+                        Constants.NOT_A_COORDINATE,
+                        false
+                    )
+                )
+                return
+            }
+        }
+
         inputLogic.onEndBatchInput(batchPointers)
     }
 

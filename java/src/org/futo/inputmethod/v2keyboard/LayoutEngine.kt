@@ -1,5 +1,7 @@
 package org.futo.inputmethod.v2keyboard
 
+import org.futo.inputmethod.latin.uix.DataStoreHelper
+import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import android.content.Context
 import android.graphics.Rect
 import android.util.Log
@@ -115,7 +117,10 @@ data class LayoutEngine(
     val horizontalGap = layoutParams.gap
     val verticalGap = layoutParams.gap * 2
 
-    val effectiveRows = keyboard.getEffectiveRows(params.mId.mNumberRowMode)
+    val effectiveRows = keyboard.getEffectiveRows(
+        params.mId.mNumberRowMode,
+        DataStoreHelper.getSetting(TapSwipeNintypeGesturesSetting)
+    )
 
     private val rows = run {
         val filteredRows = effectiveRows.filter {

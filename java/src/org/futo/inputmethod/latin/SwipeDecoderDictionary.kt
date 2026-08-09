@@ -305,6 +305,16 @@ val TapSwipeAdaptiveGeometrySetting =
     SettingsKey(booleanPreferencesKey("tapswipe_adaptive_geometry"), false)
 
 /**
+ * Nintype-style whole-stroke gesture shortcuts.
+ *
+ * One flag covering both halves on purpose, for now: the gesture that produces a comma, and the
+ * removal of the comma key it replaces. Splitting them would mean shipping a layout with a dead key
+ * on it, or a gesture competing with the key it was meant to supersede.
+ */
+val TapSwipeNintypeGesturesSetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_nintype_gestures"), false)
+
+/**
  * Shows typing speed on the space bar, measured per text field.
  *
  * Off by default - it is a curiosity rather than something that improves typing, and the space bar
