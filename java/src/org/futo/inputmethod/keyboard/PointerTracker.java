@@ -190,6 +190,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
      */
     private Key mDownKey;
     private int mMaxDriftX;
+    private boolean mNintypeShortcutFired;
 
     /**
      * How long "tap, then slide" stays armed after the tap releases.
@@ -826,6 +827,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             mStartTime = System.currentTimeMillis();
             mDownKey = key;
             mMaxDriftX = 0;
+            mNintypeShortcutFired = false;
             mStartedOnFastLongPress = key.isFastLongPress();
             mSpacebarLongPressed = false;
 
@@ -1039,6 +1041,10 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         // the time the finger lifts there is no path left to inspect.
         final int drift = Math.abs(x - mStartX);
         if (drift > mMaxDriftX) mMaxDriftX = drift;
+
+        if (maybeFireNintypeShortcut(x, y)) {
+            return;
+        }
 
         final SettingsValues settingsValues = Settings.getInstance().getCurrent();
 
@@ -1282,9 +1288,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (currentKey != null && currentKey.getCode() == Constants.CODE_DELETE) {
             sLastPlainBackspaceReleaseMs = System.currentTimeMillis();
         }
-        if (maybeSendNintypeShortcut(currentKey, x, y, eventTime)) {
-            return;
-        }
         detectAndSendKey(currentKey, mKeyX, mKeyY, eventTime);
         if (isInSlidingKeyInput) {
             callListenerOnFinishSlidingInput();
@@ -1465,31 +1468,57 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     }
 
     /**
-     * Claims a stroke that was too slow to become a gesture but traces a shortcut shape.
+     * Fires a whole-stroke shortcut the moment the pull becomes unambiguous, mid-stroke.
      *
-     * Deliberately placed where it is: everything above has already declined to handle the stroke,
-     * so the only thing being displaced is the ordinary key that a drag from V onto the space bar
-     * would otherwise send - a space, which is not what the user was reaching for.
+     * Not on release, which was the previous attempt and could not work for the motion people
+     * actually make. Flicking down past the space bar takes the finger outside the valid gesture
+     * area, and leaving that area calls {@code cancelBatchInput}, which cancels every active
+     * tracker - including this one. {@code onUpEventInternal} then returns at its
+     * {@code mIsTrackingForActionDisabled} guard, long before any release-time check. So the harder
+     * someone flicked, the more certainly nothing happened, and only carefully stopping on the bar
+     * worked - exactly what was reported.
      *
-     * @return true when the stroke was consumed as a shortcut
+     * Firing on movement also matches what the gesture is: a flick commits when it crosses its
+     * threshold, not when the finger happens to come up. It costs almost nothing to check, failing
+     * on the first condition for any stroke that did not start on a shortcut's key.
+     *
+     * @return true when the shortcut fired and the rest of this stroke should be ignored
      */
-    private boolean maybeSendNintypeShortcut(final Key currentKey, final int x, final int y,
-            final long eventTime) {
-        if (mDownKey == null || currentKey == null) return false;
+    private boolean maybeFireNintypeShortcut(final int x, final int y) {
+        if (mNintypeShortcutFired || mDownKey == null) return false;
         if (!DataStoreHelper.getSetting(
                 SwipeDecoderDictionaryKt.getTapSwipeNintypeGesturesSetting())) {
             return false;
         }
 
+        // Below the keyboard there is no key to name, but a downward exit is the follow-through of
+        // this gesture rather than a reason to abandon it. The direction and drift rules are what
+        // stop that from also matching a stroke leaving sideways.
+        final Key over = mKeyDetector.detectHitKey(x, y);
+        final int endCode;
+        if (over != null) {
+            endCode = over.getCode();
+        } else if (y > mStartY) {
+            endCode = Constants.CODE_SPACE;
+        } else {
+            return false;
+        }
+
         final NintypeGestures.Shortcut shortcut = NintypeGestures.matchStraightPull(
-                mDownKey.getCode(), currentKey.getCode(),
+                mDownKey.getCode(), endCode,
                 x - mStartX, y - mStartY, mMaxDriftX,
                 mDownKey.getWidth(), mDownKey.getHeight());
         if (shortcut == null) return false;
 
+        mNintypeShortcutFired = true;
         sListener.onCodeInput(shortcut.getCodePoint(), Constants.NOT_A_COORDINATE,
                 Constants.NOT_A_COORDINATE, false /* isKeyRepeat */);
         sListener.onReleaseKey(shortcut.getCodePoint(), false /* withSliding */);
+
+        // Consume the remainder: end any gesture that had started, and stop this tracker sending an
+        // ordinary key when the finger finally lifts.
+        cancelBatchInput();
+        cancelTrackingForAction();
         return true;
     }
 
