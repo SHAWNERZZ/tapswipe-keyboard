@@ -19,6 +19,9 @@ import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
 import org.futo.inputmethod.latin.TapSwipeWholeWordBackspaceSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
+import org.futo.inputmethod.latin.settings.Settings
+import org.futo.inputmethod.latin.uix.settings.SettingToggleSharedPrefs
+import org.futo.inputmethod.latin.uix.settings.useSharedPrefsInt
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
 import org.futo.inputmethod.latin.uix.settings.UserSetting
 import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
@@ -119,6 +122,27 @@ val TapSwipeMenu = UserSettingsMenu(
             setting = TapSwipeWholeWordBackspaceSetting,
             icon = { Icon(painterResource(R.drawable.delete), contentDescription = null) }
         ).copy(visibilityCheck = tapSwipeEnabled),
+
+        // Lives here for organisation, not because it depends on the TapSwipe input model - the
+        // gesture is a general PointerTracker behaviour and works the same whether TapSwipe is on
+        // or off. Not gated on tapSwipeEnabled for that reason; everything else on this page is.
+        UserSetting(name = R.string.morekey_settings_backspace_tap_then_slide_words) {
+            val modeSetting = useSharedPrefsInt(
+                key = Settings.PREF_BACKSPACE_MODE,
+                default = Settings.BACKSPACE_MODE_CHARACTERS
+            )
+
+            SettingToggleSharedPrefs(
+                title = stringResource(R.string.morekey_settings_backspace_tap_then_slide_words),
+                subtitle = stringResource(R.string.morekey_settings_backspace_tap_then_slide_words_subtitle),
+                key = Settings.PREF_BACKSPACE_TAP_THEN_SLIDE_WORDS,
+                default = false,
+                icon = { Icon(painterResource(R.drawable.delete), contentDescription = null) },
+                // Nothing for this to modify when swipe-to-delete itself is off, and it is already
+                // redundant when the default is Words - shown for either of the other two states.
+                disabled = modeSetting.value == Settings.BACKSPACE_MODE_OFF
+            )
+        },
 
         // ---- Tuning ----
         UserSetting(

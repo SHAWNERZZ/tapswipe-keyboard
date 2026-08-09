@@ -134,9 +134,10 @@ Master Mode's letter hiding and peck's reveal are now automated; only the actual
 
 ### Needs a real finger on real hardware
 - [ ] Tap backspace once, then slide it again shortly after: deletes by word, with "Tap then slide
-      for words" on and swipe-to-delete not off (Settings -> Backspace)
+      for words" on (Settings -> TapSwipe) and swipe-to-delete not off (Settings -> Backspace)
 - [ ] The same slide without a preceding tap still deletes by whatever swipe-to-delete is set to
-- [ ] Sliding well after the tap (past the double-tap window) does not force word mode
+- [ ] Sliding well after the tap (past BACKSPACE_TAP_THEN_SLIDE_WINDOW_MS, ~900ms) does not force
+      word mode
 
 This one is out of the runner's reach on principle, not just for now: the gesture lives in
 `PointerTracker`'s raw touch state machine, and the runner drives the keyboard through

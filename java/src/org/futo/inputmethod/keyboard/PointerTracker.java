@@ -17,7 +17,6 @@
 package org.futo.inputmethod.keyboard;
 
 import android.content.res.Resources;
-import android.view.ViewConfiguration;
 import android.content.res.TypedArray;
 import android.os.SystemClock;
 import android.util.Log;
@@ -169,6 +168,19 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
      * answer a question at the next touch-down, never act with nothing further to trigger it.
      */
     private static long sLastPlainBackspaceReleaseMs = -1;
+
+    /**
+     * How long "tap, then slide" stays armed after the tap releases.
+     *
+     * Deliberately not {@link ViewConfiguration#getDoubleTapTimeout()}. That constant is tuned for
+     * a fast double-rap - two quick hits of the same spot - which is a different motion from this:
+     * tap, notice it landed, then decide to press again and drag. The decide-and-reposition step
+     * alone usually takes longer than a double-tap window allows, so using it here meant the window
+     * had almost always already closed by the time the second touch-down arrived - the gesture
+     * silently fell back to the default every time, which looked identical to the feature not
+     * existing at all.
+     */
+    private static final long BACKSPACE_TAP_THEN_SLIDE_WINDOW_MS = 900L;
     private boolean mProgressReported = false;
     private boolean mSpacebarLongPressed = false;
 
@@ -1030,7 +1042,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             // for this kind of comparison).
             if (!wordMode && settingsValues.mBackspaceTapThenSlideWords
                     && sLastPlainBackspaceReleaseMs >= 0
-                    && mStartTime - sLastPlainBackspaceReleaseMs < ViewConfiguration.getDoubleTapTimeout()) {
+                    && mStartTime - sLastPlainBackspaceReleaseMs < BACKSPACE_TAP_THEN_SLIDE_WINDOW_MS) {
                 wordMode = true;
             }
             if (wordMode) {

@@ -124,7 +124,6 @@ import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
 import org.futo.inputmethod.latin.uix.settings.render
 import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.settings.useSharedPrefsBool
-import org.futo.inputmethod.latin.uix.settings.SettingToggleSharedPrefs
 import org.futo.inputmethod.latin.uix.settings.useSharedPrefsInt
 import org.futo.inputmethod.latin.uix.settings.userSettingDecorationOnly
 import org.futo.inputmethod.latin.uix.settings.userSettingNavigationItem
@@ -588,23 +587,6 @@ val LongPressMenu = UserSettingsMenu(
                 selection = setting.value,
                 onSet = { setting.setValue(it) },
                 getDisplayName = { deleteModes[it] ?: "?" },
-            )
-        },
-
-        UserSetting(name = R.string.morekey_settings_backspace_tap_then_slide_words) {
-            val modeSetting = useSharedPrefsInt(
-                key = Settings.PREF_BACKSPACE_MODE,
-                default = Settings.BACKSPACE_MODE_CHARACTERS
-            )
-
-            SettingToggleSharedPrefs(
-                title = stringResource(R.string.morekey_settings_backspace_tap_then_slide_words),
-                subtitle = stringResource(R.string.morekey_settings_backspace_tap_then_slide_words_subtitle),
-                key = Settings.PREF_BACKSPACE_TAP_THEN_SLIDE_WORDS,
-                default = false,
-                // Nothing for this to modify when swipe-to-delete itself is off, and it is already
-                // redundant when the default is Words - shown for either of the other two states.
-                disabled = modeSetting.value == Settings.BACKSPACE_MODE_OFF
             )
         },
 
