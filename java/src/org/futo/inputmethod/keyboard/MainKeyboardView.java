@@ -59,6 +59,7 @@ import org.futo.inputmethod.latin.SuggestedWords;
 import org.futo.inputmethod.latin.common.Constants;
 import org.futo.inputmethod.latin.common.CoordinateUtils;
 import org.futo.inputmethod.latin.uix.theme.KeyDrawingConfiguration;
+import org.futo.inputmethod.keyboard.internal.SpacebarStatus;
 import org.futo.inputmethod.latin.utils.LanguageOnSpacebarUtils;
 import org.futo.inputmethod.latin.utils.SubtypeLocaleUtils;
 import org.futo.inputmethod.latin.utils.TypefaceUtils;
@@ -840,20 +841,48 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
         return TypefaceUtils.getStringWidth(text, paint) < maxTextWidth;
     }
 
-    // Layout language name on spacebar.
+    /**
+     * Text for the spacebar: a transient status if anything has one to report, otherwise the
+     * language name.
+     *
+     * Status wins over the language name because it changes while typing and matters in the moment,
+     * where the language is static and usually already known. It is also shown when the language
+     * name is suppressed - FORMAT_TYPE_NONE means "nothing worth saying about the language", not
+     * "the user wants a blank spacebar".
+     *
+     * @see SpacebarStatus for how to add one
+     */
     private String layoutLanguageOnSpacebar(final Paint paint,
                                             final Locale locale, final int width, final int horizontalWidth) {
+        paint.setTextScaleX(1.0f);
+
+        final int statusRes = SpacebarStatus.currentLabelRes();
+        if (statusRes != 0) {
+            final String status = getContext().getString(statusRes);
+            if (fitsTextIntoWidth(width, status, paint)) {
+                return status;
+            }
+            // Falls through to the language name rather than truncating: a clipped status reads as
+            // a rendering glitch, and the language name is at least correct.
+        }
+
         if (mLanguageOnSpacebarFormatType == LanguageOnSpacebarUtils.FORMAT_TYPE_NONE) {
             return "";
         }
 
-        paint.setTextScaleX(1.0f);
         final String name = Subtypes.getLanguageOnSpaceBar(locale, horizontalWidth / paint.measureText("Q"));
         if (fitsTextIntoWidth(width, name, paint)) {
             return name;
         }
 
         return "";
+    }
+
+    /** True when the spacebar is currently showing a status rather than the language name. */
+    private boolean isShowingSpacebarStatus(final Paint paint, final int width) {
+        final int statusRes = SpacebarStatus.currentLabelRes();
+        if (statusRes == 0) return false;
+        return fitsTextIntoWidth(width, getContext().getString(statusRes), paint);
     }
 
     private void drawLanguageOnSpacebar(final Key key, final Canvas canvas, final Paint paint, final int color) {
@@ -885,7 +914,11 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
             paint.clearShadowLayer();
         }
         paint.setColor(color);
-        paint.setAlpha(mLanguageOnSpacebarAnimAlpha);
+        // The language name fades to a half-alpha resting state, which is right for a static label
+        // nobody needs to keep reading. A status is the opposite: it appears because something
+        // changed, so it is drawn fully opaque rather than inheriting that fade.
+        paint.setAlpha(isShowingSpacebarStatus(paint, width)
+                ? Constants.Color.ALPHA_OPAQUE : mLanguageOnSpacebarAnimAlpha);
 
         final float ratio = Math.min(1.0f, (width * 0.90f) /
                 TypefaceUtils.getStringWidth(language, paint));

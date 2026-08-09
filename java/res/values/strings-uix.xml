@@ -432,6 +432,9 @@
     <string name="morekey_settings_backspace_swipe_to_delete_off">Off</string>
     <string name="morekey_settings_backspace_swipe_to_delete_characters">Characters</string>
     <string name="morekey_settings_backspace_swipe_to_delete_words">Words</string>
+    <!-- Shown on the space bar while peck mode is active. Keep very short - it has to fit the
+         space bar on narrow and split layouts, and is dropped entirely if it does not. -->
+    <string name="spacebar_status_peck">peck</string>
     <string name="morekey_settings_backspace_tap_then_slide_words">Tap then slide for words</string>
     <string name="morekey_settings_backspace_tap_then_slide_words_subtitle">A quick tap on backspace, then sliding again right after, deletes by word for that slide - without changing the swipe setting above.</string>
     <string name="morekey_settings_spacebar_title">Spacebar</string>

@@ -16,9 +16,11 @@
 
 package org.futo.inputmethod.latin.inputlogic;
 
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.view.HapticFeedbackConstants;
 import android.text.SpannableString;
 import android.text.TextUtils;
 import android.text.style.SuggestionSpan;
@@ -773,6 +775,27 @@ public final class InputLogic {
         }
         if (view != null) {
             view.invalidateAllKeys();
+
+            // A tick on the way *into* peck, and only there. Peck changes what typing does - no
+            // autocorrect, the word committed verbatim - and since it can now engage on its own
+            // after an idle pause, the user may not have knowingly caused it. A haptic reaches them
+            // regardless of where they are looking, which no on-screen indicator can claim.
+            //
+            // Entering only: leaving peck happens as a side effect of finishing the word or
+            // swiping, both of which the user just did deliberately, so there is nothing to report.
+            if (wanted == TapSwipeMode.PECK
+                    && Settings.getInstance().getCurrent().mVibrateOn) {
+                // GESTURE_THRESHOLD_ACTIVATE is what this codebase already uses for crossing into a
+                // mode (see the language-swipe threshold), and is exactly what happened here. It
+                // needs API 34; below that a key-release tick is the closest available, and no
+                // FLAG_IGNORE_GLOBAL_SETTING either way - the keyboard's own vibrate setting is
+                // checked above, and someone who disabled haptics system-wide meant it.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    view.performHapticFeedback(HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE);
+                } else {
+                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY_RELEASE);
+                }
+            }
         }
     }
 
