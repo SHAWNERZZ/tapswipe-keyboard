@@ -37,6 +37,9 @@ import org.futo.inputmethod.keyboard.internal.PointerTrackerQueue;
 import org.futo.inputmethod.keyboard.internal.TimerProxy;
 import org.futo.inputmethod.keyboard.internal.TypingTimeRecorder;
 import org.futo.inputmethod.latin.R;
+import org.futo.inputmethod.latin.SwipeDecoderDictionaryKt;
+import org.futo.inputmethod.latin.tapswipe.NintypeGestures;
+import org.futo.inputmethod.latin.uix.DataStoreHelper;
 import org.futo.inputmethod.latin.common.Constants;
 import org.futo.inputmethod.latin.common.CoordinateUtils;
 import org.futo.inputmethod.latin.common.InputPointers;
@@ -168,6 +171,25 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
      * answer a question at the next touch-down, never act with nothing further to trigger it.
      */
     private static long sLastPlainBackspaceReleaseMs = -1;
+
+    /**
+     * State for whole-stroke shortcuts that never become gestures.
+     *
+     * A shortcut like "pull down from V onto the space bar" is short and deliberate, which is
+     * exactly what the batch-gesture recogniser is tuned to ignore: it needs a fast move
+     * ({@code detectFastMove}) followed by enough further travel ({@code isStartOfAGesture}),
+     * thresholds calibrated for long, quick word swipes. A careful one-key pull frequently fails
+     * both, so the stroke never becomes a gesture, {@code onEndBatchInput} never fires, and the
+     * matcher in the gesture path is never reached - the finger just drags from V onto space and
+     * types a space on release.
+     *
+     * So the shape is also checked here, at the point where an ordinary key would have been sent.
+     * The two paths are complementary rather than redundant: a pull fast enough to register as a
+     * gesture is claimed in GeneralIME.onEndBatchInput, and one too slow to register is claimed
+     * here, using the same matcher for both so their rules cannot drift apart.
+     */
+    private Key mDownKey;
+    private int mMaxDriftX;
 
     /**
      * How long "tap, then slide" stays armed after the tap releases.
@@ -802,6 +824,8 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             mStartX = x;
             mStartY = y;
             mStartTime = System.currentTimeMillis();
+            mDownKey = key;
+            mMaxDriftX = 0;
             mStartedOnFastLongPress = key.isFastLongPress();
             mSpacebarLongPressed = false;
 
@@ -1010,6 +1034,11 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         final int lastX = mLastX;
         final int lastY = mLastY;
         final Key oldKey = mCurrentKey;
+
+        // Cheap enough to keep unconditionally, and it has to be gathered during the stroke - by
+        // the time the finger lifts there is no path left to inspect.
+        final int drift = Math.abs(x - mStartX);
+        if (drift > mMaxDriftX) mMaxDriftX = drift;
 
         final SettingsValues settingsValues = Settings.getInstance().getCurrent();
 
@@ -1253,6 +1282,9 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (currentKey != null && currentKey.getCode() == Constants.CODE_DELETE) {
             sLastPlainBackspaceReleaseMs = System.currentTimeMillis();
         }
+        if (maybeSendNintypeShortcut(currentKey, x, y, eventTime)) {
+            return;
+        }
         detectAndSendKey(currentKey, mKeyX, mKeyY, eventTime);
         if (isInSlidingKeyInput) {
             callListenerOnFinishSlidingInput();
@@ -1430,6 +1462,35 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             return longpressTimeout * 2;
         }
         return longpressTimeout;
+    }
+
+    /**
+     * Claims a stroke that was too slow to become a gesture but traces a shortcut shape.
+     *
+     * Deliberately placed where it is: everything above has already declined to handle the stroke,
+     * so the only thing being displaced is the ordinary key that a drag from V onto the space bar
+     * would otherwise send - a space, which is not what the user was reaching for.
+     *
+     * @return true when the stroke was consumed as a shortcut
+     */
+    private boolean maybeSendNintypeShortcut(final Key currentKey, final int x, final int y,
+            final long eventTime) {
+        if (mDownKey == null || currentKey == null) return false;
+        if (!DataStoreHelper.getSetting(
+                SwipeDecoderDictionaryKt.getTapSwipeNintypeGesturesSetting())) {
+            return false;
+        }
+
+        final NintypeGestures.Shortcut shortcut = NintypeGestures.matchStraightPull(
+                mDownKey.getCode(), currentKey.getCode(),
+                x - mStartX, y - mStartY, mMaxDriftX,
+                mDownKey.getWidth(), mDownKey.getHeight());
+        if (shortcut == null) return false;
+
+        sListener.onCodeInput(shortcut.getCodePoint(), Constants.NOT_A_COORDINATE,
+                Constants.NOT_A_COORDINATE, false /* isKeyRepeat */);
+        sListener.onReleaseKey(shortcut.getCodePoint(), false /* withSliding */);
+        return true;
     }
 
     private void detectAndSendKey(final Key key, final int x, final int y, final long eventTime) {
