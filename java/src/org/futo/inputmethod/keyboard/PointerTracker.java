@@ -181,6 +181,24 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
      * existing at all.
      */
     private static final long BACKSPACE_TAP_THEN_SLIDE_WINDOW_MS = 900L;
+
+    /**
+     * Whether the delete-slide currently in progress should act on whole words.
+     *
+     * pointerStep above only governs how far a finger must travel before one "step" registers -
+     * it says nothing about what a step *does*. That decision is made independently, in
+     * GeneralIME.onMoveDeletePointer, which reads mBackspaceMode on its own with no visibility
+     * into anything computed here. This is the bridge: written every time wordMode is determined
+     * below, read from there instead of - or alongside - mBackspaceMode. Static and single-flag
+     * because only one finger can realistically be dragging over backspace at a time, and it is
+     * always freshly overwritten before the call it needs to affect, never left stale from an
+     * earlier slide.
+     */
+    private static boolean sActiveSlideWordMode = false;
+
+    public static boolean isActiveSlideWordMode() {
+        return sActiveSlideWordMode;
+    }
     private boolean mProgressReported = false;
     private boolean mSpacebarLongPressed = false;
 
@@ -1045,6 +1063,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                     && mStartTime - sLastPlainBackspaceReleaseMs < BACKSPACE_TAP_THEN_SLIDE_WINDOW_MS) {
                 wordMode = true;
             }
+            sActiveSlideWordMode = wordMode;
             if (wordMode) {
                 pointerStep = sPointerBigStep;
             }
@@ -1219,6 +1238,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
 
         if (mCursorMoved) {
             mCursorMoved = false;
+            sActiveSlideWordMode = false;
             return;
         }
         if (mIsTrackingForActionDisabled) {

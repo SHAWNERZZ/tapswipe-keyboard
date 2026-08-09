@@ -27,6 +27,7 @@ import org.futo.inputmethod.engine.NonExpandableSuggestionBar
 import org.futo.inputmethod.event.Event
 import org.futo.inputmethod.event.InputTransaction
 import org.futo.inputmethod.keyboard.KeyboardSwitcher
+import org.futo.inputmethod.keyboard.PointerTracker
 import org.futo.inputmethod.latin.BuildConfig
 import org.futo.inputmethod.latin.DictionaryFacilitator
 import org.futo.inputmethod.latin.DictionaryFacilitatorImpl
@@ -654,8 +655,14 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     override fun onMoveDeletePointer(steps: Int) {
         setNeutralSuggestionStrip()
         if (inputLogic.mConnection.hasCursorPosition()) {
+            // PointerTracker.isActiveSlideWordMode() carries the tap-then-slide override: it is
+            // where "was this slide preceded by a plain tap on backspace" actually gets decided,
+            // since only PointerTracker has the timing state to know that. mBackspaceMode alone
+            // cannot express it - checking that setting here without this would silently drop the
+            // override and always fall back to whatever the configured default is.
             val stepOverWords =
                 settings.current.mBackspaceMode == Settings.BACKSPACE_MODE_WORDS
+                        || PointerTracker.isActiveSlideWordMode()
             if (steps < 0) {
                 inputLogic.cursorLeft(steps, stepOverWords, true)
             } else {
