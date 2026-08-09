@@ -432,6 +432,8 @@
     <string name="morekey_settings_backspace_swipe_to_delete_off">Off</string>
     <string name="morekey_settings_backspace_swipe_to_delete_characters">Characters</string>
     <string name="morekey_settings_backspace_swipe_to_delete_words">Words</string>
+    <string name="morekey_settings_backspace_tap_then_slide_words">Tap then slide for words</string>
+    <string name="morekey_settings_backspace_tap_then_slide_words_subtitle">A quick tap on backspace, then sliding again right after, deletes by word for that slide - without changing the swipe setting above.</string>
     <string name="morekey_settings_spacebar_title">Spacebar</string>
     <string name="morekey_settings_spacebar_swipe_shortcut">Swipe</string>
     <string name="morekey_settings_spacebar_swipe_shortcut_off">Off</string>

@@ -17,6 +17,7 @@
 package org.futo.inputmethod.keyboard;
 
 import android.content.res.Resources;
+import android.view.ViewConfiguration;
 import android.content.res.TypedArray;
 import android.os.SystemClock;
 import android.util.Log;
@@ -156,6 +157,18 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     private long mStartTime;
     private boolean mStartedOnFastLongPress;
     private boolean mCursorMoved = false;
+
+    /**
+     * When a plain (non-sliding) tap released the delete key, so a slide starting shortly after on
+     * the same key can be recognised as "tap, then slide" rather than an ordinary slide.
+     *
+     * Static, matching {@link #sTypingTimeRecorder} and friends elsewhere in this class: a tap and
+     * the slide that follows it are usually two separate touch-down events, and while a single
+     * finger tapping in place typically keeps the same pointer id, relying on that would be
+     * fragile. This is deliberately just a timestamp, not a scheduled callback - it only has to
+     * answer a question at the next touch-down, never act with nothing further to trigger it.
+     */
+    private static long sLastPlainBackspaceReleaseMs = -1;
     private boolean mProgressReported = false;
     private boolean mSpacebarLongPressed = false;
 
@@ -1009,7 +1022,18 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (!sInGesture && mIsSlidingCursor && oldKey != null && oldKey.getCode() == Constants.CODE_DELETE
                 && settingsValues.mBackspaceMode != Settings.BACKSPACE_MODE_OFF) {
             int pointerStep = sPointerStep;
-            if(settingsValues.mBackspaceMode == Settings.BACKSPACE_MODE_WORDS) {
+            boolean wordMode = settingsValues.mBackspaceMode == Settings.BACKSPACE_MODE_WORDS;
+            // Tap, then slide: switches this one slide to word-granularity regardless of the
+            // configured default, without touching the setting itself. mStartTime is this touch's
+            // down time (System.currentTimeMillis()-based, matching the release timestamp below -
+            // eventTime elsewhere in this class is on a different clock and deliberately not used
+            // for this kind of comparison).
+            if (!wordMode && settingsValues.mBackspaceTapThenSlideWords
+                    && sLastPlainBackspaceReleaseMs >= 0
+                    && mStartTime - sLastPlainBackspaceReleaseMs < ViewConfiguration.getDoubleTapTimeout()) {
+                wordMode = true;
+            }
+            if (wordMode) {
                 pointerStep = sPointerBigStep;
             }
 
@@ -1191,6 +1215,11 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (currentKey != null && currentKey.isRepeatable()
                 && (currentKey.getCode() == currentRepeatingKeyCode) && !isInDraggingFinger) {
             return;
+        }
+        // A plain tap on delete - reaching here means it neither slid (mCursorMoved) nor repeated
+        // (the branch above), so this is exactly the discrete "tap" a following slide can pair with.
+        if (currentKey != null && currentKey.getCode() == Constants.CODE_DELETE) {
+            sLastPlainBackspaceReleaseMs = System.currentTimeMillis();
         }
         detectAndSendKey(currentKey, mKeyX, mKeyY, eventTime);
         if (isInSlidingKeyInput) {

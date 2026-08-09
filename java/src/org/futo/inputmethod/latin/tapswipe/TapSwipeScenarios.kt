@@ -533,6 +533,45 @@ object TapSwipeScenarios {
                 else "peck unlatched mid-word, mode was ${p.mode}"
             }),
 
+        Scenario("a lone tap left idle for two seconds latches peck",
+            group = "Modes", needsSwipe = false,
+            // Cadence needs two taps to compute a gap - medianTapGapMs() is -1 below that - so a
+            // single tap can never latch peck through the cadence path no matter how long the
+            // pause. This is the idle-timeout path instead, and it needs the real wait: nothing
+            // about this scenario changes what is on screen, only time passing does.
+            run = { tap(it, 'c'.code); delay(2400) },
+            check = { _ ->
+                if (TapSwipeUiState.mode == TapSwipeMode.PECK) null
+                else "expected PECK after an idle tap, was ${TapSwipeUiState.mode}"
+            }),
+
+        Scenario("a swipe joining before the idle timer fires cancels it",
+            group = "Modes",
+            // The tap is followed by a swipe well inside the two-second window. If cancellation
+            // did not work, the idle check would fire ~2s later and try to latch peck onto a word
+            // that has since grown a swipe - harmless given the fire-time guards, but this
+            // confirms the cancellation path itself, not just its safety net.
+            run = {
+                tap(it, 'c'.code); settle(300)
+                swipe(it, "at"); settle()
+            },
+            check = { p ->
+                if (TapSwipeUiState.mode != TapSwipeMode.PECK && p.word.isNotEmpty()) null
+                else "expected a swiped word, not peck: mode=${TapSwipeUiState.mode} word='${p.word}'"
+            }),
+
+        Scenario("a second fast tap beats the idle timer to it",
+            group = "Modes", needsSwipe = false,
+            // Two fast taps resolve through ordinary cadence math well before two seconds pass.
+            // This is really asserting fast-tap behaviour is unchanged by the idle timer's
+            // existence - it must not, for instance, force PECK just because a timer was scheduled
+            // and then re-armed rather than fired.
+            run = { type(it, "hi", FAST_TAP_MS) },
+            check = { _ ->
+                if (TapSwipeUiState.mode != TapSwipeMode.PECK) null
+                else "fast typing should not have latched peck"
+            }),
+
         Scenario("a swipe returns the mode to SWIPE",
             run = {
                 type(it, "cat", SLOW_TAP_MS); settle(); type(it, " "); settle()

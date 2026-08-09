@@ -16,6 +16,8 @@
 
 package org.futo.inputmethod.latin.inputlogic;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.text.SpannableString;
 import android.text.TextUtils;
@@ -162,6 +164,67 @@ public final class InputLogic {
 
     /** Absolute time of the open session's t=0, for re-basing per-batch segment timestamps. */
     private long mTapSwipeSessionOriginMs = -1;
+
+    /**
+     * Auto-engages peck after a lone tap sits idle for {@link #TAPSWIPE_PECK_IDLE_MS}.
+     *
+     * Cadence-based peck detection needs two taps to compute a gap - {@code medianTapGapMs()}
+     * returns -1 below that - so a single tap followed by silence can never latch peck on its own,
+     * no matter how long the pause. That is a real gap: someone who taps one letter and stops to
+     * think should see peck engage (letters visible, borders up) without needing to tap again just
+     * to prove they are typing slowly.
+     *
+     * A real scheduled callback, not validate-on-read like the rest of this session's state - the
+     * UI has to change with no further input to react to. Every seam that class of callback creates
+     * gets treated the same way everything else here does: capture identity at schedule time,
+     * re-validate all of it when the callback actually fires, and do nothing rather than guess if
+     * anything has moved on.
+     */
+    private static final long TAPSWIPE_PECK_IDLE_MS = 2000L;
+    private final Handler mTapSwipeIdleHandler = new Handler(Looper.getMainLooper());
+    private Runnable mTapSwipePeckIdleRunnable = null;
+
+    /** Re-arms the idle check against the session's current state. Safe to call after every tap. */
+    private void scheduleTapSwipePeckIdleCheck() {
+        cancelTapSwipePeckIdleCheck();
+        if (!mTapSwipeSession.isOpen() || mTapSwipeSession.getHasSwipe()) return;
+        if (mTapSwipeSession.getLatchedMode() == TapSwipeMode.PECK) return;
+
+        final int gen = mTapSwipeSession.getGeneration();
+        final int expectedSelStart = mConnection.getExpectedSelectionStart();
+        mTapSwipePeckIdleRunnable = () -> fireTapSwipePeckIdleCheck(gen, expectedSelStart);
+        mTapSwipeIdleHandler.postDelayed(mTapSwipePeckIdleRunnable, TAPSWIPE_PECK_IDLE_MS);
+    }
+
+    /** Safe to call unconditionally, including when nothing is scheduled. */
+    private void cancelTapSwipePeckIdleCheck() {
+        if (mTapSwipePeckIdleRunnable != null) {
+            mTapSwipeIdleHandler.removeCallbacks(mTapSwipePeckIdleRunnable);
+            mTapSwipePeckIdleRunnable = null;
+        }
+    }
+
+    /**
+     * Runs on the main thread {@link #TAPSWIPE_PECK_IDLE_MS} after the tap that scheduled it,
+     * unless something cancelled it first. Every condition that made scheduling reasonable is
+     * checked again here, because two seconds is long enough for essentially anything to have
+     * happened - a swipe, a backspace, a new word, the field losing focus.
+     */
+    private void fireTapSwipePeckIdleCheck(final int expectedGeneration, final int expectedSelStart) {
+        mTapSwipePeckIdleRunnable = null;
+        if (!isTapSwipeMode()) return;
+        if (!mTapSwipeSession.isCurrent(expectedGeneration)) return;
+        if (!mTapSwipeSession.isOpen() || mTapSwipeSession.getHasSwipe()) return;
+        if (mTapSwipeSession.getLatchedMode() == TapSwipeMode.PECK) return;
+        if (!mWordComposer.isComposingWord()) return;
+        if (mConnection.getExpectedSelectionStart() != expectedSelStart) return;
+
+        mTapSwipeSession.latchMode(TapSwipeMode.PECK);
+        refreshTapSwipePeckIndicator();
+        if (DEBUG_TAPSWIPE) {
+            Log.d(TAG, "tapswipe latched PECK (idle " + TAPSWIPE_PECK_IDLE_MS + "ms after a lone tap)");
+        }
+    }
 
     /**
      * Whether the TapSwipe input model is active. Backed by an in-memory DataStore cache, so this
@@ -679,6 +742,7 @@ public final class InputLogic {
 
     /** Discards the session. Safe to call unconditionally. */
     private void resetTapSwipeSession(final String reason) {
+        cancelTapSwipePeckIdleCheck();
         mTapSwipeSession.reset(reason);
         mTapSwipeSessionOriginMs = -1;
         refreshTapSwipePeckIndicator();
@@ -732,6 +796,7 @@ public final class InputLogic {
         // A swipe joining the word ends peck mode immediately, and proves this is not someone
         // who only taps, so legacy-tap mode drops too.
         clearLegacyTapRun();
+        cancelTapSwipePeckIdleCheck();
         refreshTapSwipePeckIndicator();
         if (DEBUG_TAPSWIPE) {
             Log.d(TAG, "tapswipe absorbed " + added + " segment(s); session now "
@@ -989,6 +1054,7 @@ public final class InputLogic {
     }
 
     private void resetInput() {
+        cancelTapSwipePeckIdleCheck();
         if (mWordComposer.isComposingWord()) {
             mConnection.finishComposingText();
             StatsUtils.onWordCommitUserTyped(
@@ -1911,6 +1977,7 @@ public final class InputLogic {
                 // validate-on-read would see a changed composing word and drop the session.
                 mTapSwipeSession.noteComposingWrite(
                         mWordComposer.getTypedWord(), mConnection.getExpectedSelectionStart());
+                scheduleTapSwipePeckIdleCheck();
 
                 if (DEBUG_TAPSWIPE) {
                     Log.d(TAG, "tapswipe TAP cp=" + (char) codePoint

@@ -5,7 +5,7 @@
 | Layer | How to run | Device | Status |
 |---|---|---|---|
 | JVM unit tests | `./gradlew testUnstableDebugUnitTest` | none | **working** - 18 tests, ~5s |
-| In-app scenario runner | Memory Debug action -> **Run scenarios** | phone | **working** - 62 scenarios, ~3 min |
+| In-app scenario runner | Memory Debug action -> **Run scenarios** | phone | **working** - 65 scenarios, ~3 min |
 | Manual matrix | the checklist below | phone | for anything the runner cannot reach |
 
 ## Why the layers differ in value
@@ -131,6 +131,17 @@ Master Mode's letter hiding and peck's reveal are now automated; only the actual
 ### Needs state that survives a restart
 - [ ] A peck-committed out-of-dictionary word is swipeable afterwards
 - [ ] Learned geometry survives a keyboard restart
+
+### Needs a real finger on real hardware
+- [ ] Tap backspace once, then slide it again shortly after: deletes by word, with "Tap then slide
+      for words" on and swipe-to-delete not off (Settings -> Backspace)
+- [ ] The same slide without a preceding tap still deletes by whatever swipe-to-delete is set to
+- [ ] Sliding well after the tap (past the double-tap window) does not force word mode
+
+This one is out of the runner's reach on principle, not just for now: the gesture lives in
+`PointerTracker`'s raw touch state machine, and the runner drives the keyboard through
+`LatinIMELegacy` method calls directly, never through real `MotionEvent`s. There is nothing to
+synthesize a touch-down/slide sequence against.
 
 ## Adding a scenario
 
