@@ -435,6 +435,10 @@
     <!-- Shown on the space bar while peck mode is active. Keep very short - it has to fit the
          space bar on narrow and split layouts, and is dropped entirely if it does not. -->
     <string name="spacebar_status_peck">peck</string>
+    <!-- Typing speed shown on the space bar. %d is words per minute. Keep very short. -->
+    <string name="spacebar_status_wpm">%d wpm</string>
+    <string name="tapswipe_settings_wpm">Show typing speed</string>
+    <string name="tapswipe_settings_wpm_subtitle">Displays words per minute on the space bar, measured for as long as you stay in the same text field. Pauses longer than ten seconds are not counted against you.</string>
     <string name="morekey_settings_backspace_tap_then_slide_words">Tap then slide for words</string>
     <string name="morekey_settings_backspace_tap_then_slide_words_subtitle">A quick tap on backspace, then sliding again right after, deletes by word for that slide - without changing the swipe setting above.</string>
     <string name="morekey_settings_spacebar_title">Spacebar</string>

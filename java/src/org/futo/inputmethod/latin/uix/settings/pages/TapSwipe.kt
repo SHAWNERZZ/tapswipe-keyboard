@@ -17,6 +17,7 @@ import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
 import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
+import org.futo.inputmethod.latin.TapSwipeWpmSetting
 import org.futo.inputmethod.latin.TapSwipeWholeWordBackspaceSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
 import org.futo.inputmethod.latin.settings.Settings
@@ -122,6 +123,13 @@ val TapSwipeMenu = UserSettingsMenu(
             setting = TapSwipeWholeWordBackspaceSetting,
             icon = { Icon(painterResource(R.drawable.delete), contentDescription = null) }
         ).copy(visibilityCheck = tapSwipeEnabled),
+
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_wpm,
+            subtitle = R.string.tapswipe_settings_wpm_subtitle,
+            setting = TapSwipeWpmSetting,
+            icon = { Icon(painterResource(R.drawable.activity), contentDescription = null) }
+        ),
 
         // Lives here for organisation, not because it depends on the TapSwipe input model - the
         // gesture is a general PointerTracker behaviour and works the same whether TapSwipe is on

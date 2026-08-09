@@ -38,6 +38,7 @@ import org.futo.inputmethod.event.Event;
 import org.futo.inputmethod.event.InputTransaction;
 import org.futo.inputmethod.keyboard.Keyboard;
 import org.futo.inputmethod.keyboard.KeyboardSwitcher;
+import org.futo.inputmethod.keyboard.internal.WpmTracker;
 import org.futo.inputmethod.keyboard.MainKeyboardView;
 import org.futo.inputmethod.latin.BinaryDictionary;
 import org.futo.inputmethod.latin.DictionaryFacilitator;
@@ -742,6 +743,19 @@ public final class InputLogic {
         }
     }
 
+    /**
+     * Repaints the keyboard so a changed typing speed reaches the space bar.
+     *
+     * Only when the readout is switched on: the speed changes once per committed word, which is a
+     * fine rate to redraw at, but not one worth paying for when nothing is displaying it.
+     */
+    private void refreshSpacebarSpeed() {
+        if (!DataStoreHelper.getSetting(SwipeDecoderDictionaryKt.getTapSwipeWpmSetting())) return;
+        MainKeyboardView view = mImeHelper.getKeyboardSwitcher().getMainKeyboardView();
+        if (view == null) view = KeyboardSwitcher.getInstance().getMainKeyboardView();
+        if (view != null) view.invalidateAllKeys();
+    }
+
     /** Discards the session. Safe to call unconditionally. */
     private void resetTapSwipeSession(final String reason) {
         cancelTapSwipePeckIdleCheck();
@@ -980,6 +994,8 @@ public final class InputLogic {
      * @param settingsValues the current settings values
      */
     public void startInput(final String combiningSpec, final SettingsValues settingsValues) {
+        // Speed is per text field: a fresh field is a fresh measurement.
+        WpmTracker.reset();
         mEnteredText = null;
         mWordBeingCorrectedByCursor = null;
         numCursorUpdatesSinceInputStarted = 0;
@@ -3727,6 +3743,13 @@ public final class InputLogic {
             startTimeMillis = System.currentTimeMillis();
             Log.d(TAG, "commitChosenWord() : [" + chosenWord + "]");
         }
+        // Typing speed counts committed text here rather than keystrokes: every word reaches this
+        // point whether it was tapped, swiped, autocorrected or picked, so a swiped word counts for
+        // its whole length instead of the single gesture that produced it.
+        WpmTracker.onCharsProduced(
+                chosenWord.length() + (separatorString != null ? separatorString.length() : 0));
+        refreshSpacebarSpeed();
+
         final SuggestedWords suggestedWords = mSuggestedWords;
         // TODO: Locale should be determined based on context and the text given.
         final Locale locale = getDictionaryFacilitatorLocale();

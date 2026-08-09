@@ -1,8 +1,11 @@
 package org.futo.inputmethod.keyboard.internal
 
+import android.content.Context
 import org.futo.inputmethod.latin.R
+import org.futo.inputmethod.latin.TapSwipeWpmSetting
 import org.futo.inputmethod.latin.tapswipe.TapSwipeMode
 import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState
+import org.futo.inputmethod.latin.uix.DataStoreHelper
 
 /**
  * What the space bar should say right now, when there is something more useful to report than the
@@ -16,9 +19,8 @@ import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState
  * ### Adding a status
  *
  * Add an entry to [statuses]. The list is ordered: the first entry with something to say wins, so
- * position expresses priority. Each entry returns a string resource id, or 0 for "nothing right
- * now" - a resource id rather than a String so labels stay translatable, since this object has no
- * Context to resolve them with.
+ * position expresses priority. Each entry returns the text to show, or null for "nothing right
+ * now", and receives a Context so it can resolve string resources or format a value.
  *
  * Keep labels short. The space bar is wide but not unlimited, and the caller falls back to the
  * language name if a label does not fit, which would make a status silently vanish on narrow
@@ -26,9 +28,9 @@ import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState
  */
 object SpacebarStatus {
 
-    /** One possible status. Returns a string resource id, or 0 when it does not currently apply. */
+    /** One possible status. Returns null when it does not currently apply. */
     fun interface Status {
-        fun labelRes(): Int
+        fun label(context: Context): String?
     }
 
     /**
@@ -40,21 +42,27 @@ object SpacebarStatus {
      * component initialised first.
      */
     private val statuses: List<Status> = listOf(
-        // Peck mode. Worth surfacing because it changes what typing *does* - no autocorrect, the
-        // word committed verbatim - and it can now engage on its own after an idle pause, so the
-        // user may not have knowingly triggered it.
-        Status {
-            if (TapSwipeUiState.mode == TapSwipeMode.PECK) R.string.spacebar_status_peck else 0
+        // Peck mode outranks the speed readout: it is a transient state that changes what typing
+        // does, where speed is ambient and will still be there afterwards.
+        Status { ctx ->
+            if (TapSwipeUiState.mode == TapSwipeMode.PECK) {
+                ctx.getString(R.string.spacebar_status_peck)
+            } else null
+        },
+
+        Status { ctx ->
+            if (!DataStoreHelper.getSetting(TapSwipeWpmSetting)) return@Status null
+            WpmTracker.wpm()?.let { ctx.getString(R.string.spacebar_status_wpm, it) }
         },
     )
 
-    /** @return string resource id for the current status, or 0 if there is nothing to report. */
+    /** @return text for the current status, or null if there is nothing to report. */
     @JvmStatic
-    fun currentLabelRes(): Int {
+    fun currentLabel(context: Context): String? {
         for (status in statuses) {
-            val res = status.labelRes()
-            if (res != 0) return res
+            val label = status.label(context)
+            if (label != null) return label
         }
-        return 0
+        return null
     }
 }

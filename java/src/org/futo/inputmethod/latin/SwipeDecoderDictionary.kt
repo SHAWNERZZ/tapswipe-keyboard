@@ -305,6 +305,14 @@ val TapSwipeAdaptiveGeometrySetting =
     SettingsKey(booleanPreferencesKey("tapswipe_adaptive_geometry"), false)
 
 /**
+ * Shows typing speed on the space bar, measured per text field.
+ *
+ * Off by default - it is a curiosity rather than something that improves typing, and the space bar
+ * is more useful showing nothing than showing a number nobody asked for.
+ */
+val TapSwipeWpmSetting = SettingsKey(booleanPreferencesKey("tapswipe_wpm"), false)
+
+/**
  * Master Mode: letter keys render as dots instead of letters. Named after the equivalent mode in
  * the original Nintype keyboard. Peck mode temporarily reveals the letters again.
  */

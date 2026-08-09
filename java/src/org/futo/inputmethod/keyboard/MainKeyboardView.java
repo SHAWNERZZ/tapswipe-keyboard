@@ -856,15 +856,12 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
                                             final Locale locale, final int width, final int horizontalWidth) {
         paint.setTextScaleX(1.0f);
 
-        final int statusRes = SpacebarStatus.currentLabelRes();
-        if (statusRes != 0) {
-            final String status = getContext().getString(statusRes);
-            if (fitsTextIntoWidth(width, status, paint)) {
-                return status;
-            }
-            // Falls through to the language name rather than truncating: a clipped status reads as
-            // a rendering glitch, and the language name is at least correct.
+        final String status = SpacebarStatus.currentLabel(getContext());
+        if (status != null && fitsTextIntoWidth(width, status, paint)) {
+            return status;
         }
+        // Falls through to the language name rather than truncating: a clipped status reads as a
+        // rendering glitch, and the language name is at least correct.
 
         if (mLanguageOnSpacebarFormatType == LanguageOnSpacebarUtils.FORMAT_TYPE_NONE) {
             return "";
@@ -880,9 +877,8 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
 
     /** True when the spacebar is currently showing a status rather than the language name. */
     private boolean isShowingSpacebarStatus(final Paint paint, final int width) {
-        final int statusRes = SpacebarStatus.currentLabelRes();
-        if (statusRes == 0) return false;
-        return fitsTextIntoWidth(width, getContext().getString(statusRes), paint);
+        final String status = SpacebarStatus.currentLabel(getContext());
+        return status != null && fitsTextIntoWidth(width, status, paint);
     }
 
     private void drawLanguageOnSpacebar(final Key key, final Canvas canvas, final Paint paint, final int color) {
