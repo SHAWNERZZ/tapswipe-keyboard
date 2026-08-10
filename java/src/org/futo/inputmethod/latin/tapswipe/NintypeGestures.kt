@@ -56,6 +56,21 @@ object NintypeGestures {
     private const val MAX_DRIFT_FRACTION = 1.0f
 
     /**
+     * How far either side of V the pull may start, beyond the key's own edges, as a fraction of key
+     * width.
+     *
+     * Reaching V with the right hand naturally lands a little toward B, and the finger is moving
+     * before it settles, so demanding the stroke begin inside V's own bounds rejects strokes that
+     * were unmistakably this gesture. The band is anchored to V's centre rather than to whichever
+     * key was touched: starting at the far edge of B is a whole key away and still refused, while
+     * a near miss on either side is accepted.
+     */
+    private const val START_BAND_FRACTION = 0.5f
+
+    /** Keys near enough to V to plausibly begin the pull; the band below decides the rest. */
+    private val COMMA_START_CODES = setOf('v'.code, 'b'.code, 'c'.code)
+
+    /**
      * Matches a completed *gesture*, where the whole point list is available.
      *
      * @param pointers the completed stroke, in keyboard-view coordinates
@@ -82,44 +97,81 @@ object NintypeGestures {
             .firstOrNull { it.isOnKey(xs[n - 1], ys[n - 1]) } ?: return null
 
         return matchStraightPull(
-            startKey.code, endKey.code,
+            keyboard, startKey.code, endKey.code, xs[0],
             xs[n - 1] - xs[0], ys[n - 1] - ys[0], maxDriftOf(xs, n),
             startKey.width, startKey.height
         )
     }
 
     /**
-     * The rule itself, expressed in already-measured numbers rather than a stroke.
-     *
-     * Taking measurements rather than a path is what lets both entry points share it: the gesture
-     * path has every point, while the release path has only the endpoints and the widest sideways
-     * excursion, because a stroke that never became a gesture leaves no path to inspect afterwards.
+     * Entry point for callers holding a [Keyboard]: resolves the anchor key, then applies the rule.
      */
     @JvmStatic
     fun matchStraightPull(
+        keyboard: Keyboard?,
         startCode: Int,
         endCode: Int,
+        startX: Int,
         dx: Int,
         dy: Int,
         maxDrift: Int,
         keyWidth: Int,
         keyHeight: Int
     ): Shortcut? {
-        if (keyWidth <= 0 || keyHeight <= 0) return null
+        // Cheap rejection first, so the anchor is only looked up for strokes that could qualify.
+        if (Character.toLowerCase(startCode) !in COMMA_START_CODES) return null
 
-        // --- comma: straight down from V onto the space bar -----------------------------------
-        // Start and end are reported as a pair before anything else, because a stroke failing
-        // those is not an attempt at this shortcut and should not be noise in the log.
-        if (Character.toLowerCase(startCode) != 'v'.code) return null
+        // Without a V on this layout there is nothing to anchor the band to.
+        val anchor = keyboard?.getKey('v'.code) ?: return null
+
+        return matchCommaPull(
+            startCode, endCode, startX,
+            anchor.x + anchor.width / 2, anchor.width,
+            dx, dy, maxDrift, keyWidth, keyHeight
+        )
+    }
+
+    /**
+     * The rule itself, in already-measured numbers rather than objects.
+     *
+     * Takes the anchor as a centre and a width rather than a [Keyboard], so the whole rule stays
+     * pure arithmetic and testable - resolving a key needs native proximity code that cannot run
+     * off a device, and the thresholds here are the part actually worth pinning down.
+     *
+     * Measurements rather than a path is also what lets both entry points share it: the gesture
+     * path has every point, while the live path has only the endpoints and the widest sideways
+     * excursion, because a stroke that never became a gesture leaves no path to inspect.
+     */
+    @JvmStatic
+    internal fun matchCommaPull(
+        startCode: Int,
+        endCode: Int,
+        startX: Int,
+        anchorCentreX: Int,
+        anchorWidth: Int,
+        dx: Int,
+        dy: Int,
+        maxDrift: Int,
+        keyWidth: Int,
+        keyHeight: Int
+    ): Shortcut? {
+        if (keyWidth <= 0 || keyHeight <= 0 || anchorWidth <= 0) return null
+
+        // Start and end are checked first, cheaply, because a stroke failing them is not an attempt
+        // at this shortcut and should not be noise in the log.
+        if (Character.toLowerCase(startCode) !in COMMA_START_CODES) return null
         if (endCode != Constants.CODE_SPACE) return null
 
-        // Past here the shape was aimed at the shortcut, so every rejection says which rule
-        // stopped it and by how much. A gesture that fails intermittently is otherwise
-        // indistinguishable from one that is never reached at all, and the difference is the whole
-        // diagnosis.
+        // Anchored to V's centre, so the tolerance is identical whichever neighbouring key the
+        // finger happened to land on.
+        val maxStartOffset = anchorWidth / 2 + anchorWidth * START_BAND_FRACTION
+        val startOffset = abs(startX - anchorCentreX)
+
         val minDown = keyHeight * MIN_DOWN_FRACTION
         val maxAllowedDrift = keyWidth * MAX_DRIFT_FRACTION
         val reason = when {
+            startOffset > maxStartOffset ->
+                "started too far from V (offset=$startOffset needs <= ${maxStartOffset.toInt()})"
             dy < minDown -> "too short (dy=$dy needs >= ${minDown.toInt()})"
             abs(dx) > dy -> "too shallow (|dx|=${abs(dx)} > dy=$dy)"
             maxDrift > maxAllowedDrift ->
@@ -130,25 +182,20 @@ object NintypeGestures {
         if (reason != null) {
             if (DEBUG) {
                 Log.d(TAG, "V->space rejected: $reason " +
-                        "(dx=$dx dy=$dy drift=$maxDrift keyW=$keyWidth keyH=$keyHeight)")
+                        "(dx=$dx dy=$dy drift=$maxDrift startOffset=$startOffset " +
+                        "keyW=$keyWidth keyH=$keyHeight)")
             }
             return null
         }
 
         if (DEBUG) {
             Log.d(TAG, "matched COMMA (dx=$dx dy=$dy drift=$maxDrift " +
-                    "keyW=$keyWidth keyH=$keyHeight)")
+                    "startOffset=$startOffset keyW=$keyWidth keyH=$keyHeight)")
         }
         return Shortcut.COMMA
     }
 
-    /**
-     * Point-list form, kept as the tested entry point.
-     *
-     * Resolving a point to a key needs a [Keyboard] and the native proximity code behind it, so
-     * that half cannot run off a device. The thresholds worth tuning are all in here, and they are
-     * pure arithmetic.
-     */
+    /** Point-list form, for callers that have the whole stroke. */
     @JvmStatic
     internal fun matchShape(
         startCode: Int,
@@ -156,12 +203,14 @@ object NintypeGestures {
         xs: IntArray,
         ys: IntArray,
         n: Int,
+        anchorCentreX: Int,
+        anchorWidth: Int,
         keyWidth: Int,
         keyHeight: Int
     ): Shortcut? {
         if (n < 3) return null
-        return matchStraightPull(
-            startCode, endCode,
+        return matchCommaPull(
+            startCode, endCode, xs[0], anchorCentreX, anchorWidth,
             xs[n - 1] - xs[0], ys[n - 1] - ys[0], maxDriftOf(xs, n),
             keyWidth, keyHeight
         )

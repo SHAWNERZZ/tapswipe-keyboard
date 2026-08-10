@@ -1505,7 +1505,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         }
 
         final NintypeGestures.Shortcut shortcut = NintypeGestures.matchStraightPull(
-                mDownKey.getCode(), endCode,
+                mKeyDetector.getKeyboard(), mDownKey.getCode(), endCode, mStartX,
                 x - mStartX, y - mStartY, mMaxDriftX,
                 mDownKey.getWidth(), mDownKey.getHeight());
         if (shortcut == null) return false;

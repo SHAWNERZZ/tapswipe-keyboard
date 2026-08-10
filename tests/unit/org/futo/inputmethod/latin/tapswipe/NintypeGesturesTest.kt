@@ -28,11 +28,15 @@ class NintypeGesturesTest {
         return xs to ys
     }
 
+    /** V sits centred at x=300 in these tests, matching the strokes built below. */
+    private val anchorCentreX = 300
+
     private fun match(
         xs: IntArray, ys: IntArray,
         startCode: Int = 'v'.code,
         endCode: Int = Constants.CODE_SPACE
-    ) = NintypeGestures.matchShape(startCode, endCode, xs, ys, xs.size, keyW, keyH)
+    ) = NintypeGestures.matchShape(
+        startCode, endCode, xs, ys, xs.size, anchorCentreX, keyW, keyW, keyH)
 
     // ---------------------------------------------------------------- the shape it accepts
 
@@ -52,10 +56,15 @@ class NintypeGesturesTest {
 
     // ---------------------------------------------------------------- what it must refuse
 
+    /**
+     * Superseded by the start-band cases below: C is now an accepted starting key *if the touch
+     * landed near V*, so what disqualifies a stroke is distance from V rather than which key
+     * reported it. Kept as the far-away version of that check.
+     */
     @Test
-    fun `a stroke starting somewhere other than V is not a comma`() {
-        val (xs, ys) = straightDown(300, 400, keyH)
-        assertNull(match(xs, ys, startCode = 'c'.code))
+    fun `a stroke starting well away from V is not a comma`() {
+        val (xs, ys) = straightDown(anchorCentreX - keyW * 3, 400, keyH)
+        assertNull(match(xs, ys, startCode = 'x'.code))
     }
 
     @Test
@@ -111,6 +120,38 @@ class NintypeGesturesTest {
     fun `zero key size cannot match`() {
         val (xs, ys) = straightDown(300, 400, keyH)
         assertNull(NintypeGestures.matchShape(
-            'v'.code, Constants.CODE_SPACE, xs, ys, xs.size, 0, 0))
+            'v'.code, Constants.CODE_SPACE, xs, ys, xs.size, anchorCentreX, keyW, 0, 0))
+    }
+
+    // ---------------------------------------------------------------- the start band
+
+    /**
+     * Reaching V with the right hand lands a little toward B, and the finger is already moving
+     * before it settles. Half a key either side of V's own edges is accepted so those strokes are
+     * not thrown away.
+     */
+    @Test
+    fun `starting half a key toward B is still a comma`() {
+        val (xs, ys) = straightDown(anchorCentreX + keyW, 400, keyH)
+        assertEquals(NintypeGestures.Shortcut.COMMA, match(xs, ys, startCode = 'b'.code))
+    }
+
+    @Test
+    fun `starting half a key toward C is still a comma`() {
+        val (xs, ys) = straightDown(anchorCentreX - keyW, 400, keyH)
+        assertEquals(NintypeGestures.Shortcut.COMMA, match(xs, ys, startCode = 'c'.code))
+    }
+
+    /** A whole key away is B proper, not a near miss on V, and must stay a normal stroke. */
+    @Test
+    fun `starting a full key beyond V is not a comma`() {
+        val (xs, ys) = straightDown(anchorCentreX + keyW * 2, 400, keyH)
+        assertNull(match(xs, ys, startCode = 'b'.code))
+    }
+
+    @Test
+    fun `a key that is not adjacent to V cannot start the pull`() {
+        val (xs, ys) = straightDown(anchorCentreX, 400, keyH)
+        assertNull(match(xs, ys, startCode = 'g'.code))
     }
 }
