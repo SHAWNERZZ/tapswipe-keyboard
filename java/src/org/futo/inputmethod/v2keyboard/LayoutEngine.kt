@@ -1,7 +1,7 @@
 package org.futo.inputmethod.v2keyboard
 
 import org.futo.inputmethod.latin.uix.DataStoreHelper
-import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
+import org.futo.inputmethod.latin.tapswipe.EnterFlickLayout
 import android.content.Context
 import android.graphics.Rect
 import android.util.Log
@@ -119,7 +119,7 @@ data class LayoutEngine(
 
     val effectiveRows = keyboard.getEffectiveRows(
         params.mId.mNumberRowMode,
-        DataStoreHelper.getSetting(TapSwipeNintypeGesturesSetting)
+        EnterFlickLayout.currentBottomRow()
     )
 
     private val rows = run {
@@ -225,6 +225,8 @@ data class LayoutEngine(
                     } else when(it.key) {
                         KeyWidth.Regular -> 0.0
                         KeyWidth.FunctionalKey -> functionalWidth.toDouble() * it.value
+                        KeyWidth.WideFunctionalKey ->
+                            (functionalWidth + regularKeyWidth).toDouble() * it.value
                         KeyWidth.Grow -> Double.NaN // TODO: Not sure what to do if a Grow is in the same row
                         else -> (rowWidths[it.key]?.toDouble() ?: 0.0) * it.value
                     }
@@ -275,6 +277,15 @@ data class LayoutEngine(
         availableSpace -= rowWidths[KeyWidth.FunctionalKey]!! * counts[KeyWidth.FunctionalKey]!!.toFloat()
         //assert(availableSpace >= 0)
         counts.remove(KeyWidth.FunctionalKey)
+
+        // Derived from the two widths above, so it has to be settled here rather than left to the
+        // custom-width loop below - which would also throw, since it is not declared in
+        // overrideWidths. Removed from counts for the same reason: it must not be subtracted twice.
+        rowWidths.putIfAbsent(KeyWidth.WideFunctionalKey,
+            rowWidths[KeyWidth.FunctionalKey]!! + rowWidths[KeyWidth.Regular]!!)
+        availableSpace -= rowWidths[KeyWidth.WideFunctionalKey]!! *
+                counts[KeyWidth.WideFunctionalKey]!!.toFloat()
+        counts.remove(KeyWidth.WideFunctionalKey)
 
         // Subtract remaining custom keys
         counts.forEach {

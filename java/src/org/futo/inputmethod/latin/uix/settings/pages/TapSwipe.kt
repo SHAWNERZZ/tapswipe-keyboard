@@ -132,6 +132,16 @@ val TapSwipeMenu = UserSettingsMenu(
             icon = { Icon(painterResource(R.drawable.direction_arrows), contentDescription = null) }
         ).copy(visibilityCheck = tapSwipeEnabled),
 
+        // Its own screen rather than a toggle: the feature is the assignment, and there is no way to
+        // show eight of those in a settings row.
+        userSettingNavigationItem(
+            title = R.string.tapswipe_settings_enter_flicks,
+            subtitle = R.string.tapswipe_settings_enter_flicks_subtitle,
+            style = NavigationItemStyle.HomeSecondary,
+            navigateTo = "enterKeyFlicks",
+            icon = R.drawable.direction_arrows
+        ),
+
         userSettingToggleDataStore(
             title = R.string.tapswipe_settings_wpm,
             subtitle = R.string.tapswipe_settings_wpm_subtitle,

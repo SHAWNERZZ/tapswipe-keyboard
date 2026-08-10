@@ -303,4 +303,31 @@ mobile devices. [CHAR LIMIT=25] -->
     <string name="tapswipe_settings_whole_word_backspace_subtitle">Backspace right after finishing a word always undoes its last tap or swipe first, so a mistake can be fixed in place. After that grace moment, this setting decides what an older word\'s backspace does: remove it all at once, or one character at a time. Never applies to a run of digits or symbols with no letters, like a phone number.</string>
     <string name="tapswipe_settings_learning_note">Peck mode learns new words so you can swipe them later. That needs Personalized suggestions, under Text prediction.</string>
     <string name="tapswipe_settings_about">Reimplements the input model of the discontinued Nintype keyboard on top of the FUTO swipe decoder.</string>
+
+    <!-- Enter key flicks -->
+    <string name="tapswipe_settings_enter_flicks">Enter key swipes</string>
+    <string name="tapswipe_settings_enter_flicks_subtitle">Swipe off the enter key for punctuation and actions</string>
+    <string name="enter_flicks_title">Enter key swipes</string>
+    <string name="enter_flicks_enable">Enable enter key swipes</string>
+    <string name="enter_flicks_enable_subtitle">Swiping off the enter key runs whatever you assign below. A plain tap still works as enter.</string>
+    <string name="enter_flicks_intro">Tap a direction to change it.</string>
+    <!-- Explains the one thing this feature takes away, on the screen that gives the replacements. -->
+    <string name="enter_flicks_longpress_note">Making enter swipeable replaces its hold menu, which held shift+enter and move to next field. Both are in the list below, so you can put them back on a direction.</string>
+    <string name="enter_flicks_hide_period">Remove the period key</string>
+    <string name="enter_flicks_hide_period_subtitle">The enter key grows into the space it leaves.</string>
+    <string name="enter_flicks_hide_period_recommend">With no period key, double-space is the quickest way to end a sentence. Turning on Double-space period under Typing is recommended.</string>
+    <string name="enter_flicks_hide_period_warning">Double-space period is currently off, so with the period key gone a full stop would mean switching to the symbols page. Turning it on under Typing is recommended.</string>
+    <string name="enter_flicks_pick_title">Assign %1$s</string>
+    <string name="enter_flicks_none">Nothing</string>
+    <string name="enter_flicks_reset">Reset to defaults</string>
+    <string name="enter_flick_shift_enter">Shift + enter</string>
+    <string name="enter_flick_tab">Tab</string>
+    <string name="enter_flicks_dir_north">Up</string>
+    <string name="enter_flicks_dir_south">Down</string>
+    <string name="enter_flicks_dir_west">Left</string>
+    <string name="enter_flicks_dir_east">Right</string>
+    <string name="enter_flicks_dir_north_west">Up and left</string>
+    <string name="enter_flicks_dir_north_east">Up and right</string>
+    <string name="enter_flicks_dir_south_west">Down and left</string>
+    <string name="enter_flicks_dir_south_east">Down and right</string>
 </resources>

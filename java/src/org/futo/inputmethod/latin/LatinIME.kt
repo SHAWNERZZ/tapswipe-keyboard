@@ -65,6 +65,9 @@ import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.BasicThemeProvider
 import org.futo.inputmethod.latin.uix.DataStoreHelper
 import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
+import org.futo.inputmethod.latin.TapSwipeEnterFlicksSetting
+import org.futo.inputmethod.latin.TapSwipeEnterFlickMapSetting
+import org.futo.inputmethod.latin.TapSwipeHidePeriodKeySetting
 import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner
 import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel
 import org.futo.inputmethod.latin.uix.DynamicThemeProvider
@@ -446,6 +449,20 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
             getSettingFlow(TapSwipeNintypeGesturesSetting).collect {
                 invalidateKeyboard()
             }
+        }
+
+        // The enter key's flicks are part of the row's structure rather than its appearance: they
+        // decide whether the key is a flick key at all, and whether the period key beside it exists.
+        // The assignment is collected too, since going from some directions to none turns the key
+        // back into an ordinary one.
+        launchJob {
+            getSettingFlow(TapSwipeEnterFlicksSetting).collect { invalidateKeyboard() }
+        }
+        launchJob {
+            getSettingFlow(TapSwipeEnterFlickMapSetting).collect { invalidateKeyboard() }
+        }
+        launchJob {
+            getSettingFlow(TapSwipeHidePeriodKeySetting).collect { invalidateKeyboard() }
         }
 
         launchJob {

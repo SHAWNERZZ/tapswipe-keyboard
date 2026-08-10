@@ -1,7 +1,7 @@
 package org.futo.inputmethod.v2keyboard
 
 import org.futo.inputmethod.latin.uix.DataStoreHelper
-import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
+import org.futo.inputmethod.latin.tapswipe.EnterFlickLayout
 import android.content.Context
 import android.graphics.Rect
 import android.os.Build
@@ -434,7 +434,7 @@ class KeyboardSizingCalculator(val context: Context, val uixManager: UixManager)
         }
         val effectiveRows = layout.getEffectiveRows(
             settings.mNumberRowMode,
-            DataStoreHelper.getSetting(TapSwipeNintypeGesturesSetting)
+            EnterFlickLayout.currentBottomRow()
         )
         val effectiveRowCount = effectiveRows.size
 

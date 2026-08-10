@@ -62,6 +62,22 @@ enum class KeyWidth {
     Grow,
 
     /**
+     * A functional key that also swallows one regular key's width, for when a neighbouring key has
+     * been removed and the space should go to this key rather than to the spacebar.
+     *
+     * ##### Width calculation
+     * [FunctionalKey]'s width for this row, plus [Regular]'s.
+     *
+     * Needed because widths are resolved per token, not per key: two [FunctionalKey]s in a row are
+     * always the same width, so there is otherwise no way to widen the enter key without also
+     * widening the symbols key beside it. [Grow] cannot express it either - it splits the leftover
+     * space evenly, which would make the enter key as wide as the spacebar.
+     *
+     * Added by this fork, for the enter key when the period key is hidden.
+     */
+    WideFunctionalKey,
+
+    /**
      * The Custom1 width as defined in [Keyboard.overrideWidths] (values are between 0.0 and 1.0)
      */
     Custom1,

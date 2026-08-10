@@ -130,29 +130,76 @@ val DefaultNumberRowClassic = Row(
     )
 )
 
-val DefaultBottomRow = Row(
-    bottom = listOf(
-        TemplateSymbolsKey,
-        ContextualKey(fallbackKey = BaseKey(",")),
-        TemplateActionKey,
-        TemplateSpaceKey,
-        TemplateOptionalZWNJKey,
-        TemplatePeriodKey,
-        TemplateEnterKey
-    )
-)
+/**
+ * How the default bottom row should be built.
+ *
+ * Every field here is a fork addition driven by a user setting. Grouped into one object rather than
+ * passed as loose booleans because they interact - hiding the period changes how wide the enter key
+ * should be, and that is only true when there is an enter key with flicks worth widening for.
+ *
+ * @param hideCommaKey a gesture provides the comma instead
+ * @param hidePeriodKey the enter key takes the period's width
+ * @param enterFlicks what each direction off the enter key does; empty leaves it an ordinary key
+ */
+data class BottomRowConfig(
+    val hideCommaKey: Boolean = false,
+    val hidePeriodKey: Boolean = false,
+    val enterFlicks: Map<Direction, Key> = emptyMap(),
+) {
+    companion object {
+        val Default = BottomRowConfig()
+    }
+}
 
 /**
- * The bottom row without its comma key, for when a gesture provides the comma instead.
+ * The standard bottom row, adjusted for [config].
  *
- * Nothing replaces the gap: the space key is [KeyWidth.Grow], so it simply takes the freed width,
- * which is the point - the gesture buys back space rather than leaving a hole.
+ * When a key is dropped nothing replaces it. The space key is [KeyWidth.Grow], so it takes any
+ * width nobody else claims - which is the point for the comma, where the gesture buys back space
+ * rather than leaving a hole. The period is the exception: [KeyWidth.WideFunctionalKey] hands its
+ * width to the enter key instead, since that is the key that just gained eight new things to do and
+ * has to be hit accurately to do them.
  */
-val BottomRowWithoutComma = Row(
-    bottom = DefaultBottomRow.bottom!!.filterNot {
-        it is ContextualKey && (it.fallbackKey as? BaseKey)?.spec == ","
+fun bottomRowFor(config: BottomRowConfig): Row {
+    val enterWidth = if (config.hidePeriodKey) {
+        KeyWidth.WideFunctionalKey
+    } else {
+        KeyWidth.FunctionalKey
     }
-)
+
+    // FlickKey passes its own attributes to the direction keys, never to the primary, so the width
+    // has to be set on the enter key nested inside it rather than on the wrapper.
+    val enterKey = EnterKey(attributes = KeyAttributes(width = enterWidth))
+    val enter: Key = if (config.enterFlicks.isEmpty()) {
+        enterKey
+    } else {
+        FlickKey(
+            primary = enterKey,
+            up        = config.enterFlicks[Direction.North],
+            down      = config.enterFlicks[Direction.South],
+            left      = config.enterFlicks[Direction.West],
+            right     = config.enterFlicks[Direction.East],
+            upLeft    = config.enterFlicks[Direction.NorthWest],
+            upRight   = config.enterFlicks[Direction.NorthEast],
+            downLeft  = config.enterFlicks[Direction.SouthWest],
+            downRight = config.enterFlicks[Direction.SouthEast],
+        )
+    }
+
+    return Row(
+        bottom = listOfNotNull(
+            TemplateSymbolsKey,
+            if (config.hideCommaKey) null else ContextualKey(fallbackKey = BaseKey(",")),
+            TemplateActionKey,
+            TemplateSpaceKey,
+            TemplateOptionalZWNJKey,
+            if (config.hidePeriodKey) null else TemplatePeriodKey,
+            enter
+        )
+    )
+}
+
+val DefaultBottomRow = bottomRowFor(BottomRowConfig.Default)
 
 enum class NumberRowMode {
     UserConfigurable,
@@ -337,12 +384,15 @@ data class Keyboard(
     }
 
     /**
-     * @param hideCommaKey drop the comma from the default bottom row, letting the space key grow
-     *   into it. Only affects the *default* bottom row - a layout that defines its own is left
-     *   alone, since removing a key someone placed deliberately would be presumptuous.
+     * @param bottomRow how to build the default bottom row. Only affects the *default* bottom row -
+     *   a layout that defines its own is left alone, since removing or rebuilding a key someone
+     *   placed deliberately would be presumptuous.
      */
     @JvmOverloads
-    fun getEffectiveRows(numberRowMode: Int, hideCommaKey: Boolean = false) = rows.toMutableList().apply {
+    fun getEffectiveRows(
+        numberRowMode: Int,
+        bottomRow: BottomRowConfig = BottomRowConfig.Default
+    ) = rows.toMutableList().apply {
         if(find { it.isNumberRow } == null) {
             add(0, when(numberRowMode) {
                 Settings.NUMBER_ROW_MODE_CLASSIC -> DefaultNumberRowClassic
@@ -374,7 +424,7 @@ data class Keyboard(
 
 
             // Add default bottom row
-            add(if (hideCommaKey) BottomRowWithoutComma else DefaultBottomRow)
+            add(bottomRowFor(bottomRow))
         }
 
         ensureRowsValid(this)

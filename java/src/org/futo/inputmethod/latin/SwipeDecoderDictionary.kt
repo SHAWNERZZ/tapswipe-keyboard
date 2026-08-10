@@ -6,6 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import org.futo.inputmethod.latin.tapswipe.EnterFlicks
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import kotlinx.serialization.Serializable
@@ -313,6 +315,36 @@ val TapSwipeAdaptiveGeometrySetting =
  */
 val TapSwipeNintypeGesturesSetting =
     SettingsKey(booleanPreferencesKey("tapswipe_nintype_gestures"), false)
+
+/**
+ * Punctuation and actions on swipes off the enter key.
+ *
+ * Separate from [TapSwipeNintypeGesturesSetting], unlike the comma gesture and its key removal:
+ * those two are halves of one change, where this is a self-contained addition to a key that is not
+ * otherwise involved in typing words.
+ */
+val TapSwipeEnterFlicksSetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_enter_flicks"), false)
+
+/**
+ * Which direction off the enter key does what, encoded by [org.futo.inputmethod.latin.tapswipe.EnterFlicks].
+ *
+ * Stored as one string rather than eight settings so the assignment is written and read as a whole.
+ * Eight independent keys would let a partial write leave the enter key in a state the user never
+ * chose, and would make "reset to defaults" eight operations that can half-fail.
+ */
+val TapSwipeEnterFlickMapSetting =
+    SettingsKey(stringPreferencesKey("tapswipe_enter_flick_map"),
+        EnterFlicks.serialize(EnterFlicks.DEFAULTS))
+
+/**
+ * Drops the period key, widening the enter key into the space it leaves.
+ *
+ * Gated on the enter flicks being on: without them the enter key gains width for nothing, and the
+ * period becomes reachable only through the symbols page or double-space.
+ */
+val TapSwipeHidePeriodKeySetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_hide_period_key"), false)
 
 /**
  * Shows typing speed on the space bar, measured per text field.
