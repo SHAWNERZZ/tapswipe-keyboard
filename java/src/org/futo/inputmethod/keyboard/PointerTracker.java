@@ -24,6 +24,7 @@ import android.view.MotionEvent;
 
 import org.futo.inputmethod.engine.IMEInterfaceKt;
 import org.futo.inputmethod.engine.StateHint;
+import org.futo.inputmethod.keyboard.internal.BackspaceSlideMode;
 import org.futo.inputmethod.keyboard.internal.BatchInputArbiter;
 import org.futo.inputmethod.keyboard.internal.BatchInputArbiter.BatchInputArbiterListener;
 import org.futo.inputmethod.keyboard.internal.BogusMoveEventDetector;
@@ -161,18 +162,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     private boolean mCursorMoved = false;
 
     /**
-     * When a plain (non-sliding) tap released the delete key, so a slide starting shortly after on
-     * the same key can be recognised as "tap, then slide" rather than an ordinary slide.
-     *
-     * Static, matching {@link #sTypingTimeRecorder} and friends elsewhere in this class: a tap and
-     * the slide that follows it are usually two separate touch-down events, and while a single
-     * finger tapping in place typically keeps the same pointer id, relying on that would be
-     * fragile. This is deliberately just a timestamp, not a scheduled callback - it only has to
-     * answer a question at the next touch-down, never act with nothing further to trigger it.
-     */
-    private static long sLastPlainBackspaceReleaseMs = -1;
-
-    /**
      * State for whole-stroke shortcuts that never become gestures.
      *
      * A shortcut like "pull down from V onto the space bar" is short and deliberate, which is
@@ -193,35 +182,33 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     private boolean mNintypeShortcutFired;
 
     /**
-     * How long "tap, then slide" stays armed after the tap releases.
-     *
-     * Deliberately not {@link ViewConfiguration#getDoubleTapTimeout()}. That constant is tuned for
-     * a fast double-rap - two quick hits of the same spot - which is a different motion from this:
-     * tap, notice it landed, then decide to press again and drag. The decide-and-reposition step
-     * alone usually takes longer than a double-tap window allows, so using it here meant the window
-     * had almost always already closed by the time the second touch-down arrived - the gesture
-     * silently fell back to the default every time, which looked identical to the feature not
-     * existing at all.
-     */
-    private static final long BACKSPACE_TAP_THEN_SLIDE_WINDOW_MS = 900L;
-
-    /**
      * Whether the delete-slide currently in progress should act on whole words.
      *
      * pointerStep above only governs how far a finger must travel before one "step" registers -
      * it says nothing about what a step *does*. That decision is made independently, in
      * GeneralIME.onMoveDeletePointer, which reads mBackspaceMode on its own with no visibility
-     * into anything computed here. This is the bridge: written every time wordMode is determined
-     * below, read from there instead of - or alongside - mBackspaceMode. Static and single-flag
-     * because only one finger can realistically be dragging over backspace at a time, and it is
-     * always freshly overwritten before the call it needs to affect, never left stale from an
-     * earlier slide.
+     * into anything computed here. This is the bridge: written every time the current slide's
+     * granularity is decided below, read from there instead of - or alongside - mBackspaceMode.
+     * Static and single-flag because only one finger can realistically be dragging over backspace
+     * at a time, and it is always freshly overwritten before the call it needs to affect, never
+     * left stale from an earlier slide.
      */
     private static boolean sActiveSlideWordMode = false;
 
     public static boolean isActiveSlideWordMode() {
         return sActiveSlideWordMode;
     }
+
+    /**
+     * Whether the delete-slide in progress has reversed past a full step and switched to the other
+     * granularity. See {@link org.futo.inputmethod.keyboard.internal.BackspaceSlideMode} for what
+     * that means and why it is a one-way latch rather than a toggle.
+     */
+    private boolean mBackspaceSlideLatchedToOther;
+
+    /** Sign of the delete-slide's last committed step, or 0 before its first one. */
+    private int mBackspaceSlideLastStepSign;
+
     private boolean mProgressReported = false;
     private boolean mSpacebarLongPressed = false;
 
@@ -828,6 +815,8 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             mDownKey = key;
             mMaxDriftX = 0;
             mNintypeShortcutFired = false;
+            mBackspaceSlideLatchedToOther = false;
+            mBackspaceSlideLastStepSign = 0;
             mStartedOnFastLongPress = key.isFastLongPress();
             mSpacebarLongPressed = false;
 
@@ -1086,28 +1075,28 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
 
         if (!sInGesture && mIsSlidingCursor && oldKey != null && oldKey.getCode() == Constants.CODE_DELETE
                 && settingsValues.mBackspaceMode != Settings.BACKSPACE_MODE_OFF) {
-            int pointerStep = sPointerStep;
-            boolean wordMode = settingsValues.mBackspaceMode == Settings.BACKSPACE_MODE_WORDS;
-            // Tap, then slide: switches this one slide to word-granularity regardless of the
-            // configured default, without touching the setting itself. mStartTime is this touch's
-            // down time (System.currentTimeMillis()-based, matching the release timestamp below -
-            // eventTime elsewhere in this class is on a different clock and deliberately not used
-            // for this kind of comparison).
-            if (!wordMode && settingsValues.mBackspaceTapThenSlideWords
-                    && sLastPlainBackspaceReleaseMs >= 0
-                    && mStartTime - sLastPlainBackspaceReleaseMs < BACKSPACE_TAP_THEN_SLIDE_WINDOW_MS) {
-                wordMode = true;
-            }
-            sActiveSlideWordMode = wordMode;
-            if (wordMode) {
-                pointerStep = sPointerBigStep;
-            }
+            // Nintype-style: the configured mode is where this slide starts, and reversing past a
+            // full step of that granularity switches, for the rest of this gesture, to the other
+            // one - a word-slide can bounce back a little and continue at character precision. See
+            // BackspaceSlideMode for the mechanics and why the switch does not toggle back.
+            final boolean baseIsWords = settingsValues.mBackspaceMode == Settings.BACKSPACE_MODE_WORDS;
+            final int baseStep = baseIsWords ? sPointerBigStep : sPointerStep;
+            final int otherStep = baseIsWords ? sPointerStep : sPointerBigStep;
 
-            int steps = (x - mStartX) / pointerStep;
+            final BackspaceSlideMode.Result result = BackspaceSlideMode.next(
+                    x, mStartX, mBackspaceSlideLatchedToOther, mBackspaceSlideLastStepSign,
+                    baseStep, otherStep);
+
+            mBackspaceSlideLatchedToOther = result.getLatchedToOther();
+            mBackspaceSlideLastStepSign = result.getLastStepSign();
+            // Whichever granularity is currently active, not which one this gesture started at.
+            sActiveSlideWordMode = baseIsWords != mBackspaceSlideLatchedToOther;
+
+            int steps = result.getSteps();
             if (steps != 0) {
                 sTimerProxy.cancelKeyTimersOf(this);
                 mCursorMoved = true;
-                mStartX += steps * pointerStep;
+                mStartX = result.getNewAnchorX();
 
                 if(settingsValues.mIsRTL) steps = -steps;
 
@@ -1274,6 +1263,8 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (mCursorMoved) {
             mCursorMoved = false;
             sActiveSlideWordMode = false;
+            mBackspaceSlideLatchedToOther = false;
+            mBackspaceSlideLastStepSign = 0;
             return;
         }
         if (mIsTrackingForActionDisabled) {
@@ -1282,11 +1273,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (currentKey != null && currentKey.isRepeatable()
                 && (currentKey.getCode() == currentRepeatingKeyCode) && !isInDraggingFinger) {
             return;
-        }
-        // A plain tap on delete - reaching here means it neither slid (mCursorMoved) nor repeated
-        // (the branch above), so this is exactly the discrete "tap" a following slide can pair with.
-        if (currentKey != null && currentKey.getCode() == Constants.CODE_DELETE) {
-            sLastPlainBackspaceReleaseMs = System.currentTimeMillis();
         }
         detectAndSendKey(currentKey, mKeyX, mKeyY, eventTime);
         if (isInSlidingKeyInput) {
@@ -1486,6 +1472,10 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
      */
     private boolean maybeFireNintypeShortcut(final int x, final int y) {
         if (mNintypeShortcutFired || mDownKey == null) return false;
+        // Cheapest first, and specifically before the hit test below. This runs on every touch
+        // move, including the continuous stream a backspace slide produces, where a per-event
+        // proximity search buys nothing - no shortcut starts on the delete key.
+        if (!NintypeGestures.canStart(mDownKey.getCode())) return false;
         if (!DataStoreHelper.getSetting(
                 SwipeDecoderDictionaryKt.getTapSwipeNintypeGesturesSetting())) {
             return false;

@@ -139,7 +139,6 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
 
     public static final String PREF_BACKSPACE_MODE_HOLD = "pref_backspace_mode_hold";
     public static final String PREF_BACKSPACE_MODE = "pref_backspace_mode";
-    public static final String PREF_BACKSPACE_TAP_THEN_SLIDE_WORDS = "pref_backspace_tap_then_slide_words";
     public static final int BACKSPACE_MODE_CHARACTERS = 0; // Long-press backspace and swipe backspace removes just characters
     public static final int BACKSPACE_MODE_WORDS = 1; // Long-press backspace and swipe backspace removes entire words
     public static final int BACKSPACE_MODE_OFF = 2;

@@ -109,12 +109,6 @@ public class SettingsValues {
     public final int mSpacebarSwipeMode;
     public final int mSpacebarHoldMode;
     public final int mBackspaceMode;
-    /**
-     * A quick tap on backspace, then sliding again shortly after, forces the slide-to-delete
-     * granularity to words for that slide - without changing mBackspaceMode itself. Ignored when
-     * that setting is off, since there is no slide-delete gesture for it to modify.
-     */
-    public final boolean mBackspaceTapThenSlideWords;
     public final int mBackspaceModeHold;
     public final int mNumberRowMode;
     public final int mAltSpacesMode;
@@ -218,8 +212,6 @@ public class SettingsValues {
 
         mBackspaceMode = prefs.getInt(Settings.PREF_BACKSPACE_MODE, Settings.BACKSPACE_MODE_CHARACTERS);
         mBackspaceModeHold = prefs.getInt(Settings.PREF_BACKSPACE_MODE_HOLD, mBackspaceMode);
-        mBackspaceTapThenSlideWords = prefs.getBoolean(
-                Settings.PREF_BACKSPACE_TAP_THEN_SLIDE_WORDS, false);
         mNumberRowMode = mIsNumberRowEnabledByUser ?
                 prefs.getInt(Settings.PREF_NUMBER_ROW_MODE, Settings.NUMBER_ROW_MODE_DEFAULT)
                 : Settings.NUMBER_ROW_MODE_DEFAULT;
@@ -588,8 +580,6 @@ public class SettingsValues {
         sb.append("" + mBackspaceUndoesAutocorrect);
         sb.append("\n   mBackspaceMode = ");
         sb.append("" + mBackspaceMode);
-        sb.append("\n   mBackspaceTapThenSlideWords = ");
-        sb.append("" + mBackspaceTapThenSlideWords);
         sb.append("\n   mNumberRowMode = ");
         sb.append("" + mNumberRowMode);
         sb.append("\n   mAltSpacesMode = ");

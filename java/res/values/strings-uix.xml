@@ -441,8 +441,6 @@
     <string name="tapswipe_settings_nintype_gestures_subtitle">Swipe straight down from V onto the space bar for a comma, as the original Nintype did. Removes the comma key, giving the space bar its width.</string>
     <string name="tapswipe_settings_wpm">Show typing speed</string>
     <string name="tapswipe_settings_wpm_subtitle">Displays words per minute on the space bar, measured for as long as you stay in the same text field. Pauses longer than ten seconds are not counted against you.</string>
-    <string name="morekey_settings_backspace_tap_then_slide_words">Tap then slide for words</string>
-    <string name="morekey_settings_backspace_tap_then_slide_words_subtitle">A quick tap on backspace, then sliding again right after, deletes by word for that slide - without changing the swipe setting above.</string>
     <string name="morekey_settings_spacebar_title">Spacebar</string>
     <string name="morekey_settings_spacebar_swipe_shortcut">Swipe</string>
     <string name="morekey_settings_spacebar_swipe_shortcut_off">Off</string>
