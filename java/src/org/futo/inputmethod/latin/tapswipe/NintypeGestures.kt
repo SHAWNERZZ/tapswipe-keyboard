@@ -71,6 +71,19 @@ object NintypeGestures {
     private val COMMA_START_CODES = setOf('v'.code, 'b'.code, 'c'.code)
 
     /**
+     * Whether a stroke starting on this key could possibly be a shortcut.
+     *
+     * For callers checking every touch move: it lets them skip the work of resolving which key the
+     * finger is currently over, which is a proximity search, for the strokes - nearly all of them -
+     * that could never match. A backspace slide fires move events continuously, and doing a hit
+     * test per event to reach a rule that rejects on its first line is waste in the one place that
+     * has to stay smooth.
+     */
+    @JvmStatic
+    fun canStart(startCode: Int): Boolean =
+        Character.toLowerCase(startCode) in COMMA_START_CODES
+
+    /**
      * Matches a completed *gesture*, where the whole point list is available.
      *
      * @param pointers the completed stroke, in keyboard-view coordinates
