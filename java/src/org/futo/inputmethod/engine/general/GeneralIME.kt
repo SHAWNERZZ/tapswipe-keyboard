@@ -680,14 +680,14 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     override fun onMoveDeletePointer(steps: Int) {
         setNeutralSuggestionStrip()
         if (inputLogic.mConnection.hasCursorPosition()) {
-            // PointerTracker.isActiveSlideWordMode() carries the tap-then-slide override: it is
-            // where "was this slide preceded by a plain tap on backspace" actually gets decided,
-            // since only PointerTracker has the timing state to know that. mBackspaceMode alone
-            // cannot express it - checking that setting here without this would silently drop the
-            // override and always fall back to whatever the configured default is.
-            val stepOverWords =
-                settings.current.mBackspaceMode == Settings.BACKSPACE_MODE_WORDS
-                        || PointerTracker.isActiveSlideWordMode()
+            // Authoritative on its own, not just an addition on top of mBackspaceMode: this slide
+            // may have reversed and switched away from the base granularity, in either direction,
+            // and PointerTracker.isActiveSlideWordMode() already reflects that - it is set from the
+            // same BackspaceSlideMode result as the steps just received, immediately before this
+            // call, every time. OR-ing it with mBackspaceMode here would only ever add word mode,
+            // never remove it, which silently ignored a switch away from word mode when the base
+            // setting was Words - exactly backwards for that case.
+            val stepOverWords = PointerTracker.isActiveSlideWordMode()
             if (steps < 0) {
                 inputLogic.cursorLeft(steps, stepOverWords, true)
             } else {
