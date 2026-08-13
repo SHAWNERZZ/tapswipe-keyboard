@@ -4,7 +4,7 @@
 
 | Layer | How to run | Device | Status |
 |---|---|---|---|
-| JVM unit tests | `./gradlew testUnstableDebugUnitTest` | none | **working** - 18 tests, ~5s |
+| JVM unit tests | `./gradlew testUnstableDebugUnitTest` | none | **working** - 123 tests, seconds |
 | In-app scenario runner | Memory Debug action -> **Run scenarios** | phone | **working** - 65 scenarios, ~3 min |
 | Manual matrix | the checklist below | phone | for anything the runner cannot reach |
 
@@ -19,7 +19,21 @@ changing and a derived result being applied - not logic errors in isolated funct
 - End-to-end scenarios would have caught roughly nine, because they run the real `InputLogic`
   against a real editor.
 
-So the end-to-end layer is where the value is.
+So the end-to-end layer is where the value is — for the *session*. That was the whole feature set at
+the time.
+
+The gesture and layout work since then inverted it. Stroke geometry, the enter-key assignment and its
+storage, the bottom-row shape, and the backspace-slide state machine are all arithmetic over inputs
+that can be written down, so they are unit-tested, and those tests have caught real mistakes cheaply.
+The split is deliberate and shows up in the code: each of them separates a pure rule from the part
+that needs a live `Keyboard` or native proximity code, purely so the risky half runs without a device.
+
+The limit is worth recording, because the one bug that shipped in that work landed exactly on it.
+`BackspaceSlideMode`'s tests were correct and stayed correct; the defect was a stale boolean one file
+downstream in `GeneralIME`, which needs a live `InputConnection` to instantiate and so has no unit
+coverage at all. Pure-function tests verify the rule, not that anyone honours the answer — still the
+seam between evidence changing and a derived result being applied, which is where nearly every bug in
+this fork has lived.
 
 ## The in-app scenario runner
 
@@ -133,16 +147,26 @@ Master Mode's letter hiding and peck's reveal are now automated; only the actual
 - [ ] Learned geometry survives a keyboard restart
 
 ### Needs a real finger on real hardware
-- [ ] Tap backspace once, then slide it again shortly after: deletes by word, with "Tap then slide
-      for words" on (Settings -> TapSwipe) and swipe-to-delete not off (Settings -> Backspace)
-- [ ] The same slide without a preceding tap still deletes by whatever swipe-to-delete is set to
-- [ ] Sliding well after the tap (past BACKSPACE_TAP_THEN_SLIDE_WINDOW_MS, ~900ms) does not force
-      word mode
+- [ ] Backspace slide deletes at the granularity swipe-to-delete is set to (Settings -> Backspace)
+- [ ] Reversing past a full step switches to the other granularity for the rest of that slide -
+      **test with the setting on Words**, see the note below
+- [ ] Reversing a second time does not switch back
+- [ ] A reversal too small to cross a full step changes nothing
+- [ ] Swipe straight down from V onto the space bar produces a comma, with Nintype gestures on
+- [ ] A word swipe starting on V, B or C still decodes as a word
+- [ ] Each assigned enter-key direction fires; a plain tap is still enter
+- [ ] With the period key hidden, the enter key is wider and the space bar is not
 
-This one is out of the runner's reach on principle, not just for now: the gesture lives in
-`PointerTracker`'s raw touch state machine, and the runner drives the keyboard through
-`LatinIMELegacy` method calls directly, never through real `MotionEvent`s. There is nothing to
-synthesize a touch-down/slide sequence against.
+These are out of the runner's reach on principle, not just for now: they live in `PointerTracker`'s
+raw touch state machine, and the runner drives the keyboard through `LatinIMELegacy` method calls
+directly, never through real `MotionEvent`s. There is nothing to synthesize a touch-down/slide
+sequence against.
+
+**Test the reversal with the base set to Words specifically.** The one bug this feature shipped with
+was invisible in the Characters case: `GeneralIME.onMoveDeletePointer` computed word-mode as
+`mBackspaceMode == WORDS || isActiveSlideWordMode()`, so with the base on Words the first term was
+always true and a reversal *into* character mode had no effect. The mirror case worked fine. A
+setting that makes one direction of a two-way switch untestable is worth naming in the checklist.
 
 ## Adding a scenario
 

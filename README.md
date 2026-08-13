@@ -42,9 +42,32 @@ taps before it — including for a moment after the word commits, which is usual
 Optional whole-word delete covers older words, and never touches a run of digits or symbols: losing
 a whole phone number to one mistyped digit isn't a trade worth making.
 
+**Backspace slide changes gear mid-gesture.** Sliding across backspace deletes as you drag, starting
+at whatever granularity the swipe-backspace setting names. Reverse past a full step and the rest of
+that gesture switches to the other granularity — sweep back over three words, bounce right, then
+continue left character by character. The switch is one-way: a second reversal is another nudge, not
+a request to go back to coarse deletion.
+
 **Peck mode.** Tap a word out slowly and it skips autocorrect, commits exactly as typed, and is
 learned so you can swipe it next time — that's how you enter a word the dictionary lacks. Key borders
-mark it.
+mark it, the space bar says so, and it ticks when it engages — it can engage on its own after a
+pause, so it has to announce itself.
+
+**Nintype gestures** (optional). Swipe straight down from V onto the space bar for a comma, as the
+original did. The comma key then comes off the bottom row and the space bar takes its width — the
+gesture buys back space rather than leaving a hole. The pull is matched strictly, and anchored to V's
+centre with half a key of slack either side, because a false positive eats a word you meant to type.
+
+**Enter key swipes** (optional). Eight assignable directions off the enter key: punctuation by
+default (up `?`, down `!`, left `(`, right `)`), and editor actions — paste, clipboard history,
+undo, cut, select all, arrows — available for any direction. Optionally drops the period key, handing
+its width to enter rather than to the space bar. A plain tap is still enter. Assigning it is a keypad
+grid rather than eight dropdowns, since "where is my question mark" is a spatial question. Cost: a
+flickable key can't also hold a long-press menu, so enter's is displaced — shift+enter and field
+navigation are in the assignable list instead, to be put back on a direction of your choosing.
+
+**Typing speed** (optional). Words per minute on the space bar, measured per text field. Pauses over
+ten seconds aren't counted against you.
 
 **Master Mode.** Letter keys render as dots, since typing by shape makes the letters noise. Peck mode
 brings them back while you spell something out, and tapping away for a few words restores them until

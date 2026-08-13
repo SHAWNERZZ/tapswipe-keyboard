@@ -12,6 +12,7 @@ Target behaviour (from the original Nintype keyboard):
 1. **Peck mode** — a word in which no swipe occurred. No autocorrect, no gesture suggestions. The literal tapped string is committed verbatim even if out-of-dictionary, then learned so it becomes swipeable later.
 2. **Swipe mode** — a word built from *interleaved taps and swipes*, including two thumbs operating with temporal overlap. `tap H, tap E, tap L, swipe L→O` ⇒ `hello`. Thumb A `S→A→W` overlapping thumb B `H→N` ⇒ `shawn`.
 3. **Space is the only finalizer.** Lifting a finger never commits. Further taps/swipes keep accumulating and re-decode into a new candidate. Modes are implicit — never surfaced to the user.
+4. **Gestures that are not words.** Shapes claimed before the decoder sees them (a pull from V to the space bar for a comma), directional shortcuts off keys that never spell (punctuation and actions off enter), and a slide-to-delete that changes granularity when it reverses. Nintype's own wiki calls these "edge slide shortcuts" and treats them as a general system rather than a fixed list — see Phase 9.
 
 ---
 
@@ -512,6 +513,54 @@ Fixed alongside: the literal (no-swipe-left) branch used to return false and fal
 Not a bug: **never implemented.** The current code resets the whole session on backspace, which was deliberate as an anti-leak interim (Phase 1) with stroke-level undo deferred.
 
 Now it needs doing properly, and the hard part is not the session — popping a `Stroke` is trivial — it is keeping `WordComposer` in step. A swiped word lives in the composer as a batch word (`setBatchInputWord`), so removing a stroke means re-decoding the remainder and rewriting the composing region, not deleting characters. Given every bug so far has lived in the seam between changing evidence and applying a result, this must re-decode and rewrite atomically, and must not fire `setRejectedBatchModeSuggestion` (which would permanently disable autocorrect for the retry).
+
+### Phase 9 — Whole-stroke shortcuts and key-level gestures — *implemented, dev*
+
+The first work in this fork that lives entirely in the touch layer rather than the word session. Everything here is a shape claimed *before* the decoder sees it, or a key that does more than one thing.
+
+**Nintype gestures — the comma pull.** A straight pull down from V onto the space bar produces a comma; the comma key comes off the bottom row and the space key, being `Grow`, takes its width. One setting covers both halves deliberately: splitting them ships either a dead key or a gesture competing with the key it supersedes.
+
+Not a `flick` key, which looked like the obvious fit. `PointerTracker`'s flick branch returns *before* gesture detection, so making V a flick key would stop any swipe starting on V from becoming a word at all — silently breaking swipe-typing through a letter, a far worse trade than not having the shortcut.
+
+Matching is strict because the failure is asymmetric: a miss costs one repeated gesture, a false positive eats a word you meant to type. The rule asserts a start key, an end key, a direction steeper than 45°, and a drift bound.
+
+#### Fix 11 — the pull never fired at all
+
+Logcat during failed attempts showed **zero** `NintypeGestures` lines: the matcher was never reached. Only `GeneralIME.onEndBatchInput` was checked, and a short deliberate pull routinely fails `detectFastMove`/`isStartOfAGesture` — thresholds calibrated for long fast word swipes — so no batch gesture ever starts and that callback never fires.
+
+Fixed by checking in `PointerTracker` as well, sharing one rule between both paths so they cannot drift apart. The rule was split into a pure-arithmetic half and a half that resolves keys, so the tunable part is JVM-testable.
+
+#### Fix 12 — only fired if you stopped exactly on the space bar
+
+Reported as: works, but only when carefully stopping on the bar; a natural flick past it fails. That is backwards from how a flick should behave, and the cause was structural rather than a threshold.
+
+The second check ran at *release*. Flicking past the space bar leaves the valid gesture area, which calls `cancelBatchInput()` → `cancelAllPointerTrackers()` → `cancelTrackingForAction()` on **every** tracker including the one performing the gesture, so `onUpEventInternal` returns at its `mIsTrackingForActionDisabled` guard long before any release-time check. The harder you flicked, the more certainly nothing happened.
+
+Moved to fire mid-stroke, the moment the pull becomes unambiguous — which is also what a flick *is*: it commits when it crosses its threshold, not when the finger happens to lift. Leaving the keyboard downward is now read as reaching the space bar rather than as abandoning the gesture.
+
+#### Fix 13 — missed when reaching V with the right hand
+
+The start band is anchored to V's *centre* with half a key of slack either side, not to whichever key reported the touch. Keying off the reported key would make tolerance lopsided and dependent on where key boundaries happen to fall; anchoring gives even slack regardless. B and C are permitted as reporting keys only so the anchor lookup is skipped for strokes that could never qualify — distance from V decides.
+
+**Enter key swipes.** Eight assignable directions, using the existing `FlickKey` type — safe here precisely because it was not safe for V: the flick branch bypasses the gesture pipeline, which only matters for keys that participate in spelling, and enter never does.
+
+`FlickKey.computeData` forces `longPressEnabled = false` and empties `moreKeys`, so enter's hold menu is destroyed — shift+enter, field navigation, the emoji action. Rather than accept the loss, those became assignable options, so the capability moves onto a direction instead of disappearing.
+
+Slots store an option *id*, not the text produced: not every option is a character. Parsing is deliberately forgiving — an unrecognised id costs only its own direction — because this is settings data that outlives the build that wrote it, and rejecting a whole string for one bad slot would wipe seven good assignments.
+
+**`KeyWidth.WideFunctionalKey`.** Hiding the period key needed a new width token. Widths resolve per token, not per key, so two `FunctionalKey`s in a row are always equal — no way to widen enter without also widening symbols. `Grow` splits leftover space evenly, which would make enter as wide as the spacebar. The new token is functional width plus one regular width: enter absorbs exactly the period's 10%, and the spacebar is untouched at 40%.
+
+**Backspace slide — reversal-latched granularity.** Replaced tap-then-slide entirely. The slide starts at whatever granularity the setting names; reversing past a full step switches, for the rest of that gesture, to the other one. A one-way latch, not a toggle — a second reversal is another nudge, not a request to return to coarse deletion.
+
+Tap-then-slide was removed rather than kept alongside. It had shipped working, but its arming window was generous enough (900ms after any backspace tap) that ordinary slides following a tap silently changed granularity, which reads as the slide behaving inconsistently rather than as a feature engaging.
+
+#### Fix 14 — the reversal did nothing when the base mode was Words
+
+`GeneralIME.onMoveDeletePointer` computed `stepOverWords` as `mBackspaceMode == WORDS || isActiveSlideWordMode()`. That was correct for tap-then-slide, which only ever needed to *add* word mode on top of an always-Characters setting.
+
+The new mechanic switches both ways, and the `||` made it one-directional: with the base on Words the first term is unconditionally true, so a reversal into character mode had no effect downstream — the exact case the feature existed for. `isActiveSlideWordMode()` is now authoritative, safe because it is written from the same `BackspaceSlideMode` result as the steps being delivered, immediately before the call.
+
+Worth recording as the current best example of the fork's recurring bug class: the pure state machine was tested and correct throughout, and the defect sat one file downstream in code with no unit coverage. Testing a rule does not test that anyone honours the answer.
 
 ## 3. Risks
 
