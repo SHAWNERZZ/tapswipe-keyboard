@@ -150,6 +150,33 @@ private fun rememberModelRevision(): Int {
     return rev
 }
 
+/**
+ * Names learning that exists but is filed under a different layout bucket.
+ *
+ * Without this the page shows nothing and reads as data loss, when in fact a layout key folds in
+ * both the letter set and the orientation - so changing layout, or anything that changes which keys
+ * count as letters, moves evidence somewhere this page was not looking. Nothing is ever deleted by
+ * that, and saying so is the difference between a scare and a shrug.
+ */
+@Composable
+private fun OtherLayoutNote(byLayout: Map<String, Int>, currentKey: String?) {
+    val others = byLayout.filterKeys { it != currentKey }
+    if (others.isEmpty()) return
+
+    val total = others.values.sum()
+    val described = others.entries.sortedByDescending { it.value }.joinToString("; ") { (key, n) ->
+        val orientation = if (key.startsWith("L:")) "landscape" else "portrait"
+        "$n in $orientation ${key.drop(2).take(30)}"
+    }
+    Text(
+        "$total more samples are stored for other layouts and are not shown above — $described. " +
+            "Learning is kept per layout and orientation; nothing here is deleted when you switch.",
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
 @Composable
 fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController? = null) {
     val context = LocalContext.current
@@ -179,6 +206,10 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
     ScrollableList {
         ScreenTitle("Learned key geometry", showBack = true, navController = navController)
 
+        // Read regardless of whether the current layout has anything, so that evidence held under
+        // another bucket can be reported rather than looking like it was lost.
+        val byLayout = remember(revision) { TapSwipeTouchModel.samplesByLayout() }
+
         if (layoutKey == null || extent == null || layoutInfo.letters.isEmpty()) {
             Text(
                 "No keyboard layout has been loaded yet. Open the keyboard and swipe a word, " +
@@ -186,6 +217,7 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
                 modifier = Modifier.padding(16.dp),
                 style = MaterialTheme.typography.bodyMedium
             )
+            OtherLayoutNote(byLayout, currentKey = layoutKey)
             return@ScrollableList
         }
 
@@ -195,6 +227,7 @@ fun TapSwipeGeometryScreen(navController: androidx.navigation.NavHostController?
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             style = MaterialTheme.typography.titleSmall
         )
+        OtherLayoutNote(byLayout, currentKey = layoutKey)
         Text(
             "Ring = where the key is. Dot = where your typing has moved it. " +
                 "Ellipse = how consistent you are — a wide one means there is no habit to learn.",

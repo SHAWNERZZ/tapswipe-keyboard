@@ -1,7 +1,6 @@
 package org.futo.inputmethod.latin.tapswipe
 
 import android.content.Context
-import android.util.AtomicFile
 import android.util.Log
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -122,6 +121,26 @@ object TapSwipeTouchModel {
     private var loaded = false
     private var dirty = false
 
+    /**
+     * Set when a read failed for any reason other than the file genuinely not existing.
+     *
+     * Blocks every write for the life of the process. The in-memory model is empty in that state,
+     * and the file on disk is the only copy of the user's learning - so the one thing that must not
+     * happen is writing the empty one over it. Recovering needs a restart, which costs nothing;
+     * overwriting is permanent.
+     */
+    private var readFailed = false
+
+    /**
+     * Whether an empty model may be written over whatever is on disk.
+     *
+     * Only [reset] sets it, because a deliberate reset is the sole legitimate reason to replace
+     * learning with nothing. Any other route to an empty in-memory model - a failed read, a bug, a
+     * process that never loaded - is a mistake, and treating "no samples" as "nothing to protect"
+     * is how weeks of learning would be silently destroyed by a one-line error somewhere else.
+     */
+    private var emptyWriteAllowed = false
+
     /** Bumped on every change, so the UI can recompose without polling the file. */
     @Volatile
     var revision: Int = 0
@@ -165,24 +184,140 @@ object TapSwipeTouchModel {
             if (loaded) return
             val file = File(dir, FILE_NAME)
             try {
-                // readFully() rather than a File.exists() check: AtomicFile keeps a .bak from an
-                // interrupted write, and only readFully() knows to recover from it. Testing
-                // exists() on the main path would silently discard a recoverable model.
-                val text = AtomicFile(file).readFully().toString(Charsets.UTF_8)
+                // readModelText rather than a File.exists() check: an interrupted write leaves a
+                // .bak that is the last good copy, and only that path knows to recover it. Testing
+                // exists() on the main file would silently discard a recoverable model.
+                val text = readModelText(file)
                 model = json.decodeFromString(ModelFile.serializer(), text)
+                readFailed = false
                 revision++
-                if (DEBUG_PERSIST) {
-                    Log.d(TAG, "loaded touch model: ${totalSamplesLocked()} samples")
-                }
+                Log.i(TAG, "loaded touch model: ${totalSamplesLocked()} samples across " +
+                        "${model.layouts.size} layout(s) ${model.layouts.keys}")
+                // Snapshot what was just read, while it is known to be good and before this process
+                // can write anything over it. That makes the backup a copy from *before* today's
+                // session rather than a duplicate of whatever was last written.
+                writeBackupLocked(dir, text)
             } catch (e: java.io.FileNotFoundException) {
-                // Nothing saved yet - a normal first run, not a problem.
+                // Nothing saved yet - a normal first run. Or the file went missing, in which case
+                // the backup is the only copy left, so it is worth looking before concluding this
+                // user has never typed.
                 model = ModelFile()
+                readFailed = false
+                if (restoreFromBackupLocked(dir)) {
+                    Log.w(TAG, "touch model was missing; recovered ${totalSamplesLocked()} " +
+                            "samples from backup")
+                } else {
+                    Log.i(TAG, "no touch model on disk yet - first run")
+                }
             } catch (e: Throwable) {
-                // A corrupt model is not worth taking the keyboard down for - start over.
-                Log.e(TAG, "could not read touch model, starting fresh", e)
+                // Unreadable rather than absent. Start empty so the keyboard still works, but
+                // refuse to write for the rest of this process: the file may be perfectly good and
+                // this a transient failure, and an empty model written over it cannot be undone.
+                Log.e(TAG, "could not read touch model - writes disabled for this process", e)
                 model = ModelFile()
+                readFailed = true
+                if (restoreFromBackupLocked(dir)) {
+                    // The backup parsed, so there is something real to work from. Reads are safe
+                    // again; writes stay disabled, because the main file is still the newer copy
+                    // and this process cannot tell what it lost.
+                    Log.w(TAG, "recovered ${totalSamplesLocked()} samples from backup")
+                }
             }
             loaded = true
+        }
+    }
+
+    /**
+     * A copy of the last model that was known to load cleanly.
+     *
+     * Distinct from the `.bak` kept beside the model, which only ever protects a single
+     * interrupted write and is consumed on the next read. This one survives across sessions and
+     * exists for the case that has no other remedy: the main file present but unreadable, or gone.
+     */
+    /**
+     * Atomic read/write, hand-rolled rather than [android.util.AtomicFile].
+     *
+     * Not a preference about implementations - a testability one. `AtomicFile` is an Android class,
+     * so under `returnDefaultValues` its methods are no-ops returning null, which means every file
+     * path in this object was unreachable from JVM tests. This is the only copy of weeks of
+     * learning, its failure modes are all silent, and it was the one part of this feature with no
+     * automated coverage at all. Plain `java.io` costs ~20 lines and makes every branch testable.
+     *
+     * The on-disk format is unchanged - `AtomicFile` writes the payload plainly and keeps a sibling
+     * `.bak` - so models written by earlier versions load here untouched, including a `.bak` left
+     * behind by an interrupted write under the old code.
+     */
+    private fun readModelText(file: File): String {
+        // A .bak present means a write was interrupted: the old file was renamed aside and the new
+        // one may be absent or partial. The .bak is the last known-good copy, so put it back.
+        val bak = File(file.path + ".bak")
+        if (bak.exists()) {
+            file.delete()
+            bak.renameTo(file)
+        }
+        // Throws FileNotFoundException when genuinely absent, which the caller distinguishes from
+        // every other failure - that difference is the whole safety property here.
+        return file.readText(Charsets.UTF_8)
+    }
+
+    private fun writeModelText(file: File, text: String) {
+        val tmp = File(file.path + ".tmp")
+        java.io.FileOutputStream(tmp).use { out ->
+            out.write(text.toByteArray(Charsets.UTF_8))
+            // Durability against power loss, not just process death: without this the rename can
+            // land while the contents are still only in the page cache.
+            out.fd.sync()
+        }
+
+        val bak = File(file.path + ".bak")
+        if (file.exists()) {
+            bak.delete()
+            file.renameTo(bak)
+        }
+        if (tmp.renameTo(file)) {
+            bak.delete()
+        } else {
+            // Put back what was there rather than leaving no model at all.
+            tmp.delete()
+            if (bak.exists() && !file.exists()) bak.renameTo(file)
+            throw java.io.IOException("could not replace ${file.name}")
+        }
+    }
+
+    private fun backupFile(dir: File) = File(dir, "$FILE_NAME.backup")
+
+    private fun writeBackupLocked(dir: File, text: String) {
+        // Nothing worth protecting, and writing it would replace a real backup with an empty one.
+        if (totalSamplesLocked() == 0) return
+        try {
+            val backup = backupFile(dir)
+            val tmp = File(dir, "$FILE_NAME.backup.tmp")
+            tmp.writeText(text, Charsets.UTF_8)
+            if (!tmp.renameTo(backup)) {
+                backup.delete()
+                if (!tmp.renameTo(backup)) tmp.delete()
+            }
+        } catch (e: Throwable) {
+            // A backup that cannot be written is not a reason to fail the load it is protecting.
+            Log.w(TAG, "could not write touch model backup", e)
+        }
+    }
+
+    /** @return true when a non-empty model was recovered into memory */
+    private fun restoreFromBackupLocked(dir: File): Boolean {
+        val backup = backupFile(dir)
+        if (!backup.exists()) return false
+        return try {
+            val restored = json.decodeFromString(ModelFile.serializer(),
+                backup.readText(Charsets.UTF_8))
+            val samples = restored.layouts.values.sumOf { l -> l.keys.values.sumOf { it.count } }
+            if (samples == 0) return false
+            model = restored
+            revision++
+            true
+        } catch (e: Throwable) {
+            Log.e(TAG, "touch model backup is unreadable too", e)
+            false
         }
     }
 
@@ -196,7 +331,10 @@ object TapSwipeTouchModel {
      */
     @JvmStatic
     fun reloadFromDisk(context: Context) {
-        synchronized(lock) { loaded = false }
+        // readFailed is cleared here rather than left standing: a re-read is exactly the retry that
+        // a transient failure deserves, and if it succeeds there is no longer anything to protect
+        // against. If it fails again, ensureLoaded sets the flag straight back.
+        synchronized(lock) { loaded = false; readFailed = false }
         ensureLoaded(context.filesDir)
     }
 
@@ -218,29 +356,47 @@ object TapSwipeTouchModel {
                 Log.w(TAG, "refusing to save a touch model that was never loaded")
                 return
             }
+            // The read failed, so what is in memory is not this user's model - it is what was left
+            // after giving up on the file. The file itself may be intact.
+            if (readFailed) {
+                Log.w(TAG, "refusing to save: the model on disk could not be read this session")
+                return
+            }
+            // Nothing learned, and nobody asked for a reset. Either this process never saw the
+            // file, or something emptied the model without meaning to; in both cases the copy on
+            // disk is worth more than this one. Writing "no samples" over real learning is the
+            // single most damaging thing this class can do, so it takes an explicit reset.
+            if (totalSamplesLocked() == 0 && !emptyWriteAllowed) {
+                Log.w(TAG, "refusing to save an empty touch model over existing data")
+                return
+            }
             if (!dirty) return
             text = json.encodeToString(model)
             dirty = false
+            // Spent on the write it authorised. Leaving it armed would let some later accident
+            // empty the model and have that emptiness written without anyone asking.
+            emptyWriteAllowed = false
             saveAttempts++
         }
-        val atomic = AtomicFile(File(dir, FILE_NAME))
-        var out: java.io.FileOutputStream? = null
         try {
-            out = atomic.startWrite()
-            out.write(text.toByteArray(Charsets.UTF_8))
-            atomic.finishWrite(out)
+            writeModelText(File(dir, FILE_NAME), text)
         } catch (e: Throwable) {
+            // Mark dirty again so the next flush retries rather than assuming this one landed.
             Log.e(TAG, "could not write touch model", e)
-            if (out != null) atomic.failWrite(out)
             synchronized(lock) { dirty = true }
         }
     }
 
+    /**
+     * Deliberate erasure, from the settings screen. The only route by which an empty model is
+     * allowed to reach disk - see [emptyWriteAllowed].
+     */
     @JvmStatic
     fun reset() {
         synchronized(lock) {
             model = ModelFile()
             dirty = true
+            emptyWriteAllowed = true
             revision++
         }
     }
@@ -437,6 +593,21 @@ object TapSwipeTouchModel {
     @JvmStatic
     fun totalSamples(): Int = synchronized(lock) { totalSamplesLocked() }
 
+    /**
+     * Sample count per stored layout bucket, for the settings screen.
+     *
+     * Exists so that evidence held under a bucket other than the current one is *visible* rather
+     * than appearing lost. A layout key folds in the letters and the orientation, so switching
+     * layouts - or a change to which keys count as letters - silently moves learning into a bucket
+     * the geometry page was not looking at. Nothing is deleted when that happens, and showing the
+     * other buckets is the difference between "my learning is gone" and "it is filed elsewhere".
+     */
+    @JvmStatic
+    fun samplesByLayout(): Map<String, Int> = synchronized(lock) {
+        model.layouts.mapValues { (_, layout) -> layout.keys.values.sumOf { it.count } }
+            .filterValues { it > 0 }
+    }
+
     private fun totalSamplesLocked(): Int =
         model.layouts.values.sumOf { layout -> layout.keys.values.sumOf { it.count } }
 
@@ -473,10 +644,16 @@ object TapSwipeTouchModel {
             model = ModelFile()
             dirty = false
             loaded = false
+            readFailed = false
+            emptyWriteAllowed = false
             saveAttempts = 0
             revision++
         }
     }
+
+    /** For tests: whether writes are currently blocked because the last read failed. */
+    @JvmStatic
+    fun isWriteBlockedForTests(): Boolean = synchronized(lock) { readFailed }
 
     @JvmStatic
     fun knownLayoutKeys(): List<String> = synchronized(lock) { model.layouts.keys.sorted() }

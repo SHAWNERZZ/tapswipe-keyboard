@@ -560,6 +560,10 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     private var destroying = false
     override fun onDestroy() {
         destroying = true
+        // Before stopJobs(), which cancels the scope the learner saves on. onFinishInput normally
+        // flushes, but the service can be destroyed without it - an app update, or the system
+        // reclaiming the process - and anything learned since the last flush lives only in memory.
+        TapSwipeLearner.flushBlocking(this)
         unregisterReceiver(unlockReceiver)
         stopJobs()
         viewModelStore.clear()

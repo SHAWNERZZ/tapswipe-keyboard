@@ -452,5 +452,24 @@ object TapSwipeLearner {
         scope.launch { TapSwipeTouchModel.save(app) }
     }
 
+    /**
+     * Flush on the calling thread, for teardown.
+     *
+     * [flush] posts to a scope that is about to be cancelled, so at destroy time it is a request to
+     * do the work later on a thread that will not exist. Writing the model is a few hundred
+     * kilobytes of JSON to app-private storage; doing it inline is cheaper than the alternative,
+     * which is silently losing everything learned since the last save.
+     */
+    @JvmStatic
+    fun flushBlocking(context: Context) {
+        samplesSinceSave = 0
+        try {
+            TapSwipeTouchModel.save(context.applicationContext)
+        } catch (e: Throwable) {
+            // Teardown must not be the thing that crashes the keyboard.
+            Log.e(TAG, "could not flush touch model on the way out", e)
+        }
+    }
+
     private const val DEBUG = true
 }
