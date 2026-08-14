@@ -1,81 +1,112 @@
 package org.futo.inputmethod.keyboard.internal
 
 /**
- * Granularity for a slide-to-delete gesture, and when it switches mid-slide.
+ * How far a delete-slide has moved, and at what granularity it should be deleting.
  *
- * The slide starts at whichever granularity the backspace setting names ("base"), one step per
- * [BASE_STEP]/[OTHER_STEP] pixels of travel. Reversing direction - moving back the way you came,
- * past a full step's worth - switches for the rest of this gesture to the other granularity, so a
- * word-swipe can bounce back a little and continue at character precision, matching what the
- * original Nintype's slide-to-delete did.
+ * A slide-to-delete has two jobs that pull in opposite directions: trimming a few letters off the
+ * end of a word, and throwing away a sentence. Word granularity is far too coarse for the first -
+ * a whole word disappears before the finger has travelled a centimetre - and character granularity
+ * is tediously slow for the second.
  *
- * The switch is a one-way latch, not a toggle: once a gesture has switched, it stays switched even
- * if the finger reverses again. Reasoned from what the gesture is for - the second reversal is
- * "I want to nudge back one more character," the same motion as the first, not a request to jump
- * back to coarse deletion. A toggle would make the third bounce in a row silently mean something
- * different from the first.
+ * So the gesture escalates rather than picking one. It always begins fine, because that is where
+ * precision matters and where a wrong guess is most annoying; once it has travelled far enough to
+ * be unambiguously a bulk deletion - [Config.escalateAfterPx], about two words' worth - it switches
+ * to words. Reversing at any point drops it back to characters for the rest of the gesture, which
+ * is how the original Nintype's slide behaved: sweep back over a few words, bounce, and pick off
+ * the last few letters exactly.
  *
- * Kept as a pure function over anchor/latch/sign rather than something stateful, so the decision
- * that actually matters - did this movement cross a step, did it reverse - is checked without a
- * device. [org.futo.inputmethod.keyboard.PointerTracker] owns the mutable state between calls, the
- * same way it already owns the anchor position for the cursor-slide gesture beside this one.
+ * ### Why the switches latch
+ *
+ * Neither switch toggles. Escalation is one-way because a slide that has already covered two words
+ * is not going to become a precision edit, and dropping back to characters mid-sweep would make a
+ * long deletion crawl. The reversal is one-way for the reason it was one-way before: a second
+ * bounce is another nudge in the same spirit as the first, not a request to go back to coarse
+ * deletion. Once fine, always fine - the finger has said what it wants.
+ *
+ * Pure, with the caller holding [State] between events, so every rule here is checked without a
+ * device. `PointerTracker` already owns equivalent state for the cursor slide beside this one.
  */
 object BackspaceSlideMode {
 
     /**
-     * @param steps how many granularity-steps to apply; zero means nothing crossed a threshold yet
-     * @param newAnchorX where the next call's [x] should be measured from
-     * @param latchedToOther whether this gesture has switched away from the base granularity
-     * @param lastStepSign the sign of the most recent nonzero [steps], carried forward so the next
-     *   call can tell whether a future step reverses it. Unchanged from the input when steps is
-     *   zero - direction is only known once something has actually moved.
+     * @param anchorX where the next step is measured from; advances as steps are committed
+     * @param startX where the finger went down, fixed for the gesture - escalation measures from
+     *   here rather than from [anchorX], which moves
+     * @param escalated whether this gesture has switched up to word granularity
+     * @param latchedFine whether a reversal has pinned it to characters
+     * @param lastStepSign direction of the last committed step, 0 before the first
      */
-    data class Result(
-        val steps: Int,
-        val newAnchorX: Int,
-        val latchedToOther: Boolean,
-        val lastStepSign: Int
+    data class State(
+        val anchorX: Int,
+        val startX: Int,
+        val escalated: Boolean = false,
+        val latchedFine: Boolean = false,
+        val lastStepSign: Int = 0
     )
 
     /**
-     * @param x current touch position
-     * @param anchorX position the last step was measured from
-     * @param latchedToOther whether a reversal has already switched this gesture to [otherStepPx]
-     * @param lastStepSign sign of the last committed step, or 0 before the first one
-     * @param baseStepPx pixels per step at the gesture's starting granularity
-     * @param otherStepPx pixels per step at the granularity a reversal switches to
+     * @param charStepPx travel per character step
+     * @param wordStepPx travel per word step
+     * @param escalateAfterPx travel from [State.startX] after which words take over
+     * @param wordsAllowed false when the user asked for character deletion and nothing else
      */
-    @JvmStatic
-    fun next(
-        x: Int,
-        anchorX: Int,
-        latchedToOther: Boolean,
-        lastStepSign: Int,
-        baseStepPx: Int,
-        otherStepPx: Int
-    ): Result {
-        var latched = latchedToOther
-        var steps = (x - anchorX) / (if (latched) otherStepPx else baseStepPx)
+    data class Config(
+        val charStepPx: Int,
+        val wordStepPx: Int,
+        val escalateAfterPx: Int,
+        val wordsAllowed: Boolean
+    )
 
-        // Only base granularity can reverse into other: once switched, this gesture stays switched
-        // regardless of which way the finger moves next (see the class doc on why this is a latch).
-        // A step of 0 has no direction to compare, and lastStepSign of 0 means nothing has committed
-        // yet - the very first step of a gesture is never a "reversal" of anything.
-        if (!latched && steps != 0 && lastStepSign != 0) {
+    /**
+     * @param steps granularity-steps to apply now; zero until something crosses a threshold
+     * @param wordMode whether those steps are words - what the IME needs in order to act on them
+     */
+    data class Result(val steps: Int, val wordMode: Boolean, val state: State)
+
+    @JvmStatic
+    fun next(x: Int, state: State, config: Config): Result {
+        var escalated = state.escalated
+        var latchedFine = state.latchedFine
+
+        // Escalate before measuring, so the step that crosses the threshold is already a word step
+        // rather than one last character step at the old granularity.
+        if (config.wordsAllowed && !escalated && !latchedFine &&
+            kotlin.math.abs(x - state.startX) >= config.escalateAfterPx) {
+            escalated = true
+        }
+
+        var wordMode = escalated && !latchedFine && config.wordsAllowed
+        var stepPx = if (wordMode) config.wordStepPx else config.charStepPx
+        var steps = (x - state.anchorX) / stepPx
+
+        // A reversal means the finger wants precision back. Only checked while coarse: once fine,
+        // there is nothing to switch to, and a step of zero has no direction to compare.
+        if (wordMode && steps != 0 && state.lastStepSign != 0) {
             val sign = if (steps > 0) 1 else -1
-            if (sign != lastStepSign) {
-                // Re-measured at the finer granularity from the same anchor, rather than carrying
-                // over the base-granularity step count, so the crossing itself is felt at whatever
-                // precision the gesture just switched to - not in whatever units it was measured in
-                // a moment ago.
-                latched = true
-                steps = (x - anchorX) / otherStepPx
+            if (sign != state.lastStepSign) {
+                latchedFine = true
+                wordMode = false
+                // Re-measured finely from the same anchor, so the reversal is felt at the precision
+                // it just asked for rather than in the units it was travelling in a moment ago.
+                stepPx = config.charStepPx
+                steps = (x - state.anchorX) / stepPx
             }
         }
 
-        if (steps == 0) return Result(0, anchorX, latched, lastStepSign)
+        if (steps == 0) {
+            return Result(0, wordMode,
+                state.copy(escalated = escalated, latchedFine = latchedFine))
+        }
 
-        val stepPx = if (latched) otherStepPx else baseStepPx
-        return Result(steps, anchorX + steps * stepPx, latched, if (steps > 0) 1 else -1)
+        return Result(
+            steps = steps,
+            wordMode = wordMode,
+            state = state.copy(
+                anchorX = state.anchorX + steps * stepPx,
+                escalated = escalated,
+                latchedFine = latchedFine,
+                lastStepSign = if (steps > 0) 1 else -1
+            )
+        )
     }
 }

@@ -6,137 +6,178 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * JVM tests for the delete-slide granularity switch.
+ * JVM tests for delete-slide granularity.
  *
- * Word-per-step is 32, character-per-step is 16 throughout, matching the app's actual
- * [sPointerBigStep]/[sPointerStep] ratio (32dp/16dp) - the ratio matters here, not the absolute
- * values, since it decides how many character-steps a single word-step's worth of reversal becomes.
+ * Word steps are 32 and character steps 16 throughout, matching the app's real 32dp/16dp. The ratio
+ * is what matters: a word step is *shorter* than the letters it removes, which is exactly why the
+ * gesture cannot start in word mode - a slide meant to trim a few characters would swallow a whole
+ * word before travelling as far as those characters would have needed.
  */
 class BackspaceSlideModeTest {
 
-    private val word = 32
     private val char = 16
+    private val word = 32
 
-    @Test
-    fun `no movement is no step`() {
-        val r = BackspaceSlideMode.next(x = 100, anchorX = 100, latchedToOther = false,
-            lastStepSign = 0, baseStepPx = word, otherStepPx = char)
-        assertEquals(0, r.steps)
-        assertEquals(100, r.newAnchorX)
-        assertFalse(r.latchedToOther)
+    private val words = BackspaceSlideMode.Config(
+        charStepPx = char, wordStepPx = word,
+        escalateAfterPx = word * 2, wordsAllowed = true
+    )
+    private val charsOnly = words.copy(wordsAllowed = false)
+
+    private fun start(at: Int = 100) = BackspaceSlideMode.State(anchorX = at, startX = at)
+
+    /** Drags left to [to], feeding intermediate positions so escalation is seen as it happens. */
+    private fun dragTo(
+        from: BackspaceSlideMode.State,
+        to: Int,
+        config: BackspaceSlideMode.Config = words,
+        stepPx: Int = 4
+    ): Pair<BackspaceSlideMode.State, MutableList<BackspaceSlideMode.Result>> {
+        var state = from
+        val seen = mutableListOf<BackspaceSlideMode.Result>()
+        val dir = if (to < state.anchorX) -1 else 1
+        var x = from.anchorX
+        // Clamped to the target rather than stepping past it: overshooting by a few pixels is
+        // enough to cross an escalation threshold the test meant to stop short of.
+        while (x != to) {
+            x = if (dir < 0) maxOf(to, x - stepPx) else minOf(to, x + stepPx)
+            val r = BackspaceSlideMode.next(x, state, config)
+            state = r.state
+            if (r.steps != 0) seen.add(r)
+        }
+        return state to seen
     }
 
-    @Test
-    fun `movement under one step is not yet a step`() {
-        val r = BackspaceSlideMode.next(x = 131, anchorX = 100, latchedToOther = false,
-            lastStepSign = 0, baseStepPx = word, otherStepPx = char)
-        assertEquals(0, r.steps)
-    }
+    // ---------------------------------------------------------------- starting fine
 
     @Test
-    fun `the first step commits at the base granularity`() {
-        val r = BackspaceSlideMode.next(x = 68, anchorX = 100, latchedToOther = false,
-            lastStepSign = 0, baseStepPx = word, otherStepPx = char)
+    fun `a slide begins at character granularity`() {
+        val r = BackspaceSlideMode.next(100 - char, start(), words)
         assertEquals(-1, r.steps)
-        assertEquals(68, r.newAnchorX)
-        assertFalse(r.latchedToOther)
-        assertEquals(-1, r.lastStepSign)
+        assertFalse("the first step must not be a word", r.wordMode)
     }
 
     @Test
-    fun `continuing the same direction keeps stepping at the base granularity`() {
-        var anchor = 100
-        var latched = false
-        var sign = 0
-
-        var r = BackspaceSlideMode.next(anchor - word, anchor, latched, sign, word, char)
-        anchor = r.newAnchorX; latched = r.latchedToOther; sign = r.lastStepSign
-
-        r = BackspaceSlideMode.next(anchor - word, anchor, latched, sign, word, char)
-
-        assertEquals(-1, r.steps)
-        assertFalse(r.latchedToOther)
+    fun `movement under one character step does nothing`() {
+        val r = BackspaceSlideMode.next(100 - (char - 1), start(), words)
+        assertEquals(0, r.steps)
     }
 
     /**
-     * The main behaviour under test: reversing past a full base-granularity step switches this
-     * gesture to the other granularity, and that same crossing is measured at the finer precision
-     * rather than costing a whole base-step's worth of undo.
+     * The reported bug. Two words' worth of travel used to be four word-steps of deletion; it is
+     * now four characters, which is what a short slide almost always means.
      */
     @Test
-    fun `reversing past a base step latches to the other granularity`() {
-        // One word-step left, establishing a direction to reverse out of.
-        val first = BackspaceSlideMode.next(x = 68, anchorX = 100, latchedToOther = false,
-            lastStepSign = 0, baseStepPx = word, otherStepPx = char)
-
-        // Cross one word-step's distance back to the right (68 + 32 = 100).
-        val bounce = BackspaceSlideMode.next(x = 100, anchorX = first.newAnchorX,
-            latchedToOther = first.latchedToOther, lastStepSign = first.lastStepSign,
-            baseStepPx = word, otherStepPx = char)
-
-        assertTrue(bounce.latchedToOther)
-        // 32px of reversal at 16px-per-character-step is 2 character-steps, not 1 word-step.
-        assertEquals(2, bounce.steps)
-        assertEquals(1, bounce.lastStepSign)
+    fun `a short slide stays in characters`() {
+        // One pixel short of the escalation threshold - the most a slide can travel and still be
+        // treated as a precision edit.
+        val (_, seen) = dragTo(start(), 100 - (word * 2 - 1))
+        assertTrue("nothing in a short slide may be a word step", seen.none { it.wordMode })
+        assertEquals("63px of travel is three character steps", -3, seen.sumOf { it.steps })
     }
 
-    /** Once latched, further reversals do not switch back - see the class doc on why it is a latch. */
+    // ---------------------------------------------------------------- escalating
+
     @Test
-    fun `a second reversal does not unlatch`() {
-        var anchor = 100
-        var latched = false
-        var sign = 0
-
-        // Left far enough to establish direction, then bounce right far enough to latch.
-        var r = BackspaceSlideMode.next(anchor - word, anchor, latched, sign, word, char)
-        anchor = r.newAnchorX; latched = r.latchedToOther; sign = r.lastStepSign
-        r = BackspaceSlideMode.next(anchor + word, anchor, latched, sign, word, char)
-        anchor = r.newAnchorX; latched = r.latchedToOther; sign = r.lastStepSign
-        assertTrue(latched)
-
-        // Reverse again, left, far enough to cross a character-step.
-        r = BackspaceSlideMode.next(anchor - char, anchor, latched, sign, word, char)
-
-        assertTrue("a second reversal must not unlatch", r.latchedToOther)
-        assertEquals(-1, r.steps)
+    fun `words take over once the slide is clearly bulk deletion`() {
+        val (state, seen) = dragTo(start(), 100 - word * 4)
+        assertTrue("a long slide must reach word granularity", seen.any { it.wordMode })
+        assertTrue(state.escalated)
     }
 
     @Test
-    fun `a reversal too small to cross a base step does not latch`() {
-        val first = BackspaceSlideMode.next(x = 68, anchorX = 100, latchedToOther = false,
-            lastStepSign = 0, baseStepPx = word, otherStepPx = char)
-
-        // Only 20px back - short of the 32px base step, even though it is more than a char step.
-        val r = BackspaceSlideMode.next(x = 88, anchorX = first.newAnchorX,
-            latchedToOther = first.latchedToOther, lastStepSign = first.lastStepSign,
-            baseStepPx = word, otherStepPx = char)
-
-        assertEquals(0, r.steps)
-        assertFalse(r.latchedToOther)
-        // Direction bookkeeping from the committed step must survive an event that commits nothing.
-        assertEquals(-1, r.lastStepSign)
+    fun `escalation does not happen before the threshold`() {
+        val (state, _) = dragTo(start(), 100 - word * 2 + 2)
+        assertFalse(state.escalated)
     }
 
     @Test
-    fun `the very first movement of a gesture is never treated as a reversal`() {
-        // lastStepSign = 0 means nothing has committed yet, however this call is invoked.
-        val r = BackspaceSlideMode.next(x = 68, anchorX = 100, latchedToOther = false,
-            lastStepSign = 0, baseStepPx = word, otherStepPx = char)
-        assertFalse(r.latchedToOther)
+    fun `escalation is measured from where the finger went down, not from the moving anchor`() {
+        // The anchor advances with every committed step, so measuring from it would mean the
+        // threshold is never reached however far the slide goes.
+        val (state, _) = dragTo(start(), 100 - word * 3)
+        assertTrue(state.escalated)
     }
 
-    /** The mirror case: a character-primary gesture bouncing out to word granularity. */
+    // ---------------------------------------------------------------- reversing
+
     @Test
-    fun `the base and other granularities can be swapped`() {
-        val first = BackspaceSlideMode.next(x = 84, anchorX = 100, latchedToOther = false,
-            lastStepSign = 0, baseStepPx = char, otherStepPx = word)
-        assertEquals(-1, first.steps)
+    fun `reversing after escalation drops back to characters for good`() {
+        val (escalated, _) = dragTo(start(), 100 - word * 4)
+        assertTrue(escalated.escalated)
 
-        val bounce = BackspaceSlideMode.next(x = 116, anchorX = first.newAnchorX,
-            latchedToOther = first.latchedToOther, lastStepSign = first.lastStepSign,
-            baseStepPx = char, otherStepPx = word)
+        // Bounce back the other way, far enough to cross a step.
+        val bounce = BackspaceSlideMode.next(escalated.anchorX + word, escalated, words)
 
-        assertTrue(bounce.latchedToOther)
-        assertEquals(1, bounce.steps)
+        assertTrue(bounce.state.latchedFine)
+        assertFalse("after a reversal the gesture is fine again", bounce.wordMode)
+        assertEquals("the bounce is felt at character precision", 2, bounce.steps)
+    }
+
+    @Test
+    fun `a second reversal does not go back to words`() {
+        val (escalated, _) = dragTo(start(), 100 - word * 4)
+        val bounce = BackspaceSlideMode.next(escalated.anchorX + word, escalated, words)
+
+        val again = BackspaceSlideMode.next(bounce.state.anchorX - char, bounce.state, words)
+
+        assertTrue(again.state.latchedFine)
+        assertFalse(again.wordMode)
+        assertEquals(-1, again.steps)
+    }
+
+    @Test
+    fun `once fine, travelling further does not go back to words`() {
+        val (escalated, _) = dragTo(start(), 100 - word * 4)
+        val bounce = BackspaceSlideMode.next(escalated.anchorX + word, escalated, words)
+
+        val (far, seen) = dragTo(bounce.state, bounce.state.anchorX - word * 6)
+
+        // `escalated` stays true - it records that the threshold was passed - but latchedFine is
+        // what decides granularity from here, and it outranks it.
+        assertTrue("the reversal must keep holding", far.latchedFine)
+        assertTrue("no step after a reversal may be a word", seen.none { it.wordMode })
+        assertTrue(seen.isNotEmpty())
+    }
+
+    /** Reversing while still fine is just movement the other way - there is nothing to switch to. */
+    @Test
+    fun `reversing before escalation changes no granularity`() {
+        val first = BackspaceSlideMode.next(100 - char, start(), words)
+        val back = BackspaceSlideMode.next(first.state.anchorX + char, first.state, words)
+
+        assertEquals(1, back.steps)
+        assertFalse(back.wordMode)
+        assertFalse(back.state.latchedFine)
+    }
+
+    // ---------------------------------------------------------------- the character-only setting
+
+    @Test
+    fun `words never appear when the user asked for characters only`() {
+        val (state, seen) = dragTo(start(), 100 - word * 8, config = charsOnly)
+        assertFalse(state.escalated)
+        assertTrue(seen.isNotEmpty())
+        assertTrue("character mode must never escalate", seen.none { it.wordMode })
+    }
+
+    // ---------------------------------------------------------------- bookkeeping
+
+    @Test
+    fun `a step that commits nothing leaves the direction alone`() {
+        val first = BackspaceSlideMode.next(100 - char, start(), words)
+        assertEquals(-1, first.state.lastStepSign)
+
+        val nothing = BackspaceSlideMode.next(first.state.anchorX - 3, first.state, words)
+        assertEquals(0, nothing.steps)
+        assertEquals("direction survives an event that commits nothing",
+            -1, nothing.state.lastStepSign)
+    }
+
+    @Test
+    fun `the anchor advances by exactly what was committed`() {
+        val r = BackspaceSlideMode.next(100 - char * 3, start(), words)
+        assertEquals(-3, r.steps)
+        assertEquals(100 - char * 3, r.state.anchorX)
     }
 }

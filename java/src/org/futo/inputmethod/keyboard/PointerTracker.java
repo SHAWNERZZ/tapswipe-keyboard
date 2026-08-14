@@ -200,14 +200,32 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     }
 
     /**
-     * Whether the delete-slide in progress has reversed past a full step and switched to the other
-     * granularity. See {@link org.futo.inputmethod.keyboard.internal.BackspaceSlideMode} for what
-     * that means and why it is a one-way latch rather than a toggle.
+     * Progress of the delete-slide in flight. See
+     * {@link org.futo.inputmethod.keyboard.internal.BackspaceSlideMode} for the rules it carries.
      */
-    private boolean mBackspaceSlideLatchedToOther;
+    private BackspaceSlideMode.State mBackspaceSlide;
 
-    /** Sign of the delete-slide's last committed step, or 0 before its first one. */
-    private int mBackspaceSlideLastStepSign;
+    /**
+     * How far the finger may stray on the delete key before its auto-repeat is called off.
+     *
+     * Deliberately far below one step of any granularity. Auto-repeat and slide-to-delete both
+     * begin with a finger resting on backspace, and the repeat timer fires on a clock while the
+     * slide waits for distance - so a slow slide used to have a word deleted out from under it
+     * before its first step ever registered, which is not something the slide can undo. Movement
+     * this far is not a hold, whether or not it has yet earned a step.
+     */
+    private static final int BACKSPACE_SLIDE_SLOP_PX =
+            (int)(6.0 * Resources.getSystem().getDisplayMetrics().density);
+
+    /**
+     * How many words' worth of travel a delete-slide covers before words take over from characters.
+     *
+     * Two, because one is indistinguishable from overshooting a letter-level edit. A word step is
+     * shorter than the letters it removes, so word granularity from the first step means a slide
+     * meant to trim a few characters swallows a whole word almost immediately, and getting those
+     * letters back means sliding the other way further than the screen allows.
+     */
+    private static final int BACKSPACE_WORDS_AFTER_STEPS = 2;
 
     private boolean mProgressReported = false;
     private boolean mSpacebarLongPressed = false;
@@ -815,8 +833,9 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             mDownKey = key;
             mMaxDriftX = 0;
             mNintypeShortcutFired = false;
-            mBackspaceSlideLatchedToOther = false;
-            mBackspaceSlideLastStepSign = 0;
+            // Anchor and origin both start where the finger went down; the anchor advances with
+            // each step while the origin stays put, since escalation measures total travel.
+            mBackspaceSlide = new BackspaceSlideMode.State(x, x, false, false, 0);
             mStartedOnFastLongPress = key.isFastLongPress();
             mSpacebarLongPressed = false;
 
@@ -1075,28 +1094,33 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
 
         if (!sInGesture && mIsSlidingCursor && oldKey != null && oldKey.getCode() == Constants.CODE_DELETE
                 && settingsValues.mBackspaceMode != Settings.BACKSPACE_MODE_OFF) {
-            // Nintype-style: the configured mode is where this slide starts, and reversing past a
-            // full step of that granularity switches, for the rest of this gesture, to the other
-            // one - a word-slide can bounce back a little and continue at character precision. See
-            // BackspaceSlideMode for the mechanics and why the switch does not toggle back.
-            final boolean baseIsWords = settingsValues.mBackspaceMode == Settings.BACKSPACE_MODE_WORDS;
-            final int baseStep = baseIsWords ? sPointerBigStep : sPointerStep;
-            final int otherStep = baseIsWords ? sPointerStep : sPointerBigStep;
+            // Call off auto-repeat as soon as this looks like a slide rather than a hold. It fires
+            // on a timer while the slide waits for distance, so without this a word gets deleted
+            // out from under a slow slide before its first step lands - and a slide can reselect,
+            // but it cannot bring back what auto-repeat already removed.
+            if (Math.abs(x - mBackspaceSlide.getStartX()) >= BACKSPACE_SLIDE_SLOP_PX) {
+                sTimerProxy.cancelKeyTimersOf(this);
+            }
 
-            final BackspaceSlideMode.Result result = BackspaceSlideMode.next(
-                    x, mStartX, mBackspaceSlideLatchedToOther, mBackspaceSlideLastStepSign,
-                    baseStep, otherStep);
+            // Always begins at character precision and escalates to words once the slide is clearly
+            // a bulk deletion; a reversal drops it back to characters for good. See
+            // BackspaceSlideMode for why each switch latches.
+            final BackspaceSlideMode.Config config = new BackspaceSlideMode.Config(
+                    sPointerStep,
+                    sPointerBigStep,
+                    sPointerBigStep * BACKSPACE_WORDS_AFTER_STEPS,
+                    settingsValues.mBackspaceMode == Settings.BACKSPACE_MODE_WORDS);
 
-            mBackspaceSlideLatchedToOther = result.getLatchedToOther();
-            mBackspaceSlideLastStepSign = result.getLastStepSign();
-            // Whichever granularity is currently active, not which one this gesture started at.
-            sActiveSlideWordMode = baseIsWords != mBackspaceSlideLatchedToOther;
+            final BackspaceSlideMode.Result result =
+                    BackspaceSlideMode.next(x, mBackspaceSlide, config);
+
+            mBackspaceSlide = result.getState();
+            sActiveSlideWordMode = result.getWordMode();
 
             int steps = result.getSteps();
             if (steps != 0) {
                 sTimerProxy.cancelKeyTimersOf(this);
                 mCursorMoved = true;
-                mStartX = result.getNewAnchorX();
 
                 if(settingsValues.mIsRTL) steps = -steps;
 
@@ -1263,8 +1287,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (mCursorMoved) {
             mCursorMoved = false;
             sActiveSlideWordMode = false;
-            mBackspaceSlideLatchedToOther = false;
-            mBackspaceSlideLastStepSign = 0;
             return;
         }
         if (mIsTrackingForActionDisabled) {
