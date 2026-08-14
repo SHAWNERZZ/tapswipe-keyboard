@@ -1,112 +1,129 @@
 package org.futo.inputmethod.keyboard.internal
 
+import kotlin.math.abs
+
 /**
- * How far a delete-slide has moved, and at what granularity it should be deleting.
+ * How far a delete-slide has moved, and at what granularity.
  *
- * A slide-to-delete has two jobs that pull in opposite directions: trimming a few letters off the
- * end of a word, and throwing away a sentence. Word granularity is far too coarse for the first -
- * a whole word disappears before the finger has travelled a centimetre - and character granularity
- * is tediously slow for the second.
+ * Distance is denominated in characters whatever granularity is active. A word costs the slide
+ * exactly what its letters would have cost - so sweeping over "the quick brown fox" takes the same
+ * travel whether it is deleted word by word or letter by letter. Only the *unit of selection*
+ * changes; the exchange rate between finger travel and text consumed never does.
  *
- * So the gesture escalates rather than picking one. It always begins fine, because that is where
- * precision matters and where a wrong guess is most annoying; once it has travelled far enough to
- * be unambiguously a bulk deletion - [Config.escalateAfterPx], about two words' worth - it switches
- * to words. Reversing at any point drops it back to characters for the rest of the gesture, which
- * is how the original Nintype's slide behaved: sweep back over a few words, bounce, and pick off
- * the last few letters exactly.
+ * That is the point, and the reason a flat per-word step was wrong. A fixed word step is shorter
+ * than the letters it removes, so word mode consumed text faster than the finger was moving: a
+ * slide meant to trim a few characters swallowed whole words, and winning them back meant sliding
+ * the other way further than the screen allows.
  *
- * ### Why the switches latch
+ * ### Debt, not distance
  *
- * Neither switch toggles. Escalation is one-way because a slide that has already covered two words
- * is not going to become a precision edit, and dropping back to characters mid-sweep would make a
- * long deletion crawl. The reversal is one-way for the reason it was one-way before: a second
- * bounce is another nudge in the same spirit as the first, not a request to go back to coarse
- * deletion. Once fine, always fine - the finger has said what it wants.
+ * A word's cost is its length, which is unknown until it has been consumed. So a word is taken as
+ * soon as the finger moves, and the slide is then charged for it via [chargeWord] - the next word
+ * waits until that debt has been walked off.
+ *
+ * The debt is tracked separately from the anchor rather than by pushing the anchor forward, because
+ * an anchor moved past the finger reads as travel in the opposite direction, which is
+ * indistinguishable from the user reversing. Keeping the two apart is what lets a long word be
+ * expensive without looking like a bounce.
+ *
+ * ### Reversing
+ *
+ * Reversing past a character drops the gesture to character precision for the rest of the gesture,
+ * as the original Nintype's slide did: sweep back over a few words, bounce, and pick off the last
+ * few letters exactly. One-way, because a second bounce is another nudge in the same spirit as the
+ * first, not a request to go back to deleting whole words.
  *
  * Pure, with the caller holding [State] between events, so every rule here is checked without a
- * device. `PointerTracker` already owns equivalent state for the cursor slide beside this one.
+ * device.
  */
 object BackspaceSlideMode {
 
     /**
-     * @param anchorX where the next step is measured from; advances as steps are committed
-     * @param startX where the finger went down, fixed for the gesture - escalation measures from
-     *   here rather than from [anchorX], which moves
-     * @param escalated whether this gesture has switched up to word granularity
-     * @param latchedFine whether a reversal has pinned it to characters
-     * @param lastStepSign direction of the last committed step, 0 before the first
+     * @param anchorX the point up to which travel has been paid for
+     * @param debtPx travel still owed before another word may be taken
+     * @param direction which way this slide is going: -1, 1, or 0 before it has committed
+     * @param latchedFine whether a reversal has pinned this gesture to characters
      */
     data class State(
         val anchorX: Int,
-        val startX: Int,
-        val escalated: Boolean = false,
-        val latchedFine: Boolean = false,
-        val lastStepSign: Int = 0
+        val debtPx: Int = 0,
+        val direction: Int = 0,
+        val latchedFine: Boolean = false
     )
 
     /**
-     * @param charStepPx travel per character step
-     * @param wordStepPx travel per word step
-     * @param escalateAfterPx travel from [State.startX] after which words take over
+     * @param charStepPx travel that consumes one character - the unit for everything
      * @param wordsAllowed false when the user asked for character deletion and nothing else
      */
-    data class Config(
-        val charStepPx: Int,
-        val wordStepPx: Int,
-        val escalateAfterPx: Int,
-        val wordsAllowed: Boolean
-    )
+    data class Config(val charStepPx: Int, val wordsAllowed: Boolean)
 
     /**
-     * @param steps granularity-steps to apply now; zero until something crosses a threshold
-     * @param wordMode whether those steps are words - what the IME needs in order to act on them
+     * @param steps characters to consume, or in word mode the direction to take one word in
+     * @param wordMode whether [steps] means a word rather than a count of characters
+     * @param state carry to the next event; in word mode it is not yet charged for the word
      */
     data class Result(val steps: Int, val wordMode: Boolean, val state: State)
 
     @JvmStatic
     fun next(x: Int, state: State, config: Config): Result {
-        var escalated = state.escalated
-        var latchedFine = state.latchedFine
+        if (state.latchedFine || !config.wordsAllowed) return fine(x, state, config)
 
-        // Escalate before measuring, so the step that crosses the threshold is already a word step
-        // rather than one last character step at the old granularity.
-        if (config.wordsAllowed && !escalated && !latchedFine &&
-            kotlin.math.abs(x - state.startX) >= config.escalateAfterPx) {
-            escalated = true
+        val travel = x - state.anchorX
+
+        // Nothing committed yet, so there is no direction to continue or reverse. The first
+        // character of travel establishes one and takes the first word with it.
+        if (state.direction == 0) {
+            if (abs(travel) < config.charStepPx) return Result(0, true, state)
+            val direction = if (travel > 0) 1 else -1
+            return Result(direction, true, state.copy(anchorX = x, direction = direction))
         }
 
-        var wordMode = escalated && !latchedFine && config.wordsAllowed
-        var stepPx = if (wordMode) config.wordStepPx else config.charStepPx
-        var steps = (x - state.anchorX) / stepPx
+        // How far past the paid-up point the finger is, measured along the way it was going.
+        val progress = travel * state.direction
 
-        // A reversal means the finger wants precision back. Only checked while coarse: once fine,
-        // there is nothing to switch to, and a step of zero has no direction to compare.
-        if (wordMode && steps != 0 && state.lastStepSign != 0) {
-            val sign = if (steps > 0) 1 else -1
-            if (sign != state.lastStepSign) {
-                latchedFine = true
-                wordMode = false
-                // Re-measured finely from the same anchor, so the reversal is felt at the precision
-                // it just asked for rather than in the units it was travelling in a moment ago.
-                stepPx = config.charStepPx
-                steps = (x - state.anchorX) / stepPx
-            }
+        // Far enough back to be a reversal rather than jitter. Re-measured as characters from the
+        // anchor, so the bounce is felt at the precision it just asked for.
+        if (progress <= -config.charStepPx) {
+            return fine(x, state.copy(latchedFine = true), config)
         }
 
-        if (steps == 0) {
-            return Result(0, wordMode,
-                state.copy(escalated = escalated, latchedFine = latchedFine))
-        }
+        if (progress < state.debtPx) return Result(0, true, state)
 
+        // The debt is walked off: the anchor moves by what was owed, not to where the finger is,
+        // so travel beyond it counts toward the next word rather than being forgiven.
         return Result(
-            steps = steps,
-            wordMode = wordMode,
+            steps = state.direction,
+            wordMode = true,
             state = state.copy(
-                anchorX = state.anchorX + steps * stepPx,
-                escalated = escalated,
-                latchedFine = latchedFine,
-                lastStepSign = if (steps > 0) 1 else -1
+                anchorX = state.anchorX + state.direction * state.debtPx,
+                debtPx = 0
             )
         )
+    }
+
+    /** Character stepping, for a gesture that is fine either by setting or by having reversed. */
+    private fun fine(x: Int, state: State, config: Config): Result {
+        val steps = (x - state.anchorX) / config.charStepPx
+        if (steps == 0) return Result(0, false, state)
+        return Result(
+            steps = steps,
+            wordMode = false,
+            state = state.copy(anchorX = state.anchorX + steps * config.charStepPx)
+        )
+    }
+
+    /**
+     * Charges the slide for a word that turned out to be [chars] characters long.
+     *
+     * Called after the word has been consumed, since its length is only known then. [chars] is what
+     * the editor actually moved over, so the spaces and punctuation between words are paid for at
+     * the same rate as letters - which is what keeps travel and text in step.
+     */
+    @JvmStatic
+    fun chargeWord(state: State, chars: Int, config: Config): State {
+        // Never free: a word the editor reported as costing nothing would let an almost stationary
+        // finger consume the document one event at a time.
+        val cost = maxOf(1, abs(chars))
+        return state.copy(debtPx = cost * config.charStepPx)
     }
 }

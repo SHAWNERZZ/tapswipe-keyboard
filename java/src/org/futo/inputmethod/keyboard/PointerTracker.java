@@ -218,14 +218,21 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             (int)(6.0 * Resources.getSystem().getDisplayMetrics().density);
 
     /**
-     * How many words' worth of travel a delete-slide covers before words take over from characters.
+     * How many characters the editor moved over during the delete-step in progress.
      *
-     * Two, because one is indistinguishable from overshooting a letter-level edit. A word step is
-     * shorter than the letters it removes, so word granularity from the first step means a slide
-     * meant to trim a few characters swallows a whole word almost immediately, and getting those
-     * letters back means sliding the other way further than the screen allows.
+     * Written by {@code GeneralIME.cursorStepped} during the {@code onMoveDeletePointer} call below
+     * and read immediately after it returns, so it is never stale by more than that call. Static
+     * for the same reason as {@link #sActiveSlideWordMode}: only one finger can be dragging over
+     * backspace, and the IME has no reference to the tracker asking.
+     *
+     * Needed because a word's length - what a word-slide must be charged for - is known only to the
+     * editor, and only once the word has been consumed.
      */
-    private static final int BACKSPACE_WORDS_AFTER_STEPS = 2;
+    private static int sLastCursorStepChars = 0;
+
+    public static void reportCursorStepChars(final int chars) {
+        sLastCursorStepChars = chars;
+    }
 
     private boolean mProgressReported = false;
     private boolean mSpacebarLongPressed = false;
@@ -835,7 +842,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             mNintypeShortcutFired = false;
             // Anchor and origin both start where the finger went down; the anchor advances with
             // each step while the origin stays put, since escalation measures total travel.
-            mBackspaceSlide = new BackspaceSlideMode.State(x, x, false, false, 0);
+            mBackspaceSlide = new BackspaceSlideMode.State(x, 0, 0, false);
             mStartedOnFastLongPress = key.isFastLongPress();
             mSpacebarLongPressed = false;
 
@@ -1098,17 +1105,17 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             // on a timer while the slide waits for distance, so without this a word gets deleted
             // out from under a slow slide before its first step lands - and a slide can reselect,
             // but it cannot bring back what auto-repeat already removed.
-            if (Math.abs(x - mBackspaceSlide.getStartX()) >= BACKSPACE_SLIDE_SLOP_PX) {
+            // mStartX is the touch-down position and, unlike the spacebar branch above, this branch
+            // never moves it - the slide's own anchor lives in mBackspaceSlide instead.
+            if (Math.abs(x - mStartX) >= BACKSPACE_SLIDE_SLOP_PX) {
                 sTimerProxy.cancelKeyTimersOf(this);
             }
 
-            // Always begins at character precision and escalates to words once the slide is clearly
-            // a bulk deletion; a reversal drops it back to characters for good. See
-            // BackspaceSlideMode for why each switch latches.
+            // Travel is denominated in characters whatever the granularity, so a word costs the
+            // slide what its letters would have. A reversal drops to character precision for the
+            // rest of the gesture. See BackspaceSlideMode.
             final BackspaceSlideMode.Config config = new BackspaceSlideMode.Config(
                     sPointerStep,
-                    sPointerBigStep,
-                    sPointerBigStep * BACKSPACE_WORDS_AFTER_STEPS,
                     settingsValues.mBackspaceMode == Settings.BACKSPACE_MODE_WORDS);
 
             final BackspaceSlideMode.Result result =
@@ -1124,7 +1131,16 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
 
                 if(settingsValues.mIsRTL) steps = -steps;
 
+                sLastCursorStepChars = 0;
                 sListener.onMoveDeletePointer(steps);
+
+                if (result.getWordMode()) {
+                    // Charge the word its real length, reported back during the call above. Left
+                    // uncharged by next(), because until the word is consumed nobody knows what it
+                    // cost - which is exactly why a flat per-word step got this wrong.
+                    mBackspaceSlide = BackspaceSlideMode.chargeWord(
+                            mBackspaceSlide, sLastCursorStepChars, config);
+                }
             }
 
             mLastX = x;

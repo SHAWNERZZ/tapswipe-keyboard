@@ -836,6 +836,12 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     }
 
     fun cursorStepped(steps: Int, overWords: Boolean) {
+        // How far the editor actually moved, in characters - the only place that number exists.
+        // PointerTracker needs it to charge a word-slide the word's real length instead of a flat
+        // rate; see BackspaceSlideMode. Reported for every step so the value is never stale, and
+        // read back synchronously within the same onMoveDeletePointer call.
+        PointerTracker.reportCursorStepChars(steps)
+
         if(!settings.current.mVibrateOn) return
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
