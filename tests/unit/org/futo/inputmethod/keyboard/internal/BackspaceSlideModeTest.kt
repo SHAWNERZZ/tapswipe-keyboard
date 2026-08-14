@@ -141,6 +141,41 @@ class BackspaceSlideModeTest {
     }
 
     /**
+     * The reported failure. Deep inside an expensive word the finger is far past the paid-up
+     * anchor, and measuring the bounce from that anchor meant retracing the whole unpaid remainder
+     * before the turn counted for anything. Backspace sits at the edge of the keyboard, so that
+     * dead zone was frequently wider than the room left to swipe back into.
+     */
+    @Test
+    fun `a bounce registers one character after the turn, however deep the word was`() {
+        // A twelve-character word, so the debt is long and the finger gets well ahead of the anchor.
+        var state = event(start(), 1000 - char, wordLength = 12).state
+        // Sweep most of the way through paying it off, without taking another word.
+        state = BackspaceSlideMode.next(1000 - char * 10, state, words).state
+
+        // Turn around one character. The finger is still ~9 characters left of the anchor.
+        val turn = 1000 - char * 10 + char
+        val back = BackspaceSlideMode.next(turn, state, words)
+
+        assertTrue("the turn must register immediately", back.state.latchedFine)
+        assertEquals("and give back a character at once", 1, back.steps)
+    }
+
+    @Test
+    fun `the turnaround becomes the new origin for fine steps`() {
+        var state = event(start(), 1000 - char, wordLength = 12).state
+        state = BackspaceSlideMode.next(1000 - char * 10, state, words).state
+
+        val deepest = 1000 - char * 10
+        val back = BackspaceSlideMode.next(deepest + char, state, words)
+
+        // Three characters back from the turn is three characters of selection returned - not
+        // three measured from a point the finger passed long ago.
+        val further = BackspaceSlideMode.next(deepest + char * 4, back.state, words)
+        assertEquals(3, further.steps)
+    }
+
+    /**
      * The failure this model was rewritten to avoid. A word longer than the travel so far leaves a
      * debt, and if that debt were carried by moving the anchor past the finger, simply continuing
      * in the same direction would read as movement backwards and latch the gesture fine.

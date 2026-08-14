@@ -842,7 +842,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             mNintypeShortcutFired = false;
             // Anchor and origin both start where the finger went down; the anchor advances with
             // each step while the origin stays put, since escalation measures total travel.
-            mBackspaceSlide = new BackspaceSlideMode.State(x, 0, 0, false);
+            mBackspaceSlide = new BackspaceSlideMode.State(x, x, 0, 0, false);
             mStartedOnFastLongPress = key.isFastLongPress();
             mSpacebarLongPressed = false;
 

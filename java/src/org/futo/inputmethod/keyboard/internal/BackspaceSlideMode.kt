@@ -40,12 +40,14 @@ object BackspaceSlideMode {
 
     /**
      * @param anchorX the point up to which travel has been paid for
+     * @param extremeX the furthest the finger has reached along [direction]
      * @param debtPx travel still owed before another word may be taken
      * @param direction which way this slide is going: -1, 1, or 0 before it has committed
      * @param latchedFine whether a reversal has pinned this gesture to characters
      */
     data class State(
         val anchorX: Int,
+        val extremeX: Int = anchorX,
         val debtPx: Int = 0,
         val direction: Int = 0,
         val latchedFine: Boolean = false
@@ -75,19 +77,29 @@ object BackspaceSlideMode {
         if (state.direction == 0) {
             if (abs(travel) < config.charStepPx) return Result(0, true, state)
             val direction = if (travel > 0) 1 else -1
-            return Result(direction, true, state.copy(anchorX = x, direction = direction))
+            return Result(direction, true,
+                state.copy(anchorX = x, extremeX = x, direction = direction))
         }
+
+        // Reversal is measured from the furthest point reached, never from the anchor.
+        //
+        // The finger runs ahead of the anchor by however much of the current word is still unpaid -
+        // up to a whole word's length. Measuring a bounce from the anchor therefore means retracing
+        // all of that before the turn registers at all, and the backspace key sits at the edge of
+        // the keyboard, so there is barely any room to spend on a dead zone. Turning back one
+        // character from wherever the finger got to is what the gesture actually means.
+        val backtrack = (x - state.extremeX) * state.direction
+        if (backtrack <= -config.charStepPx) {
+            // Re-anchored at the turnaround so un-selecting starts immediately and proceeds one
+            // character per step, rather than first working back to a point already passed.
+            return fine(x, state.copy(latchedFine = true, anchorX = state.extremeX), config)
+        }
+
+        val extremeX = if ((x - state.extremeX) * state.direction > 0) x else state.extremeX
 
         // How far past the paid-up point the finger is, measured along the way it was going.
         val progress = travel * state.direction
-
-        // Far enough back to be a reversal rather than jitter. Re-measured as characters from the
-        // anchor, so the bounce is felt at the precision it just asked for.
-        if (progress <= -config.charStepPx) {
-            return fine(x, state.copy(latchedFine = true), config)
-        }
-
-        if (progress < state.debtPx) return Result(0, true, state)
+        if (progress < state.debtPx) return Result(0, true, state.copy(extremeX = extremeX))
 
         // The debt is walked off: the anchor moves by what was owed, not to where the finger is,
         // so travel beyond it counts toward the next word rather than being forgiven.
@@ -96,6 +108,7 @@ object BackspaceSlideMode {
             wordMode = true,
             state = state.copy(
                 anchorX = state.anchorX + state.direction * state.debtPx,
+                extremeX = extremeX,
                 debtPx = 0
             )
         )
