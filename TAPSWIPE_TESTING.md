@@ -146,6 +146,23 @@ Master Mode's letter hiding and peck's reveal are now automated; only the actual
 - [ ] A peck-committed out-of-dictionary word is swipeable afterwards
 - [ ] Learned geometry survives a keyboard restart
 
+### Check on every release, before publishing
+
+- [ ] **Learned geometry survives installing the new APK over the old one.** Note the sample count
+      on the Learned key geometry page, install, reopen the page, compare.
+
+This one is worth a line of its own because it was reported lost across the v0.7.0 update and the
+cause was never established. The investigation ruled out the layout key, the signing key, and any
+change to the persistence code — the diff was additive — so what remains is either a mechanism not
+yet identified or something outside the app. Either way it is unproven, so it gets re-checked every
+time rather than assumed fixed.
+
+What v0.7.1 changed is the *blast radius*: a failed read can no longer overwrite the file, an empty
+model cannot replace a real one unasked, there is a known-good backup to fall back on, and teardown
+flushes synchronously instead of posting to a scope about to be cancelled. If it recurs, the logcat
+tag `TapSwipeTouchModel` now reports sample counts and bucket names on every load, and says
+explicitly when it refuses a write — which is the evidence the first investigation did not have.
+
 ### Needs a real finger on real hardware
 - [ ] Backspace slide deletes at the granularity swipe-to-delete is set to (Settings -> Backspace)
 - [ ] Reversing past a full step switches to the other granularity for the rest of that slide -
