@@ -259,6 +259,16 @@ val TapSwipeModeSetting = SettingsKey(booleanPreferencesKey("tapswipe_mode"), fa
 val TapSwipePeckCadenceSetting = SettingsKey(intPreferencesKey("tapswipe_peck_cadence_ms"), 250)
 
 /**
+ * Delay in milliseconds before an automatic space is inserted after a word is committed.
+ *
+ * 0 means off (no auto-space). Values from 1 to 1000 ms control how long the keyboard waits
+ * after committing a word before inserting a space, giving the user time to type punctuation
+ * or continue the word without the space getting in the way. Named after the same feature in
+ * the Nintype keyboard.
+ */
+val TapSwipeAutoSpaceDelaySetting = SettingsKey(intPreferencesKey("tapswipe_autospace_delay_ms"), 0)
+
+/**
  * How many quick taps in a row - counted across words, reset by any swipe - before legacy tap mode
  * turns on. Legacy tap shows letters and restores ordinary autocorrect, so someone who picks the
  * keyboard up and just starts typing gets a normal keyboard without having to discover anything.
