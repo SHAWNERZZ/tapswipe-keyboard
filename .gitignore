@@ -13,3 +13,5 @@ java/res/raw/mozc.data
 java/src/org/futo/inputmethod/keyboard/internal/KeyboardTextsTable.java
 # Kotlin compiler scratch output
 .kotlin/
+# Claude Code personal preferences (machine-local)
+CLAUDE.local.md
