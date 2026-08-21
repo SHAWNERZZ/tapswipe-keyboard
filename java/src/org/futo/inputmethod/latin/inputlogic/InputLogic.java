@@ -61,6 +61,7 @@ import org.futo.inputmethod.latin.tapswipe.TapSwipeMode;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeSession;
+import org.futo.inputmethod.latin.tapswipe.WholeWordDelete;
 import org.futo.inputmethod.latin.uix.DataStoreHelper;
 import org.futo.inputmethod.latin.common.Constants;
 import org.futo.inputmethod.latin.common.InputPointers;
@@ -657,6 +658,10 @@ public final class InputLogic {
      * separator, so leaving the space behind would mean two presses to undo one word - which reads
      * as the delete not having worked.
      *
+     * Declines any position where the character before the cursor is not part of a word, so ending
+     * a sentence and changing your mind about the full stop costs the stop and not the word. The
+     * rule itself lives in {@link WholeWordDelete}, which is unit tested.
+     *
      * @return true if something was deleted and the caller must return immediately.
      */
     private boolean deleteLastCommittedWord(final InputTransaction inputTransaction) {
@@ -664,25 +669,16 @@ public final class InputLogic {
         final CharSequence before = mConnection.getTextBeforeCursor(48, 0);
         if (TextUtils.isEmpty(before)) return false;
 
-        int end = before.length();
-        // Take at most one trailing space, so "foo  " leaves the earlier spaces alone.
-        if (end > 0 && before.charAt(end - 1) == Constants.CODE_SPACE) end--;
-        if (end == 0) return false;
+        final SettingsValues settingsValues = inputTransaction.mSettingsValues;
+        final int lengthToDelete = WholeWordDelete.lengthToDelete(
+                before, settingsValues::isWordCodePoint);
+        if (lengthToDelete <= 0) return false;
 
-        final int wordEnd = end;
-        while (end > 0 && !Character.isWhitespace(before.charAt(end - 1))) end--;
-
-        // Nothing but whitespace before the cursor: let the ordinary paths handle it.
-        if (end == wordEnd) return false;
-
-        final int lengthToDelete = before.length() - end;
-        final String removed = before.subSequence(end, wordEnd).toString();
-
-        // A phone number or a run of symbols was never a decoded "word" in the first place - there
-        // is nothing here whole-word delete is meant to undo, and bulk-deleting a long number
-        // because the last digit was mistyped is a bad trade. Falls through to a plain
-        // character-at-a-time delete instead.
-        if (!containsLetter(removed)) return false;
+        // What the word was, for unlearning. The trailing space is deleted with the word and was
+        // never part of it.
+        String removed =
+                before.subSequence(before.length() - lengthToDelete, before.length()).toString();
+        if (removed.endsWith(" ")) removed = removed.substring(0, removed.length() - 1);
 
         unlearnWord(removed, inputTransaction.mSettingsValues, Constants.EVENT_BACKSPACE);
         mConnection.deleteTextBeforeCursor(lengthToDelete);
@@ -693,16 +689,6 @@ public final class InputLogic {
                     + lengthToDelete + " chars)");
         }
         return true;
-    }
-
-    private static boolean containsLetter(final String s) {
-        int i = 0;
-        while (i < s.length()) {
-            final int cp = s.codePointAt(i);
-            if (Character.isLetter(cp)) return true;
-            i += Character.charCount(cp);
-        }
-        return false;
     }
 
     /**
