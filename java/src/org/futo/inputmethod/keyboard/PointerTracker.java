@@ -702,7 +702,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (mIsTrackingForActionDisabled) {
             return;
         }
-        recordWordGestureSwipe();
         // A gesture floating preview text will be shown at the oldest pointer/finger on the screen.
         sDrawingProxy.showGestureTrail(
                 this, isOldestTrackerInQueue() /* showsFloatingPreviewText */);
@@ -1394,6 +1393,10 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                     eventTime, getActivePointerTrackerCount(), this)) {
                 sInGesture = false;
             }
+            // Here, once, rather than inside showGestureTrail. That method runs on every move
+            // event while a gesture is in flight, so flushing from it emptied the buffer as soon
+            // as the gesture started and left only the opening fragment to draw.
+            recordWordGestureSwipe();
             showGestureTrail();
             return;
         }
