@@ -1,4 +1,4 @@
-# TapSwipe — architecture (current)
+# TapSwipe architecture (current behavior)
 
 This document describes what the code does **today**. Historical rationale
 lives in `TAPSWIPE_PLAN.md`. Completed phases and fix history live in
@@ -162,11 +162,6 @@ out of step during that window.
 
 ## 10. Adaptive touch model
 
-This section was rewritten on 2026-08-18. The packet text described a
-different implementation. `TouchModelDao` and `AdaptiveKeyContext` do not
-exist in this repository. Those names belong to the LeanType project.
-The description below matches the code in this tree.
-
 Home file:
 `java/src/org/futo/inputmethod/latin/tapswipe/TapSwipeTouchModel.kt`.
 Off by default, behind `TapSwipeAdaptiveGeometrySetting`.
@@ -193,8 +188,8 @@ Persistence rules matter more than the arithmetic. See section 11.
   is missing or unreadable.
 - Teardown flushes on the calling thread.
 
-The time-window idea recorded in earlier notes belongs to LeanType. Do
-not implement it here without a fresh decision.
+Decay is by wall-clock time only. There is no moving window and no
+per-sample age horizon. Add one only after a fresh decision.
 
 ## 11. Known risks and limitations
 

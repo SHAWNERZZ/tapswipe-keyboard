@@ -1,4 +1,4 @@
-# TapSwipe — testing
+# TapSwipe testing
 
 ## Layers
 
@@ -30,10 +30,9 @@ tests verify the rule, not that the caller honors the answer.
 
 ## What the runner has actually found
 
-Kept from the previous testing document. The pattern is consistent and
-still useful: most failures so far were the harness lying, not the
-keyboard breaking. A synthetic driver that skips a layer reports green on
-everything that layer controls.
+Most failures so far came from the harness, not from the keyboard. A
+synthetic driver that skips a layer reports green on everything that
+layer controls. Check the harness before you trust a failure.
 
 | Reported as | Actually was |
 |---|---|

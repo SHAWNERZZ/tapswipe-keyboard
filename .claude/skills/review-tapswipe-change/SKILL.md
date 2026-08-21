@@ -47,11 +47,11 @@ Use this before merging or accepting a TapSwipe change.
 Return findings by severity. Include file paths and symbols. Do not
 edit files.
 
-- **Blocking** — invariant broken, seam unhandled, or ships a change to
+- **Blocking.** invariant broken, seam unhandled, or ships a change to
   stock behavior for non-TapSwipe users without a note.
-- **High** — missing verification for a change area that has device-only
+- **High.** missing verification for a change area that has device-only
   coverage. Documentation contradicts code.
-- **Nit** — style, naming, or comment.
+- **Nit.** style, naming, or comment.
 
 ## Do not
 

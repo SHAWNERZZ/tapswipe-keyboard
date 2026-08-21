@@ -93,10 +93,10 @@ Checked on 2026-08-18. Every symbol below exists.
 - `BackspaceSlideMode.chargeWord`
 - `GeneralIME.cursorStepped`
 
-Two corrections from the packet list.
+Two symbols are easy to place on the wrong class.
 
-- `onUpdateTailBatchInputCompleted` lives on `GeneralIME`, not on
-  `InputLogic`.
+- `onUpdateTailBatchInputCompleted` lives on `GeneralIME`. It does not
+  live on `InputLogic`.
 - `PointerTracker` has no public `onCodeInput`. The private method is
   `callListenerOnCodeInput`. Reference that name, or reference
   `PointerTracker.onMoveEventInternal` for touch-path work.

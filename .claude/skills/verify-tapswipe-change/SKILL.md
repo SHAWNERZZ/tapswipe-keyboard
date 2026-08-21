@@ -8,7 +8,7 @@ description: Pick the right test layer for a TapSwipe change, run it, and report
 Use this after a code change that touches TapSwipe behavior. Do not use
 this for pure documentation changes.
 
-## Step 1 — classify the change
+## Step 1. Classify the change
 
 Match the change to one of these areas:
 
@@ -19,7 +19,7 @@ Match the change to one of these areas:
 - Rendering, layout, key gestures, real finger paths.
 - Learned geometry, persistence across install.
 
-## Step 2 — run the smallest sufficient layer
+## Step 2. Run the smallest sufficient layer
 
 - Pure logic: run `./gradlew testUnstableDebugUnitTest`.
 - IME plumbing: request the scenario runner report. Ask the user to
@@ -28,7 +28,7 @@ Match the change to one of these areas:
   `TAPSWIPE_TESTING.md`.
 - Learned geometry: list the release-checklist items.
 
-## Step 3 — report
+## Step 3. Report
 
 Always include four sections in the report.
 

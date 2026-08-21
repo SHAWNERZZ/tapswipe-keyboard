@@ -1,4 +1,4 @@
-# CLAUDE.md — TapSwipe Keyboard
+# CLAUDE.md: TapSwipe Keyboard
 
 Shared project instructions for Claude Code. Commit this file. Personal
 preferences and machine-local paths live in `CLAUDE.local.md` (gitignored).
@@ -23,23 +23,70 @@ upstream to FUTO.
 - `dev` is the working branch.
 - `tapswipe` is the release branch and the GitHub default.
 
+## Current state
+
+Run these two commands before you plan any work. They answer "where are
+we" more reliably than this file can.
+
+```
+git log --oneline tapswipe..dev     # written but not released
+gh release list --repo SHAWNERZZ/tapswipe-keyboard --limit 3
+```
+
+As of 2026-08-20, the latest release is `tapswipe-v0.7.1`. Three code
+commits sit on `dev` and are not released. All three rework the
+backspace slide. The user has tested each round on hardware and reported
+back. The last round removed a dead zone that blocked the reversal
+gesture. That round is built and pushed. On-device confirmation is still
+open.
+
+Release when the user asks. Do not release on your own.
+
+## How this project runs
+
+Work arrives one small piece at a time. The pattern repeats.
+
+1. The user describes a behavior they want, or a bug they hit.
+2. You build it, add JVM tests for the tunable rule, and build the dev
+   APK.
+3. The user tests on hardware and reports what the finger felt.
+4. You diagnose from that report, fix, and rebuild.
+5. The user asks for a release when a feature feels right.
+
+Two habits matter more than the code.
+
+- The user's report is evidence. Trace it to a mechanism before you
+  change a threshold. Most reported bugs in this project turned out to
+  be structural, not a value that needed tuning.
+- Do not widen the request. When the user asks for a specific change,
+  build that change. A previous session replaced "make word deletion
+  cost the same distance as the letters" with "delay word deletion until
+  the slide travels far enough". That was a different feature, and it
+  was wrong.
+
 ## Source of truth for behavior
 
 Read documents in this order. Stop at the first one that answers the
 question.
 
 1. Current code and passing tests in the repository
-2. `TAPSWIPE_ARCHITECTURE.md` — current session model, modes, finalizers,
+2. `TAPSWIPE_ARCHITECTURE.md`. Current session model, modes, finalizers,
    and known risks
-3. `TAPSWIPE_TESTING.md` — how to run tests and the manual matrix
-4. `README.md` — user-facing overview and license notice
-5. `TAPSWIPE_PLAN.md` — historical rationale only; do not treat as pending
+3. `TAPSWIPE_TESTING.md`. How to run tests and the manual matrix
+4. `README.md`. User-facing overview and license notice
+5. `TAPSWIPE_PLAN.md`. Historical rationale only; do not treat as pending
    work
-6. `docs/history/TAPSWIPE_IMPLEMENTATION_HISTORY.md` — completed phases
+6. `docs/history/TAPSWIPE_IMPLEMENTATION_HISTORY.md`. Completed phases
    and fixes, kept for context
+7. `docs/plans/`. Agreed and not yet built. Check each item against the
+   code before you act on it
 
 Never treat an "Original plan" section or a completed phase checklist as
 an open task. Verify claims against the current code first.
+
+Planned work goes in `docs/plans/`, one file per initiative. Move a plan
+to `docs/history/` when it ships. Do not write planned work into
+`TAPSWIPE_PLAN.md`. That file is historical.
 
 ## Working rules
 
