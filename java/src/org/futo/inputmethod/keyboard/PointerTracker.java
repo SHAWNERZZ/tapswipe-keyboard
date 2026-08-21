@@ -675,6 +675,10 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
      * the drawn path does not need the resolution the decoder gets.
      */
     private void appendWordGesturePoint(final int x, final int y) {
+        // Only a touch that began on a letter can become a word gesture. Backspace slides and
+        // enter swipes reach this method through the historical-point loop, which runs for every
+        // touch, and their points have no business in a word's trail.
+        if (mDownKey == null || !Character.isLetter(mDownKey.getCode())) return;
         if (mWordGesturePointCount >= WORD_GESTURE_MAX_POINTS) return;
         if (mWordGesturePointCount > 0) {
             final float dx = x - mWordGestureXs[mWordGesturePointCount - 1];
@@ -913,6 +917,12 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             // each step while the origin stays put, since escalation measures total travel.
             mBackspaceSlide = new BackspaceSlideMode.State(x, 0, 0);
             mBackspaceSwipeUpFired = false;
+            // Start this stroke's trail buffer empty. Without this the buffer keeps whatever a
+            // previous touch left in it: historical points are fed to the gesture path for every
+            // touch, including taps and slides on backspace or enter, and only a completed word
+            // gesture ever flushes the buffer. Those leftovers were then drawn joined onto the
+            // front of the next real swipe.
+            mWordGesturePointCount = 0;
             // Decided here, once, rather than during the slide. mStartTime is this touch's own
             // down time on the same clock as the release stamp below. eventTime elsewhere in this
             // class runs on a different clock and is deliberately not compared with it.
