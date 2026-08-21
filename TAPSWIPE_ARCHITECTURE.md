@@ -102,15 +102,53 @@ after the session has closed.
 
 ## 7. Backspace
 
-Two tiers, per `TapSwipeWholeWordBackspaceSetting`.
+Four gestures share the key. Each states its own intent, so nothing is
+inferred from movement alone.
 
-- **Session open:** pop the last stroke and re-decode. When the last
-  stroke pops, close the session.
-- **Session closed:** delete the whole previous word, plus one trailing
-  space, if the setting is on. Otherwise fall back to stock backspace.
+### Tap
 
-The `setRejectedBatchModeSuggestion` path is not reached for stroke-level
-undo. Whole-word backspace runs after all one-press revert branches.
+Three tiers, chosen by `TapSwipeBackspaceTapSetting`.
+
+| Tier | State | Result |
+|---|---|---|
+| Open word | A word is composing | Pop the last stroke and re-decode |
+| Last word | The word just committed | Reopen it, then pop the last stroke |
+| Older | Anything before that | Delete the whole word |
+
+The middle tier reconstructs the pre-commit state and then calls the same
+code as the first, so there is one implementation of "pop a stroke". It
+has no time limit. The record is replaced whenever another word commits,
+so it only ever describes the last word, and two checks prove that word
+is still in front of the cursor: the cursor position, and the text
+itself.
+
+Whole-word delete declines when the character before the cursor is not
+part of a word, so a full stop is removed on its own. The rule lives in
+`WholeWordDelete.lengthToDelete`.
+
+`setRejectedBatchModeSuggestion` is not reached for stroke-level undo.
+Whole-word backspace runs after all one-press revert branches.
+
+### Slide
+
+The entry gesture picks the unit, fixed for the whole slide.
+
+- A plain slide deletes characters.
+- A slide within 900 ms of a tap on the same key deletes words.
+
+The upstream `pref_backspace_mode` values `Characters` and `Words` are
+not read. Only `Off` still applies. See section 9 for the distance rules.
+
+### Swipe up
+
+Deletes the last word in one motion, behind
+`TapSwipeBackspaceSwipeUpSetting`. Takes punctuation and digit runs with
+the word, which a tap declines, because a gesture is unambiguous where a
+tap is not. Rule in `WholeWordDelete.lengthToWhitespace`.
+
+### Hold
+
+Unchanged. Repeats per the upstream `pref_backspace_mode_hold`.
 
 ## 8. Re-entrancy guards
 
@@ -149,12 +187,8 @@ out of step during that window.
   anchor never moves past the finger. An anchor ahead of the finger would
   read as travel in the opposite direction, which is the same signal as a
   reversal.
-- **Reversal drops to characters.** The turn is measured from the
-  furthest point reached, not from the anchor. Measuring from the anchor
-  created a dead zone as wide as the unpaid word. The backspace key sits
-  at the edge of the keyboard, so rightward room is scarce.
-- **The reversal latches.** A second reversal is another nudge. It does
-  not return the slide to words.
+- **Reversing steps the other way.** In word mode a turn takes a word
+  back. Granularity does not change, because the entry gesture set it.
 - **Auto-repeat is cancelled early.** The finger moving past a small slop
   stops the repeat timer. Repeat fires on a clock while the slide waits
   for distance. A slide can reselect, and it cannot undo a delete that
@@ -227,7 +261,9 @@ DataStore keys, verified on 2026-08-18.
 | Legacy tap run               | `TapSwipeLegacyTapRunSetting`      | `tapswipe_legacy_tap_run`    | 5       |
 | Adaptive key geometry        | `TapSwipeAdaptiveGeometrySetting`  | `tapswipe_adaptive_geometry` | off     |
 | Exact tap positions          | `TapSwipeRealTapPositionSetting`   | `tapswipe_real_tap_position` | on      |
-| Whole-word backspace         | `TapSwipeWholeWordBackspaceSetting`| `tapswipe_whole_word_backspace` | off  |
+| What a backspace tap removes | `TapSwipeBackspaceTapSetting`      | `tapswipe_backspace_tap`     | last gesture |
+| Swipe up deletes a word      | `TapSwipeBackspaceSwipeUpSetting`  | `tapswipe_backspace_swipe_up`| off     |
+| Show the word's gestures     | `TapSwipeWordTrailsSetting`        | `tapswipe_word_trails`       | off     |
 | Nintype gestures, comma pull | `TapSwipeNintypeGesturesSetting`   | `tapswipe_nintype_gestures`  | off     |
 | Enter key swipes             | `TapSwipeEnterFlicksSetting`       | `tapswipe_enter_flicks`      | off     |
 | Enter direction assignments  | `TapSwipeEnterFlickMapSetting`     | `tapswipe_enter_flick_map`   | four cardinals |
@@ -250,5 +286,6 @@ Notes.
   fork's naming rule.
 - The screen also carries a footnote about personalized dictionaries.
   Peck learning depends on that upstream setting.
-- Two sub-screens hang off this menu: `tapswipeGeometry` for learned key
-  geometry, and `enterKeyFlicks` for the direction grid.
+- Three sub-screens hang off this menu: `tapswipeGeometry` for learned
+  key geometry, `enterKeyFlicks` for the direction grid, and
+  `backspaceGestures` for the backspace key.

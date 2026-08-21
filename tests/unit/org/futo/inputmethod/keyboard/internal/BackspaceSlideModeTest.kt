@@ -1,16 +1,15 @@
 package org.futo.inputmethod.keyboard.internal
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * JVM tests for delete-slide granularity.
+ * JVM tests for delete-slide distance.
  *
- * The property under test throughout is the exchange rate: a given distance consumes the same
- * amount of *text* whether it is being deleted by word or by character. Word mode changes what is
- * selected in one go, never how fast the document is consumed.
+ * The property under test throughout is the exchange rate: a given distance removes the same amount
+ * of text in either mode. Word mode changes what is selected in one go, never how fast the document
+ * is consumed.
  *
  * A character step is 16 here, matching the app's 16dp. Slides run leftward, as deletion does.
  */
@@ -18,8 +17,8 @@ class BackspaceSlideModeTest {
 
     private val char = 16
 
-    private val words = BackspaceSlideMode.Config(charStepPx = char, wordsAllowed = true)
-    private val charsOnly = BackspaceSlideMode.Config(charStepPx = char, wordsAllowed = false)
+    private val words = BackspaceSlideMode.Config(charStepPx = char, wordMode = true)
+    private val chars = BackspaceSlideMode.Config(charStepPx = char, wordMode = false)
 
     private fun start(at: Int = 1000) = BackspaceSlideMode.State(anchorX = at)
 
@@ -28,30 +27,46 @@ class BackspaceSlideModeTest {
         state: BackspaceSlideMode.State, x: Int, wordLength: Int = 5
     ): BackspaceSlideMode.Result {
         val r = BackspaceSlideMode.next(x, state, words)
-        if (r.steps == 0 || !r.wordMode) return r
+        if (r.steps == 0) return r
         return r.copy(state = BackspaceSlideMode.chargeWord(r.state, wordLength, words))
     }
 
-    // ---------------------------------------------------------------- words, from the first step
+    // ---------------------------------------------------------------- character mode
 
-    /**
-     * The correction that produced this design. Word deletion must be available immediately: a
-     * slide that has to travel before words engage cannot clear a sentence quickly, which is the
-     * only thing word mode is for.
-     */
     @Test
-    fun `the first movement in word mode takes a word`() {
-        val r = BackspaceSlideMode.next(1000 - char, start(), words)
-        assertTrue("word mode must engage from the first step", r.wordMode)
-        assertEquals("a word step is a direction, not a count", -1, r.steps)
+    fun `a plain slide moves by characters`() {
+        val r = BackspaceSlideMode.next(1000 - char * 3, start(), chars)
+        assertEquals(-3, r.steps)
+        assertEquals(1000 - char * 3, r.state.anchorX)
     }
 
     @Test
     fun `movement under one character does nothing`() {
-        assertEquals(0, BackspaceSlideMode.next(1000 - (char - 1), start(), words).steps)
+        assertEquals(0, BackspaceSlideMode.next(1000 - (char - 1), start(), chars).steps)
     }
 
-    // ---------------------------------------------------------------- the exchange rate
+    @Test
+    fun `a plain slide never takes a word, however far it goes`() {
+        // The mode is fixed by the entry gesture, so distance cannot promote it.
+        val r = BackspaceSlideMode.next(1000 - char * 40, start(), chars)
+        assertEquals(-40, r.steps)
+    }
+
+    @Test
+    fun `a plain slide moves back by characters`() {
+        val out = BackspaceSlideMode.next(1000 - char * 4, start(), chars)
+        val back = BackspaceSlideMode.next(out.state.anchorX + char * 2, out.state, chars)
+        assertEquals(2, back.steps)
+    }
+
+    // ---------------------------------------------------------------- word mode
+
+    /** Word deletion is available from the first movement. Waiting for distance defeats the point. */
+    @Test
+    fun `the first movement in word mode takes a word`() {
+        val r = BackspaceSlideMode.next(1000 - char, start(), words)
+        assertEquals("a word step is a direction, not a count", -1, r.steps)
+    }
 
     /**
      * The heart of it. A five-letter word costs five characters of travel, so the next word does
@@ -79,14 +94,6 @@ class BackspaceSlideModeTest {
             0, BackspaceSlideMode.next(x, longWord, words).steps)
     }
 
-    /**
-     * Sweeping a phrase by word takes the same travel as sweeping it by character, less the word
-     * currently selected - the slide runs exactly one word ahead of what it has paid for, which is
-     * what makes the first word immediate. Everything after it costs the length of the one before.
-     *
-     * This is the property a flat per-word step broke, and the reason word mode used to outrun the
-     * finger no matter how long the words were.
-     */
     @Test
     fun `each word after the first costs the previous word's length`() {
         val lengths = listOf(4, 6, 3, 5)
@@ -94,13 +101,12 @@ class BackspaceSlideModeTest {
         var state = start()
         var x = 1000
         var taken = 0
-        // Creep leftward one pixel at a time, so the travel at which each word lands is exact.
         while (taken < lengths.size) {
             x -= 1
             val r = event(state, x, lengths[taken])
             state = r.state
             if (r.steps != 0) taken++
-            assertTrue("a runaway slide would never terminate", x > 1000 - 1000)
+            assertTrue("a runaway slide would never terminate", x > 0)
         }
 
         // One character to take the first word, then the length of each word to earn the next.
@@ -110,16 +116,13 @@ class BackspaceSlideModeTest {
 
     @Test
     fun `a word the editor reports as costing nothing is still charged`() {
-        // Otherwise an almost stationary finger consumes the document one event at a time.
         val after = event(start(), 1000 - char, wordLength = 0).state
         assertTrue("a zero-length word must still owe something", after.debtPx > 0)
     }
 
-    /** Travel past what was owed counts toward the next word rather than being forgiven. */
     @Test
     fun `overshooting a debt is not wasted`() {
         val after = event(start(), 1000 - char, wordLength = 4).state
-        // Jump well past the four characters owed.
         val r = BackspaceSlideMode.next(1000 - char * 9, after, words)
 
         assertEquals(-1, r.steps)
@@ -127,101 +130,47 @@ class BackspaceSlideModeTest {
             after.anchorX - char * 4, r.state.anchorX)
     }
 
-    // ---------------------------------------------------------------- reversing
-
-    @Test
-    fun `reversing drops to character precision for the rest of the gesture`() {
-        val after = event(start(), 1000 - char, wordLength = 6).state
-
-        val back = BackspaceSlideMode.next(after.anchorX + char, after, words)
-
-        assertTrue(back.state.latchedFine)
-        assertFalse("after a reversal the gesture is fine", back.wordMode)
-        assertEquals("and moves by characters", 1, back.steps)
-    }
-
     /**
-     * The reported failure. Deep inside an expensive word the finger is far past the paid-up
-     * anchor, and measuring the bounce from that anchor meant retracing the whole unpaid remainder
-     * before the turn counted for anything. Backspace sits at the edge of the keyboard, so that
-     * dead zone was frequently wider than the room left to swipe back into.
-     */
-    @Test
-    fun `a bounce registers one character after the turn, however deep the word was`() {
-        // A twelve-character word, so the debt is long and the finger gets well ahead of the anchor.
-        var state = event(start(), 1000 - char, wordLength = 12).state
-        // Sweep most of the way through paying it off, without taking another word.
-        state = BackspaceSlideMode.next(1000 - char * 10, state, words).state
-
-        // Turn around one character. The finger is still ~9 characters left of the anchor.
-        val turn = 1000 - char * 10 + char
-        val back = BackspaceSlideMode.next(turn, state, words)
-
-        assertTrue("the turn must register immediately", back.state.latchedFine)
-        assertEquals("and give back a character at once", 1, back.steps)
-    }
-
-    @Test
-    fun `the turnaround becomes the new origin for fine steps`() {
-        var state = event(start(), 1000 - char, wordLength = 12).state
-        state = BackspaceSlideMode.next(1000 - char * 10, state, words).state
-
-        val deepest = 1000 - char * 10
-        val back = BackspaceSlideMode.next(deepest + char, state, words)
-
-        // Three characters back from the turn is three characters of selection returned - not
-        // three measured from a point the finger passed long ago.
-        val further = BackspaceSlideMode.next(deepest + char * 4, back.state, words)
-        assertEquals(3, further.steps)
-    }
-
-    /**
-     * The failure this model was rewritten to avoid. A word longer than the travel so far leaves a
-     * debt, and if that debt were carried by moving the anchor past the finger, simply continuing
-     * in the same direction would read as movement backwards and latch the gesture fine.
+     * Continuing into an expensive word must not look like turning around. An earlier design
+     * carried the debt by moving the anchor past the finger, which produced exactly that.
      */
     @Test
     fun `an unpaid debt is not mistaken for a reversal`() {
         val after = event(start(), 1000 - char, wordLength = 12).state
-
-        // Still inside the debt, continuing the same way.
         val r = BackspaceSlideMode.next(1000 - char * 3, after, words)
 
-        assertFalse("continuing into a debt is not a bounce", r.state.latchedFine)
-        assertTrue(r.wordMode)
         assertEquals(0, r.steps)
+        assertEquals("direction must be unchanged", -1, r.state.direction)
+    }
+
+    // ---------------------------------------------------------------- reversing in word mode
+
+    @Test
+    fun `reversing in word mode takes a word back the other way`() {
+        val after = event(start(), 1000 - char, wordLength = 6).state
+        val back = BackspaceSlideMode.next(after.anchorX + char, after, words)
+
+        assertEquals(1, back.steps)
+        assertEquals(1, back.state.direction)
     }
 
     @Test
-    fun `a second reversal does not go back to words`() {
-        var state = event(start(), 1000 - char, wordLength = 6).state
-        state = BackspaceSlideMode.next(state.anchorX + char, state, words).state
+    fun `reversing stays in word mode`() {
+        // Granularity is set by the entry gesture. Nothing during the slide changes it.
+        val after = event(start(), 1000 - char, wordLength = 6).state
+        val back = event(after, after.anchorX + char, wordLength = 6)
+        val onward = BackspaceSlideMode.next(back.state.anchorX + char * 7, back.state, words)
 
-        val again = BackspaceSlideMode.next(state.anchorX - char, state, words)
-
-        assertTrue(again.state.latchedFine)
-        assertFalse(again.wordMode)
-        assertEquals(-1, again.steps)
+        assertEquals("still stepping by words", 1, onward.steps)
     }
 
     @Test
-    fun `once fine, continuing further stays fine`() {
-        var state = event(start(), 1000 - char, wordLength = 6).state
-        state = BackspaceSlideMode.next(state.anchorX + char, state, words).state
-
-        val far = BackspaceSlideMode.next(state.anchorX - char * 4, state, words)
-
-        assertFalse("no step after a reversal may be a word", far.wordMode)
-        assertEquals(-4, far.steps)
-    }
-
-    @Test
-    fun `jitter below a character does not count as a reversal`() {
+    fun `jitter below a character is not a reversal`() {
         val after = event(start(), 1000 - char, wordLength = 6).state
         val r = BackspaceSlideMode.next(after.anchorX + (char - 1), after, words)
 
-        assertFalse(r.state.latchedFine)
         assertEquals(0, r.steps)
+        assertEquals(-1, r.state.direction)
     }
 
     @Test
@@ -229,15 +178,5 @@ class BackspaceSlideModeTest {
         val r = BackspaceSlideMode.next(1000 + char, start(), words)
         assertEquals(1, r.steps)
         assertEquals(1, r.state.direction)
-    }
-
-    // ---------------------------------------------------------------- the character-only setting
-
-    @Test
-    fun `words never appear when the user asked for characters only`() {
-        val r = BackspaceSlideMode.next(1000 - char * 4, start(), charsOnly)
-        assertFalse(r.wordMode)
-        assertEquals(-4, r.steps)
-        assertEquals(1000 - char * 4, r.state.anchorX)
     }
 }

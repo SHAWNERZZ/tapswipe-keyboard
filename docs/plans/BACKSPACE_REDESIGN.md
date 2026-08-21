@@ -1,6 +1,8 @@
 # Backspace redesign
 
-Agreed on 2026-08-21. Not yet built.
+Agreed on 2026-08-21. All five items built on the same day, awaiting
+on-device testing. Move this file to docs/history/ once the behavior is
+confirmed and released.
 
 Check each item against the code before you act on it. An item stays here
 until it ships, then it moves to `docs/history/`.

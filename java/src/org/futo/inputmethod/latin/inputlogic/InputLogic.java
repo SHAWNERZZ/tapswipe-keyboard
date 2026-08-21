@@ -52,6 +52,7 @@ import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
 import org.futo.inputmethod.keyboard.internal.BatchInputArbiter;
 import org.futo.inputmethod.latin.TapSwipeNormalizers;
 import org.futo.inputmethod.latin.SwipeDecoderDictionary;
+import org.futo.inputmethod.latin.BackspaceTap;
 import org.futo.inputmethod.latin.SwipeDecoderDictionaryKt;
 import org.futo.inputmethod.latin.WordComposer;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeDecodeInput;
@@ -61,6 +62,7 @@ import org.futo.inputmethod.latin.tapswipe.TapSwipeMode;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeSession;
+import org.futo.inputmethod.keyboard.internal.WordGestureTrail;
 import org.futo.inputmethod.latin.tapswipe.WholeWordDelete;
 import org.futo.inputmethod.latin.uix.DataStoreHelper;
 import org.futo.inputmethod.latin.common.Constants;
@@ -478,7 +480,6 @@ public final class InputLogic {
      * have started composing, which the consult-time check below verifies directly. The time cap
      * only guards against a pathologically long-lived editor session where the cursor never moves.
      */
-    private static final long TAPSWIPE_GRACE_MAX_MS = 15_000L;
 
     private TapSwipeGraceRecord mTapSwipeGraceRecord = null;
 
@@ -534,11 +535,15 @@ public final class InputLogic {
         // or not the reopen itself can proceed.
         TapSwipeLearner.onWordRejected(record.committedWord);
 
-        if (SystemClock.uptimeMillis() - record.createdAtMs > TAPSWIPE_GRACE_MAX_MS) {
-            if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe grace reopen: expired");
+        if (backspaceTapMode() != BackspaceTap.LAST_GESTURE) {
+            if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe grace reopen: disabled by setting");
             return false;
         }
 
+        // No time limit. The record is replaced whenever another word commits, so it already only
+        // ever describes the last word, and the two checks below prove that word is still sitting
+        // untouched in front of the cursor. A clock would add an arbitrary cutoff without adding
+        // any safety those checks do not already provide.
         final int expectedSelStart = record.selStartAfterWord + record.separator.length();
         if (mConnection.getExpectedSelectionStart() != expectedSelStart) {
             if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe grace reopen: cursor moved");
@@ -580,10 +585,21 @@ public final class InputLogic {
         return handled;
     }
 
+    private int backspaceTapMode() {
+        return DataStoreHelper.getSetting(
+                SwipeDecoderDictionaryKt.getTapSwipeBackspaceTapSetting());
+    }
+
+    /**
+     * Whether a tap on backspace should remove a whole word once the last word is out of reach.
+     *
+     * True for both word-removing modes. Under LAST_GESTURE the gesture tier handles the last word,
+     * and everything older falls through to here.
+     */
     public boolean isTapSwipeWholeWordBackspace() {
+        final int mode = backspaceTapMode();
         return isTapSwipeMode()
-                && DataStoreHelper.getSetting(
-                        SwipeDecoderDictionaryKt.getTapSwipeWholeWordBackspaceSetting());
+                && (mode == BackspaceTap.LAST_GESTURE || mode == BackspaceTap.WHOLE_WORD);
     }
 
     /**
@@ -594,6 +610,10 @@ public final class InputLogic {
     private boolean handleTapSwipeStrokeUndo(final Event event,
             final InputTransaction inputTransaction) {
         if (!mTapSwipeSession.popLastStroke()) return false;
+
+        // Keep the drawn gestures in step with the evidence. The brightest trail is what the next
+        // tap removes, so it has to disappear along with the stroke it stood for.
+        WordGestureTrail.removeLast();
 
         // Popping the last stroke ends the word. Clear the composing region the same way the
         // ordinary delete path does; an empty commit is what actually erases it, including under
@@ -780,6 +800,9 @@ public final class InputLogic {
         cancelTapSwipePeckIdleCheck();
         mTapSwipeSession.reset(reason);
         mTapSwipeSessionOriginMs = -1;
+        // The drawn gestures belong to the word that just ended. This is the one place every route
+        // out of a word passes through, so it is the only place they need clearing.
+        WordGestureTrail.clear();
         refreshTapSwipePeckIndicator();
     }
 

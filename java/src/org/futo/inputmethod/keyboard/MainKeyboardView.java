@@ -43,6 +43,9 @@ import org.futo.inputmethod.keyboard.internal.DrawingPreviewPlacerView;
 import org.futo.inputmethod.keyboard.internal.DrawingProxy;
 import org.futo.inputmethod.keyboard.internal.GestureFloatingTextDrawingPreview;
 import org.futo.inputmethod.keyboard.internal.GestureTrailsDrawingPreview;
+import org.futo.inputmethod.keyboard.internal.WordGestureTrailPreview;
+import org.futo.inputmethod.latin.SwipeDecoderDictionaryKt;
+import org.futo.inputmethod.latin.uix.DataStoreHelper;
 import org.futo.inputmethod.keyboard.internal.KeyDrawParams;
 import org.futo.inputmethod.keyboard.internal.KeyPreviewChoreographer;
 import org.futo.inputmethod.keyboard.internal.KeyPreviewDrawParams;
@@ -151,6 +154,7 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
     private final int[] mOriginCoords = CoordinateUtils.newInstance();
     private final GestureFloatingTextDrawingPreview mGestureFloatingTextDrawingPreview;
     private final GestureTrailsDrawingPreview mGestureTrailsDrawingPreview;
+    private final WordGestureTrailPreview mWordGestureTrailPreview;
     private final SlidingKeyInputDrawingPreview mSlidingKeyInputDrawingPreview;
 
     // Key preview
@@ -261,6 +265,11 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
 
         mSlidingKeyInputDrawingPreview = new SlidingKeyInputDrawingPreview(mainKeyboardViewAttr, mDrawableProvider);
         mSlidingKeyInputDrawingPreview.setDrawingView(drawingPreviewPlacerView);
+
+        // Added last, so the word's gestures draw over the live trail rather than under it.
+        mWordGestureTrailPreview =
+                new WordGestureTrailPreview(mainKeyboardViewAttr, mDrawableProvider);
+        mWordGestureTrailPreview.setDrawingView(drawingPreviewPlacerView);
         mainKeyboardViewAttr.recycle();
 
         mDrawingPreviewPlacerView = drawingPreviewPlacerView;
@@ -544,6 +553,10 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
             final boolean isGestureFloatingPreviewTextEnabled) {
         mGestureFloatingTextDrawingPreview.setPreviewEnabled(isGestureFloatingPreviewTextEnabled);
         mGestureTrailsDrawingPreview.setPreviewEnabled(isGestureTrailEnabled);
+        // Its own setting, and independent of the live trail. Someone can want to see what a word
+        // is made of without wanting a trail under their finger, and the reverse.
+        mWordGestureTrailPreview.setPreviewEnabled(DataStoreHelper.getSetting(
+                SwipeDecoderDictionaryKt.getTapSwipeWordTrailsSetting()));
     }
 
     public void showGestureFloatingPreviewText(@Nonnull final SuggestedWords suggestedWords,

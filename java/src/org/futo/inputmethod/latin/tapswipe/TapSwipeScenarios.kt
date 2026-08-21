@@ -13,7 +13,8 @@ import org.futo.inputmethod.latin.SwipeDecoderDictionary
 import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeLegacyTapRunSetting
 import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
-import org.futo.inputmethod.latin.TapSwipeWholeWordBackspaceSetting
+import org.futo.inputmethod.latin.BackspaceTap
+import org.futo.inputmethod.latin.TapSwipeBackspaceTapSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.common.Constants
@@ -904,7 +905,7 @@ object TapSwipeScenarios {
             Scenario("grace reopen still fires with whole-word backspace on",
                 group = "Grace reopen",
                 run = { ime ->
-                    withSetting(ime, TapSwipeWholeWordBackspaceSetting, true) {
+                    withSetting(ime, TapSwipeBackspaceTapSetting, BackspaceTap.WHOLE_WORD) {
                         clearField(ime)
                         swipe(ime, "bu"); settle(); tap(ime, 't'.code); settle()
                         type(ime, " "); settle()
@@ -929,7 +930,7 @@ object TapSwipeScenarios {
                 // The reported case: an accidental space after a phone number, then an instinctive
                 // backspace. The first press must only take the user back to the end of the number.
                 run = { ime ->
-                    withSetting(ime, TapSwipeWholeWordBackspaceSetting, true) {
+                    withSetting(ime, TapSwipeBackspaceTapSetting, BackspaceTap.WHOLE_WORD) {
                         clearField(ime)
                         type(ime, "5551234", SLOW_TAP_MS); settle(); type(ime, " "); settle()
                         tap(ime, Constants.CODE_DELETE); settle()
@@ -995,7 +996,7 @@ object TapSwipeScenarios {
             Scenario("whole-word backspace takes the word and its trailing space",
                 group = "Settings",
                 run = { ime ->
-                    withSetting(ime, TapSwipeWholeWordBackspaceSetting, true) {
+                    withSetting(ime, TapSwipeBackspaceTapSetting, BackspaceTap.WHOLE_WORD) {
                         clearField(ime)
                         swipe(ime, "hel"); settle(); type(ime, " "); settle()
                         swipe(ime, "cat"); settle(); type(ime, " "); settle()
@@ -1037,7 +1038,7 @@ object TapSwipeScenarios {
                 // reopen is the separating space, and trimming would hide it and make two different
                 // states look identical.
                 run = { ime ->
-                    withSetting(ime, TapSwipeWholeWordBackspaceSetting, false) {
+                    withSetting(ime, TapSwipeBackspaceTapSetting, BackspaceTap.ONE_CHARACTER) {
                         clearField(ime)
                         swipe(ime, "hel"); settle(); type(ime, " "); settle()
                         swipe(ime, "cat"); settle(); type(ime, " "); settle()

@@ -24,6 +24,7 @@ import org.futo.inputmethod.latin.uix.settings.pages.ActionEditorScreen
 import org.futo.inputmethod.latin.uix.settings.pages.ActionsScreen
 import org.futo.inputmethod.latin.uix.settings.pages.AdvancedParametersScreen
 import org.futo.inputmethod.latin.uix.settings.pages.TapSwipeGeometryScreen
+import org.futo.inputmethod.latin.uix.settings.pages.BackspaceGesturesScreen
 import org.futo.inputmethod.latin.uix.settings.pages.EnterKeyFlicksScreen
 import org.futo.inputmethod.latin.uix.settings.pages.AlreadyPaidDialog
 import org.futo.inputmethod.latin.uix.settings.pages.BlacklistScreen
@@ -170,6 +171,7 @@ fun SettingsNavigator(
             composable("advancedparams") { AdvancedParametersScreen(navController) }
             composable("tapswipeGeometry") { TapSwipeGeometryScreen(navController) }
             composable("enterKeyFlicks") { EnterKeyFlicksScreen(navController) }
+            composable("backspaceGestures") { BackspaceGesturesScreen(navController) }
             composable("actionEdit") { ActionEditorScreen(navController) }
             SettingsMenus.forEach { menu ->
                 if(menu.registerNavPath) composable(menu.navPath) { UserSettingsMenuScreen(menu) }

@@ -19,8 +19,6 @@ import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
 import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import org.futo.inputmethod.latin.TapSwipeWpmSetting
-import org.futo.inputmethod.latin.TapSwipeWholeWordBackspaceSetting
-import org.futo.inputmethod.latin.TapSwipeBackspaceSwipeUpSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
 import org.futo.inputmethod.latin.uix.settings.UserSetting
@@ -117,26 +115,21 @@ val TapSwipeMenu = UserSettingsMenu(
         ).copy(visibilityCheck = tapSwipeEnabled),
 
         userSettingToggleDataStore(
-            title = R.string.tapswipe_settings_whole_word_backspace,
-            subtitle = R.string.tapswipe_settings_whole_word_backspace_subtitle,
-            setting = TapSwipeWholeWordBackspaceSetting,
-            icon = { Icon(painterResource(R.drawable.delete), contentDescription = null) }
-        ).copy(visibilityCheck = tapSwipeEnabled),
-
-        userSettingToggleDataStore(
             title = R.string.tapswipe_settings_nintype_gestures,
             subtitle = R.string.tapswipe_settings_nintype_gestures_subtitle,
             setting = TapSwipeNintypeGesturesSetting,
             icon = { Icon(painterResource(R.drawable.direction_arrows), contentDescription = null) }
         ).copy(visibilityCheck = tapSwipeEnabled),
 
-        // Not gated on tapSwipeEnabled. The gesture lives in PointerTracker and works the same
-        // whether or not the TapSwipe input model is on, like the other backspace behaviors.
-        userSettingToggleDataStore(
-            title = R.string.tapswipe_settings_backspace_swipe_up,
-            subtitle = R.string.tapswipe_settings_backspace_swipe_up_subtitle,
-            setting = TapSwipeBackspaceSwipeUpSetting,
-            icon = { Icon(painterResource(R.drawable.delete), contentDescription = null) }
+        // Its own screen. Backspace carries four gestures now, and a flat list cannot show which
+        // of them a given setting belongs to. Not gated on tapSwipeEnabled: these live in
+        // PointerTracker and work the same whether or not the input model is on.
+        userSettingNavigationItem(
+            title = R.string.tapswipe_settings_backspace,
+            subtitle = R.string.tapswipe_settings_backspace_subtitle,
+            style = NavigationItemStyle.HomeSecondary,
+            navigateTo = "backspaceGestures",
+            icon = R.drawable.delete
         ),
 
         // Its own screen rather than a toggle: the feature is the assignment, and there is no way to

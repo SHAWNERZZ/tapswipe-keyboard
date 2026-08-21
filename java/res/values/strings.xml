@@ -299,12 +299,24 @@ mobile devices. [CHAR LIMIT=25] -->
     <string name="tapswipe_settings_learned_geometry">Learned key geometry</string>
     <string name="tapswipe_settings_real_tap_position">Use exact tap positions</string>
     <string name="tapswipe_settings_real_tap_position_subtitle">Feed the decoder where you actually touched, not the centre of the key. Off falls back to key centres.</string>
-    <string name="tapswipe_settings_whole_word_backspace">Backspace deletes whole words</string>
-    <string name="tapswipe_settings_whole_word_backspace_subtitle">Backspace right after finishing a word always undoes its last tap or swipe first, so a mistake can be fixed in place. After that grace moment, this setting decides what an older word\'s backspace does: remove it all at once, or one character at a time. Never applies to a run of digits or symbols with no letters, like a phone number.</string>
     <string name="tapswipe_settings_learning_note">Peck mode learns new words so you can swipe them later. That needs Personalized suggestions, under Text prediction.</string>
     <string name="tapswipe_settings_about">Reimplements the input model of the discontinued Nintype keyboard on top of the FUTO swipe decoder.</string>
 
     <!-- Backspace gestures -->
+    <string name="tapswipe_settings_backspace">Backspace</string>
+    <string name="tapswipe_settings_backspace_subtitle">What a tap, a swipe up, and a slide each remove</string>
+    <string name="backspace_gestures_title">Backspace</string>
+    <string name="backspace_gestures_tap">TAP</string>
+    <string name="backspace_gestures_swipe_up">SWIPE UP</string>
+    <string name="backspace_gestures_trails">GESTURE TRAILS</string>
+    <string name="backspace_gestures_tap_removes">One tap removes</string>
+    <string name="backspace_tap_last_gesture">The last gesture</string>
+    <string name="backspace_tap_whole_word">The whole word</string>
+    <string name="backspace_tap_one_character">One character</string>
+    <string name="backspace_tap_last_gesture_note">Applies to the word you are typing and the one before it. Each tap removes one tap or one swipe, in the order you made them. Older text is removed a word at a time. Turn on gesture trails below to see what goes next.</string>
+    <string name="backspace_gestures_slide_note">A plain slide deletes characters. Tap, then slide, to delete words. Turn slide deletion off under Settings, Typing, Backspace.</string>
+    <string name="tapswipe_settings_word_trails">Show the word\'s gestures</string>
+    <string name="tapswipe_settings_word_trails_subtitle">Keeps every tap and swipe of the word you are typing drawn on the keys. The newest is brightest, so you can see what the next backspace removes. They clear when the word is finished.</string>
     <string name="tapswipe_settings_backspace_swipe_up">Swipe up on backspace</string>
     <string name="tapswipe_settings_backspace_swipe_up_subtitle">Swipe up from the backspace key to delete the last word in one motion. Takes any punctuation with it. Works whether or not swipe-to-delete is on.</string>
 

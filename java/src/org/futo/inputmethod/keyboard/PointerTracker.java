@@ -26,6 +26,7 @@ import org.futo.inputmethod.engine.IMEInterfaceKt;
 import org.futo.inputmethod.engine.StateHint;
 import org.futo.inputmethod.keyboard.internal.BackspaceSlideMode;
 import org.futo.inputmethod.keyboard.internal.BackspaceSwipeUp;
+import org.futo.inputmethod.keyboard.internal.WordGestureTrail;
 import org.futo.inputmethod.keyboard.internal.BatchInputArbiter;
 import org.futo.inputmethod.keyboard.internal.BatchInputArbiter.BatchInputArbiterListener;
 import org.futo.inputmethod.keyboard.internal.BogusMoveEventDetector;
@@ -206,8 +207,44 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
      */
     private BackspaceSlideMode.State mBackspaceSlide;
 
+    /**
+     * Whether the slide from this touch deletes words rather than characters.
+     *
+     * Decided once, at touch-down, from whether a tap on this key released a moment ago. Fixed for
+     * the whole slide, so the same movement always removes the same amount.
+     */
+    private boolean mBackspaceSlideWordMode;
+
     /** Whether this touch has already deleted a word with an upward swipe. */
     private boolean mBackspaceSwipeUpFired;
+
+    /** This stroke's path in view pixels, for the word-level gesture trail. */
+    private static final int WORD_GESTURE_MAX_POINTS = 192;
+    private static final float WORD_GESTURE_MIN_SPACING_SQ = 16.0f * 16.0f;
+    private final float[] mWordGestureXs = new float[WORD_GESTURE_MAX_POINTS];
+    private final float[] mWordGestureYs = new float[WORD_GESTURE_MAX_POINTS];
+    private int mWordGesturePointCount;
+
+    /**
+     * When a plain tap released the delete key, so a slide starting soon after can tell that it
+     * follows a tap.
+     *
+     * Static, matching the other cross-touch state in this class. A tap and the slide after it are
+     * two separate touch-down events, and while a finger tapping in place usually keeps its pointer
+     * id, relying on that would be fragile. This is only a timestamp. It answers a question at the
+     * next touch-down and never acts on its own.
+     */
+    private static long sLastPlainBackspaceReleaseMs = -1;
+
+    /**
+     * How long a tap arms the word-deleting slide.
+     *
+     * Deliberately not {@link ViewConfiguration#getDoubleTapTimeout()}. That constant describes two
+     * quick hits on one spot. This gesture is different: tap, see the result, then decide to press
+     * again and drag. Deciding and repositioning takes longer than a double-tap window allows, and
+     * using that constant made the gesture almost never fire.
+     */
+    private static final long BACKSPACE_TAP_THEN_SLIDE_WINDOW_MS = 900L;
 
     /**
      * How far the finger may stray on the delete key before its auto-repeat is called off.
@@ -630,10 +667,38 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         sTimerProxy.cancelLongPressTimersOf(this);
     }
 
+    /**
+     * Collects this stroke's path in view pixels, for the word-level trail.
+     *
+     * A private copy rather than a read of {@link GestureStrokeDrawingPoints}, whose buffers are
+     * private and are consumed by the live preview as it draws. Sampled every few pixels, because
+     * the drawn path does not need the resolution the decoder gets.
+     */
+    private void appendWordGesturePoint(final int x, final int y) {
+        if (mWordGesturePointCount >= WORD_GESTURE_MAX_POINTS) return;
+        if (mWordGesturePointCount > 0) {
+            final float dx = x - mWordGestureXs[mWordGesturePointCount - 1];
+            final float dy = y - mWordGestureYs[mWordGesturePointCount - 1];
+            if (dx * dx + dy * dy < WORD_GESTURE_MIN_SPACING_SQ) return;
+        }
+        mWordGestureXs[mWordGesturePointCount] = x;
+        mWordGestureYs[mWordGesturePointCount] = y;
+        mWordGesturePointCount++;
+    }
+
+    /** Hands the finished stroke to the word-level trail, if it became a gesture at all. */
+    private void recordWordGestureSwipe() {
+        if (mWordGesturePointCount >= 2) {
+            WordGestureTrail.addSwipe(mWordGestureXs, mWordGestureYs, mWordGesturePointCount);
+        }
+        mWordGesturePointCount = 0;
+    }
+
     private void showGestureTrail() {
         if (mIsTrackingForActionDisabled) {
             return;
         }
+        recordWordGestureSwipe();
         // A gesture floating preview text will be shown at the oldest pointer/finger on the screen.
         sDrawingProxy.showGestureTrail(
                 this, isOldestTrackerInQueue() /* showsFloatingPreviewText */);
@@ -846,8 +911,15 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             mNintypeShortcutFired = false;
             // Anchor and origin both start where the finger went down; the anchor advances with
             // each step while the origin stays put, since escalation measures total travel.
-            mBackspaceSlide = new BackspaceSlideMode.State(x, x, 0, 0, false);
+            mBackspaceSlide = new BackspaceSlideMode.State(x, 0, 0);
             mBackspaceSwipeUpFired = false;
+            // Decided here, once, rather than during the slide. mStartTime is this touch's own
+            // down time on the same clock as the release stamp below. eventTime elsewhere in this
+            // class runs on a different clock and is deliberately not compared with it.
+            mBackspaceSlideWordMode = key.getCode() == Constants.CODE_DELETE
+                    && sLastPlainBackspaceReleaseMs >= 0
+                    && mStartTime - sLastPlainBackspaceReleaseMs
+                            < BACKSPACE_TAP_THEN_SLIDE_WINDOW_MS;
             mStartedOnFastLongPress = key.isFastLongPress();
             mSpacebarLongPressed = false;
 
@@ -885,6 +957,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         }
         mGestureStrokeDrawingPoints.onMoveEvent(
                 x, y, mBatchInputArbiter.getElapsedTimeSinceFirstDown(eventTime));
+        appendWordGesturePoint(x, y);
         // If the MoreKeysPanel is showing then do not attempt to enter gesture mode. However,
         // the gestured touch points are still being recorded in case the panel is dismissed.
         if (isShowingMoreKeysPanel()) {
@@ -1126,18 +1199,18 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                 sTimerProxy.cancelKeyTimersOf(this);
             }
 
-            // Travel is denominated in characters whatever the granularity, so a word costs the
-            // slide what its letters would have. A reversal drops to character precision for the
-            // rest of the gesture. See BackspaceSlideMode.
-            final BackspaceSlideMode.Config config = new BackspaceSlideMode.Config(
-                    sPointerStep,
-                    settingsValues.mBackspaceMode == Settings.BACKSPACE_MODE_WORDS);
+            // The entry gesture decides the unit, and it does not change during the slide. A plain
+            // slide deletes characters. A slide that follows a tap on this key deletes words. The
+            // upstream Characters and Words values are not read: they described a choice this
+            // gesture pair now makes for itself. Only OFF, checked above, still applies.
+            final BackspaceSlideMode.Config config =
+                    new BackspaceSlideMode.Config(sPointerStep, mBackspaceSlideWordMode);
 
             final BackspaceSlideMode.Result result =
                     BackspaceSlideMode.next(x, mBackspaceSlide, config);
 
             mBackspaceSlide = result.getState();
-            sActiveSlideWordMode = result.getWordMode();
+            sActiveSlideWordMode = mBackspaceSlideWordMode;
 
             int steps = result.getSteps();
             if (steps != 0) {
@@ -1149,7 +1222,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                 sLastCursorStepChars = 0;
                 sListener.onMoveDeletePointer(steps);
 
-                if (result.getWordMode()) {
+                if (mBackspaceSlideWordMode) {
                     // Charge the word its real length, reported back during the call above. Left
                     // uncharged by next(), because until the word is consumed nobody knows what it
                     // cost - which is exactly why a flat per-word step got this wrong.
@@ -1326,6 +1399,12 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (currentKey != null && currentKey.isRepeatable()
                 && (currentKey.getCode() == currentRepeatingKeyCode) && !isInDraggingFinger) {
             return;
+        }
+        // A plain tap on delete. Reaching here means the touch neither slid (mCursorMoved, above)
+        // nor repeated (the branch above), so this is the discrete tap a following slide pairs with
+        // to delete words.
+        if (currentKey != null && currentKey.getCode() == Constants.CODE_DELETE) {
+            sLastPlainBackspaceReleaseMs = System.currentTimeMillis();
         }
         detectAndSendKey(currentKey, mKeyX, mKeyY, eventTime);
         if (isInSlidingKeyInput) {
@@ -1611,6 +1690,11 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         }
 
         final int code = key.getCode();
+        // Record the touch point, not the key centre, so the marker sits where the finger landed.
+        // Letters only: a shift or a delete is not part of the word being spelled.
+        if (Character.isLetter(code)) {
+            WordGestureTrail.addTap(mStartX, mStartY);
+        }
         callListenerOnCodeInput(key, code, x, y, eventTime, false /* isKeyRepeat */);
         callListenerOnRelease(key, code, false /* withSliding */);
     }

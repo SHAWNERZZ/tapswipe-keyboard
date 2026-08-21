@@ -266,17 +266,6 @@ val TapSwipePeckCadenceSetting = SettingsKey(intPreferencesKey("tapswipe_peck_ca
 val TapSwipeLegacyTapRunSetting = SettingsKey(intPreferencesKey("tapswipe_legacy_tap_run"), 5)
 
 /**
- * When on, backspace after a finished word removes the whole word instead of one character.
- *
- * Off by default: a plain backspace tap deleting a whole word is a large departure from every
- * other keyboard, and it would override the existing "hold to delete words" preference for the
- * first press. Deleting strokes *within* a word is not gated on this - that is core to the input
- * model rather than a preference.
- */
-val TapSwipeWholeWordBackspaceSetting =
-    SettingsKey(booleanPreferencesKey("tapswipe_whole_word_backspace"), false)
-
-/**
  * When on, a tap contributes the position it was actually touched rather than the centre of the key
  * it resolved to.
  *
@@ -315,6 +304,39 @@ val TapSwipeAdaptiveGeometrySetting =
  */
 val TapSwipeNintypeGesturesSetting =
     SettingsKey(booleanPreferencesKey("tapswipe_nintype_gestures"), false)
+
+/** What one tap of the backspace key removes. See [TapSwipeBackspaceTapSetting]. */
+object BackspaceTap {
+    /** Removes the last gesture of the last word, then whole words for older text. */
+    const val LAST_GESTURE = 0
+
+    /** Removes a whole word every time. */
+    const val WHOLE_WORD = 1
+
+    /** Stock behavior. Removes one character. */
+    const val ONE_CHARACTER = 2
+}
+
+/**
+ * What one tap of the backspace key removes.
+ *
+ * Replaces an earlier on/off setting for whole-word delete. The three behaviors are mutually
+ * exclusive, so one choice states that where a pair of switches would hide it.
+ *
+ * [BackspaceTap.LAST_GESTURE] is the default, and is the reason the gesture trails exist: removing
+ * one gesture at a time is only usable when the gestures are visible.
+ */
+val TapSwipeBackspaceTapSetting =
+    SettingsKey(intPreferencesKey("tapswipe_backspace_tap"), BackspaceTap.LAST_GESTURE)
+
+/**
+ * Keeps every gesture of the word being typed drawn on the keys, newest brightest.
+ *
+ * Separate from the stock gesture trail, which fades a second after a finger lifts. This one lasts
+ * for the word, so a backspace that removes one gesture has something to aim at.
+ */
+val TapSwipeWordTrailsSetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_word_trails"), false)
 
 /**
  * An upward swipe on the delete key removes the last word.
