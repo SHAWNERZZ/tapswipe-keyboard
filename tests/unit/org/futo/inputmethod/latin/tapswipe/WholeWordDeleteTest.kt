@@ -138,4 +138,42 @@ class WholeWordDeleteTest {
         assertEquals(2, len(wide))
         assertEquals(3, len("a$wide"))
     }
+
+    // ------------------------------------------------- the swipe-up variant
+
+    private fun swipe(before: String) = WholeWordDelete.lengthToWhitespace(before)
+
+    /**
+     * The gesture is a statement, so it takes what a tap declines. Someone who swipes for a word
+     * delete after `world.` wants the stop gone with the word.
+     */
+    @Test
+    fun `a swipe takes the trailing punctuation with the word`() {
+        assertEquals(6, swipe("Hello world."))
+        assertEquals(8, swipe("Hello world!?!"))
+    }
+
+    @Test
+    fun `a swipe takes a digit run that a tap would decline`() {
+        assertEquals(7, swipe("5551234"))
+        assertEquals(4, swipe("3.14"))
+    }
+
+    @Test
+    fun `a swipe takes one trailing space, as a tap does`() {
+        assertEquals(6, swipe("Hello world "))
+    }
+
+    @Test
+    fun `a swipe over plain words matches a tap`() {
+        assertEquals(5, swipe("Hello world"))
+        assertEquals(5, swipe("I don't"))
+    }
+
+    @Test
+    fun `a swipe with nothing to take declines`() {
+        assertEquals(0, swipe(""))
+        assertEquals(0, swipe("  "))
+        assertEquals(0, swipe("Hello  "))
+    }
 }

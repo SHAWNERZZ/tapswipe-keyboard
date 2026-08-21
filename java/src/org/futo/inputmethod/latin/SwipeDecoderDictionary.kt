@@ -317,6 +317,15 @@ val TapSwipeNintypeGesturesSetting =
     SettingsKey(booleanPreferencesKey("tapswipe_nintype_gestures"), false)
 
 /**
+ * An upward swipe on the delete key removes the last word.
+ *
+ * Independent of the upstream swipe-backspace setting, which governs the horizontal slide. Turning
+ * the slide off does not turn this off, because they are separate gestures on the same key.
+ */
+val TapSwipeBackspaceSwipeUpSetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_backspace_swipe_up"), false)
+
+/**
  * Punctuation and actions on swipes off the enter key.
  *
  * Separate from [TapSwipeNintypeGesturesSetting], unlike the comma gesture and its key removal:

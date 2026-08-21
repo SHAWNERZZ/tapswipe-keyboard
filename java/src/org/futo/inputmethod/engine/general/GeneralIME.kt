@@ -710,6 +710,11 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         }
     }
 
+    override fun onBackspaceSwipeUp() {
+        setNeutralSuggestionStrip()
+        inputLogic.deleteWordBeforeCursor()
+    }
+
     override fun onUpWithDeletePointerActive() {
         if (inputLogic.mConnection.hasSelection()) {
             val selection: CharSequence? = inputLogic.mConnection.getSelectedText(0)

@@ -83,6 +83,15 @@ interface IMEInterface {
 
     fun onMovePointer(steps: Int, stepOverWords: Boolean, select: Boolean?)
     fun onMoveDeletePointer(steps: Int)
+
+    /**
+     * An upward swipe on the delete key, which removes the last word.
+     *
+     * Defaulted to nothing, because this is a fork gesture and the other engines have no reason to
+     * answer it. Only the general engine implements it.
+     */
+    fun onBackspaceSwipeUp() {}
+
     fun onUpWithDeletePointerActive()
     fun onUpWithPointerActive()
     fun onSwipeLanguage(direction: Int)

@@ -103,6 +103,10 @@ public interface KeyboardActionListener {
 
     public void onMovePointer(int steps);
     public void onMoveDeletePointer(int steps);
+
+    /** An upward swipe on the delete key. Removes the last word in one motion. */
+    public void onBackspaceSwipeUp();
+
     public void onUpWithDeletePointerActive();
     public void onUpWithPointerActive();
     public void onMovingCursorLockEvent(boolean canMoveCursor);
@@ -139,6 +143,8 @@ public interface KeyboardActionListener {
         public void onMovePointer(int steps) {}
         @Override
         public void onMoveDeletePointer(int steps) {}
+        @Override
+        public void onBackspaceSwipeUp() {}
         @Override
         public void onUpWithDeletePointerActive() {}
         @Override

@@ -640,6 +640,13 @@ public class LatinIMELegacy implements KeyboardActionListener,
     }
 
     @Override
+    public void onBackspaceSwipeUp() {
+        mImeManager.getActiveIME(
+                mSettings.getCurrent()
+        ).onBackspaceSwipeUp();
+    }
+
+    @Override
     public void onUpWithDeletePointerActive() {
         mImeManager.getActiveIME(
                 mSettings.getCurrent()

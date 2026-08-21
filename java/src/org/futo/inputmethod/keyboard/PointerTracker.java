@@ -25,6 +25,7 @@ import android.view.MotionEvent;
 import org.futo.inputmethod.engine.IMEInterfaceKt;
 import org.futo.inputmethod.engine.StateHint;
 import org.futo.inputmethod.keyboard.internal.BackspaceSlideMode;
+import org.futo.inputmethod.keyboard.internal.BackspaceSwipeUp;
 import org.futo.inputmethod.keyboard.internal.BatchInputArbiter;
 import org.futo.inputmethod.keyboard.internal.BatchInputArbiter.BatchInputArbiterListener;
 import org.futo.inputmethod.keyboard.internal.BogusMoveEventDetector;
@@ -204,6 +205,9 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
      * {@link org.futo.inputmethod.keyboard.internal.BackspaceSlideMode} for the rules it carries.
      */
     private BackspaceSlideMode.State mBackspaceSlide;
+
+    /** Whether this touch has already deleted a word with an upward swipe. */
+    private boolean mBackspaceSwipeUpFired;
 
     /**
      * How far the finger may stray on the delete key before its auto-repeat is called off.
@@ -843,6 +847,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             // Anchor and origin both start where the finger went down; the anchor advances with
             // each step while the origin stays put, since escalation measures total travel.
             mBackspaceSlide = new BackspaceSlideMode.State(x, x, 0, 0, false);
+            mBackspaceSwipeUpFired = false;
             mStartedOnFastLongPress = key.isFastLongPress();
             mSpacebarLongPressed = false;
 
@@ -1097,6 +1102,16 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                 mLastY = y;
                 return;
             }
+        }
+
+        // Checked before the slide branch below, and outside its setting gate. The two are separate
+        // gestures that happen to share a key, so turning the slide off must not take this with it.
+        if (!sInGesture && mIsSlidingCursor && oldKey != null
+                && oldKey.getCode() == Constants.CODE_DELETE
+                && maybeFireBackspaceSwipeUp(x, y)) {
+            mLastX = x;
+            mLastY = y;
+            return;
         }
 
         if (!sInGesture && mIsSlidingCursor && oldKey != null && oldKey.getCode() == Constants.CODE_DELETE
@@ -1489,6 +1504,45 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             return longpressTimeout * 2;
         }
         return longpressTimeout;
+    }
+
+    /**
+     * Deletes the last word when the touch on backspace becomes an upward swipe.
+     *
+     * Three guards keep this away from the horizontal slide that shares the key.
+     *
+     * The shape test in {@link BackspaceSwipeUp} needs real upward travel, steeper than 45 degrees.
+     * The fired flag stops a single touch from deleting word after word as the finger keeps
+     * moving. The {@code mCursorMoved} check stands down once the slide has committed a step, so a
+     * selection already in progress is never interrupted by a late upward drift.
+     *
+     * Firing also has to call off auto-repeat. Repeat runs on a timer while this gesture waits for
+     * distance, and only horizontal movement cancels it, so without this an upward swipe would
+     * delete characters underneath the word it just removed.
+     *
+     * @return true when the word was deleted and the rest of this stroke should be ignored
+     */
+    private boolean maybeFireBackspaceSwipeUp(final int x, final int y) {
+        if (mBackspaceSwipeUpFired) {
+            // Already acted. Keep consuming the stroke so the slide cannot start behind it.
+            return true;
+        }
+        if (mCursorMoved) return false;
+        if (mDownKey == null) return false;
+        if (!DataStoreHelper.getSetting(
+                SwipeDecoderDictionaryKt.getTapSwipeBackspaceSwipeUpSetting())) {
+            return false;
+        }
+        if (!BackspaceSwipeUp.isTriggered(x - mStartX, y - mStartY, mDownKey.getHeight())) {
+            return false;
+        }
+
+        mBackspaceSwipeUpFired = true;
+        sTimerProxy.cancelKeyTimersOf(this);
+        // Marks the stroke as having done something, so the release does not also send a delete.
+        mCursorMoved = true;
+        sListener.onBackspaceSwipeUp();
+        return true;
     }
 
     /**

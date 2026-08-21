@@ -692,6 +692,39 @@ public final class InputLogic {
     }
 
     /**
+     * Removes the word before the cursor, for the upward swipe on the delete key.
+     *
+     * Takes punctuation and digit runs with the word, where a tap declines both. A tap is
+     * ambiguous, so it defers to a character delete and lets the user decide with a second press.
+     * This gesture is a statement, so it acts.
+     *
+     * A word still being typed is cleared outright rather than unwound one stroke at a time. The
+     * gesture asked for the word to go.
+     */
+    public void deleteWordBeforeCursor() {
+        mConnection.beginBatchEdit();
+        try {
+            if (mWordComposer.isComposingWord()) {
+                mWordComposer.reset(true);
+                mConnection.commitText("", 1);
+                resetTapSwipeSession("swipe up deleted the word in progress");
+                return;
+            }
+
+            final CharSequence before = mConnection.getTextBeforeCursor(48, 0);
+            if (TextUtils.isEmpty(before)) return;
+
+            final int lengthToDelete = WholeWordDelete.lengthToWhitespace(before);
+            if (lengthToDelete <= 0) return;
+
+            mConnection.deleteTextBeforeCursor(lengthToDelete);
+            StatsUtils.onBackspaceWordDelete(lengthToDelete);
+        } finally {
+            mConnection.endBatchEdit();
+        }
+    }
+
+    /**
      * Offers the just-finished word to the adaptive touch model.
      *
      * Wrapped because it runs on the commit path: learning is a nice-to-have, and nothing about it

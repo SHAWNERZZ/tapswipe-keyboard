@@ -63,6 +63,34 @@ object WholeWordDelete {
         return before.length - end
     }
 
+    /**
+     * How much a deliberate "delete the last word" gesture should remove.
+     *
+     * Differs from [lengthToDelete] in what it does with punctuation and digits. A tap is
+     * ambiguous, so it declines those cases and lets a character delete handle them. A gesture is
+     * not ambiguous. Someone who swipes for a word delete after typing `world.` wants the stop gone
+     * with the word, and wants a mistyped phone number gone in one motion.
+     *
+     * So this walks back to whitespace and takes everything, including a trailing stop.
+     *
+     * @param before text immediately before the cursor, most recent character last
+     * @return how many characters to delete, or 0 when there is nothing before the cursor
+     */
+    @JvmStatic
+    fun lengthToWhitespace(before: CharSequence): Int {
+        if (before.isEmpty()) return 0
+
+        var end = before.length
+        if (before[end - 1] == ' ') end--
+        if (end == 0) return 0
+
+        val runEnd = end
+        while (end > 0 && !Character.isWhitespace(before[end - 1])) end--
+        if (end == runEnd) return 0
+
+        return before.length - end
+    }
+
     private fun containsLetter(s: CharSequence, from: Int, to: Int): Boolean {
         var i = from
         while (i < to) {

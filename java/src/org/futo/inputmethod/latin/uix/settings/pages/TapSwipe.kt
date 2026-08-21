@@ -20,6 +20,7 @@ import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
 import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import org.futo.inputmethod.latin.TapSwipeWpmSetting
 import org.futo.inputmethod.latin.TapSwipeWholeWordBackspaceSetting
+import org.futo.inputmethod.latin.TapSwipeBackspaceSwipeUpSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
 import org.futo.inputmethod.latin.uix.settings.UserSetting
@@ -128,6 +129,15 @@ val TapSwipeMenu = UserSettingsMenu(
             setting = TapSwipeNintypeGesturesSetting,
             icon = { Icon(painterResource(R.drawable.direction_arrows), contentDescription = null) }
         ).copy(visibilityCheck = tapSwipeEnabled),
+
+        // Not gated on tapSwipeEnabled. The gesture lives in PointerTracker and works the same
+        // whether or not the TapSwipe input model is on, like the other backspace behaviors.
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_backspace_swipe_up,
+            subtitle = R.string.tapswipe_settings_backspace_swipe_up_subtitle,
+            setting = TapSwipeBackspaceSwipeUpSetting,
+            icon = { Icon(painterResource(R.drawable.delete), contentDescription = null) }
+        ),
 
         // Its own screen rather than a toggle: the feature is the assignment, and there is no way to
         // show eight of those in a settings row.
