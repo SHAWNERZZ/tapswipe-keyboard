@@ -194,7 +194,51 @@ out of step during that window.
   for distance. A slide can reselect, and it cannot undo a delete that
   repeat already performed.
 
-## 10. Adaptive touch model
+## 10. Gesture trails for the word
+
+Behind `TapSwipeWordTrailsSetting`. Draws every stroke of the word being
+typed on the keys, so a backspace that removes one stroke has something
+to aim at.
+
+Distinct from the stock gesture trail, which shows the stroke under a
+finger right now and fades about a second after it lifts. Both are drawn.
+Home files: `WordGestureTrail` holds what to draw, and
+`WordGestureTrailPreview` draws it.
+
+**A projection, not a second list.** `InputLogic.publishGestureTrail`
+replaces the whole drawing from the session's strokes after every change.
+Nothing is added or removed one at a time.
+
+That is the design, and it was arrived at by getting it wrong. An earlier
+version collected points from touch events into its own list. It ordered
+two-thumb swipes by which finger lifted, while the session orders them by
+which finger went down, so a backspace erased one path and removed a
+different stroke. It also used a different test for whether a stroke had
+happened, so the lists could differ in length and stay wrong for the rest
+of the word.
+
+**Strokes carry their own view coordinates.** `TapSwipeSession.Stroke`
+holds the points twice: normalized for the decoder, and in view pixels
+for drawing. Both are taken from one segment at one moment. A stroke with
+no view points is not drawn.
+
+**Brightness counts strokes, not seconds.** The newest is brightest, and
+older ones step down to a floor that stays behind the key labels. So
+brightness answers how many backspace presses away a stroke is. It also
+means alpha changes only when the strokes change, so the layer repaints
+on those events rather than continuously.
+
+**Tap or path is decided by shape.** A stroke that stayed within one key
+width is drawn as a dot. This overrides the session's own label on
+purpose. A tap made while another finger is mid-swipe reaches the session
+through the swipe path, because the in-gesture flag is shared by every
+finger, and arrives labelled a swipe. Only the picture is corrected. What
+the decoder receives is unchanged.
+
+Known limit: a real swipe between two adjacent keys also travels less
+than a key width and draws as a dot.
+
+## 11. Adaptive touch model
 
 Home file:
 `java/src/org/futo/inputmethod/latin/tapswipe/TapSwipeTouchModel.kt`.
@@ -214,7 +258,7 @@ Off by default, behind `TapSwipeAdaptiveGeometrySetting`.
   the orientation. Switching layout files evidence elsewhere. Nothing is
   deleted by a switch.
 
-Persistence rules matter more than the arithmetic. See section 11.
+Persistence rules matter more than the arithmetic. See section 12.
 
 - A failed read blocks writes for the rest of the process.
 - An empty model never overwrites existing data unless `reset` asked.
@@ -225,7 +269,7 @@ Persistence rules matter more than the arithmetic. See section 11.
 Decay is by wall-clock time only. There is no moving window and no
 per-sample age horizon. Add one only after a fresh decision.
 
-## 11. Known risks and limitations
+## 12. Known risks and limitations
 
 - **Swipe/space race under 50 ms.** Hitting space within about 50 ms of
   ending a swipe loses the word. No finger can reach the space bar in
@@ -245,7 +289,7 @@ per-sample age horizon. Add one only after a fresh decision.
   Cause never established. v0.7.1 added blast-radius mitigations and a
   logcat tag `TapSwipeTouchModel`. Recheck on every release.
 
-## 12. Settings home
+## 13. Settings home
 
 Screen file:
 `java/src/org/futo/inputmethod/latin/uix/settings/pages/TapSwipe.kt`.

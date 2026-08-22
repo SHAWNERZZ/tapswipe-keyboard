@@ -120,12 +120,38 @@ logging under `TapSwipeTouchModel`.
 
 ### Real finger on real hardware
 
-- [ ] Backspace slide deletes at the granularity Settings → Backspace
-      names.
-- [ ] Reversing past a full step switches for the rest of the slide.
-      Test with base mode set to Words.
-- [ ] Reversing a second time does not switch back.
-- [ ] A reversal below a full step changes nothing.
+Backspace carries four gestures. Each check below is also a check that
+the other three did not fire instead.
+
+- [ ] A plain slide deletes characters.
+- [ ] A tap, then a slide, deletes words.
+- [ ] A slide that drifts upward at the end does not delete a word.
+- [ ] Swipe up deletes the last word, with punctuation, in one motion.
+- [ ] Hold still repeats, and a slide after it does not lose a word to
+      the repeat timer.
+
+Tap tiers, with gesture trails on so the target is visible.
+
+- [ ] In an unfinished word, one tap removes the last gesture.
+- [ ] Right after a word finishes, one tap removes its last gesture.
+      There is no time limit, so this holds after a long pause.
+- [ ] A word older than that goes whole.
+- [ ] Type a word as taps then a swipe. Undoing removes the swipe first
+      and leaves what the taps spell, not the decoded word minus a
+      letter.
+
+Gesture trails.
+
+- [ ] Every tap and swipe of the current word is drawn, newest
+      brightest, and clears when the word ends.
+- [ ] Swipe with two thumbs and lift the second one first. One backspace
+      must erase the path belonging to the text that changed.
+- [ ] Tap a letter while the other thumb is mid-swipe. The tap is drawn
+      as a dot.
+- [ ] Trails stay behind the key labels in Master Mode.
+
+Other keys.
+
 - [ ] Swipe straight down from V onto the space bar produces a comma
       (Nintype gestures on).
 - [ ] A word swipe starting on V, B, or C still decodes as a word.
@@ -134,10 +160,16 @@ logging under `TapSwipeTouchModel`.
 - [ ] With the period key hidden, Enter is wider and the space bar is
       not.
 
-Test the reversal with base mode Words. The one shipped bug in this
-feature was invisible with base mode Characters. `GeneralIME.onMoveDelete
-Pointer` used `mBackspaceMode == WORDS || isActiveSlideWordMode()`, so
-the first term made reversal into Characters a no-op.
+Two of these check for defects that already shipped once.
+
+The upward drift check exists because auto-repeat and the slide both
+start from a finger resting on backspace, and repeat runs on a clock
+while the slide waits for distance. A word was deleted before the slide
+registered.
+
+The two-thumb check exists because the drawing once kept its own list of
+gestures ordered by which finger lifted, while the session orders them by
+which finger went down.
 
 ## Adding a scenario
 
