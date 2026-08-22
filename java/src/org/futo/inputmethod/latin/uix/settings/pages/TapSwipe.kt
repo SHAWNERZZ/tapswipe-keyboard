@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.SwipeSensitivitySetting
 import org.futo.inputmethod.latin.TapSwipeLegacyTapRunSetting
@@ -20,6 +21,7 @@ import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
 import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import org.futo.inputmethod.latin.TapSwipeWpmSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
+import org.futo.inputmethod.latin.TapSwipeAutoSpaceDelaySetting
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
 import org.futo.inputmethod.latin.uix.settings.UserSetting
 import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
@@ -163,6 +165,22 @@ val TapSwipeMenu = UserSettingsMenu(
                 transform = { it.roundToInt() },
                 indicator = { "$it ms" },
                 steps = 9
+            )
+        },
+
+        UserSetting(
+            name = R.string.tapswipe_settings_autospace_delay,
+            subtitle = R.string.tapswipe_settings_autospace_delay_subtitle,
+            visibilityCheck = tapSwipeEnabled
+        ) {
+            SettingSlider(
+                title = stringResource(R.string.tapswipe_settings_autospace_delay),
+                subtitle = stringResource(R.string.tapswipe_settings_autospace_delay_subtitle),
+                setting = TapSwipeAutoSpaceDelaySetting,
+                range = 0.0f..1000.0f,
+                transform = { it.roundToInt() },
+                indicator = { if (it == 0) "Off" else "$it ms" },
+                steps = 19
             )
         },
 

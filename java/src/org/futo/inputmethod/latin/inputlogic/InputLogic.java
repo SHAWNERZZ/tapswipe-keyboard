@@ -191,6 +191,14 @@ public final class InputLogic {
     private final Handler mTapSwipeIdleHandler = new Handler(Looper.getMainLooper());
     private Runnable mTapSwipePeckIdleRunnable = null;
 
+    /**
+     * Nintype-style auto-space: after a swipe ends, wait X ms and arm a deferred space. When the
+     * next word starts, the space is inserted before processing the input. This preserves the
+     * previous word's suggestions until the user actually starts the next word. 0 disables.
+     */
+    private Runnable mTapSwipeAutoSpaceRunnable = null;
+    private boolean mTapSwipeDeferredSpace = false;
+
     /** Re-arms the idle check against the session's current state. Safe to call after every tap. */
     private void scheduleTapSwipePeckIdleCheck() {
         cancelTapSwipePeckIdleCheck();
@@ -230,6 +238,58 @@ public final class InputLogic {
         refreshTapSwipePeckIndicator();
         if (DEBUG_TAPSWIPE) {
             Log.d(TAG, "tapswipe latched PECK (idle " + TAPSWIPE_PECK_IDLE_MS + "ms after a lone tap)");
+        }
+    }
+
+    /**
+     * Starts the auto-space timer after a swipe ends. The timer is cancelled if any input arrives
+     * before it fires. When it fires, it arms a deferred space that will be inserted when the next
+     * word starts, preserving the previous word's suggestions.
+     */
+    private void scheduleTapSwipeAutoSpace() {
+        cancelTapSwipeAutoSpace();
+        if (!isTapSwipeMode()) return;
+        final int delayMs = tapSwipeAutoSpaceDelayMs();
+        if (delayMs <= 0) return;
+        if (!mTapSwipeSession.isOpen()) return;
+        if (!mWordComposer.isComposingWord()) return;
+
+        final int gen = mTapSwipeSession.getGeneration();
+        final int expectedSelStart = mConnection.getExpectedSelectionStart();
+        mTapSwipeAutoSpaceRunnable = () -> armTapSwipeDeferredSpace(gen, expectedSelStart);
+        mTapSwipeIdleHandler.postDelayed(mTapSwipeAutoSpaceRunnable, delayMs);
+        if (DEBUG_TAPSWIPE) {
+            Log.d(TAG, "tapswipe auto-space scheduled in " + delayMs + "ms");
+        }
+    }
+
+    /** Safe to call unconditionally, including when nothing is scheduled. */
+    private void cancelTapSwipeAutoSpace() {
+        if (mTapSwipeAutoSpaceRunnable != null) {
+            mTapSwipeIdleHandler.removeCallbacks(mTapSwipeAutoSpaceRunnable);
+            mTapSwipeAutoSpaceRunnable = null;
+        }
+        mTapSwipeDeferredSpace = false;
+    }
+
+    /**
+     * Runs on the main thread after the auto-space delay. Arms a deferred space if no input has
+     * arrived and the session is still valid. The space will be inserted when the next word starts.
+     */
+    private void armTapSwipeDeferredSpace(final int expectedGeneration, final int expectedSelStart) {
+        mTapSwipeAutoSpaceRunnable = null;
+        if (!isTapSwipeMode()) return;
+        if (!mTapSwipeSession.isCurrent(expectedGeneration)) return;
+        if (!mTapSwipeSession.isOpen()) return;
+        if (!mWordComposer.isComposingWord()) return;
+        if (mConnection.getExpectedSelectionStart() != expectedSelStart) return;
+
+        final SettingsValues settingsValues = Settings.getInstance().getCurrent();
+        if (!settingsValues.mSpacingAndPunctuations.currentLanguageHasSpaces) return;
+
+        mTapSwipeDeferredSpace = true;
+        if (DEBUG_TAPSWIPE) {
+            Log.d(TAG, "tapswipe auto-space armed (word='" + mWordComposer.getTypedWord() + "')");
         }
     }
 
@@ -280,6 +340,16 @@ public final class InputLogic {
         final Integer v = DataStoreHelper.getSetting(
                 SwipeDecoderDictionaryKt.getTapSwipePeckCadenceSetting());
         return (v == null || v < 1) ? 1 : v;
+    }
+
+    /**
+     * Delay in milliseconds before an automatic space is inserted after a swipe ends.
+     * 0 disables auto-space. Tunable via TapSwipeAutoSpaceDelaySetting.
+     */
+    public int tapSwipeAutoSpaceDelayMs() {
+        final Integer v = DataStoreHelper.getSetting(
+                SwipeDecoderDictionaryKt.getTapSwipeAutoSpaceDelaySetting());
+        return (v == null || v < 0) ? 0 : v;
     }
 
     /** 0 disables legacy tap mode entirely. */
@@ -904,6 +974,7 @@ public final class InputLogic {
     /** Discards the session. Safe to call unconditionally. */
     private void resetTapSwipeSession(final String reason) {
         cancelTapSwipePeckIdleCheck();
+        cancelTapSwipeAutoSpace();
         mTapSwipeSession.reset(reason);
         mTapSwipeSessionOriginMs = -1;
         // The drawn gestures belong to the word that just ended. This is the one place every route
@@ -1572,6 +1643,26 @@ public final class InputLogic {
             @Nonnull final Event event, final int keyboardShiftMode,
             final int currentKeyboardScriptId) {
         mWordBeingCorrectedByCursor = null;
+        
+        // Check deferred space before canceling - if set and we're starting a new word with a
+        // letter, insert a space first to preserve the previous word's suggestions.
+        final boolean insertDeferredSpace = mTapSwipeDeferredSpace
+                && mWordComposer.isComposingWord()
+                && settingsValues.isWordCodePoint(event.mCodePoint)
+                && event.mKeyCode != Constants.CODE_SPACE
+                && event.mKeyCode != Constants.CODE_DELETE;
+        cancelTapSwipeAutoSpace();
+        
+        if (insertDeferredSpace) {
+            commitTyped(settingsValues, " ");
+            if (isTapSwipeMode()) {
+                resetTapSwipeSession("deferred auto-space");
+            }
+            if (DEBUG_TAPSWIPE) {
+                Log.d(TAG, "tapswipe deferred space inserted before '"
+                        + Character.toString(event.mCodePoint) + "'");
+            }
+        }
 
         if(settingsValues.needsToLookupSuggestions()) {
             synchronized (mLastEvents) {
@@ -1683,6 +1774,23 @@ public final class InputLogic {
     public void onStartBatchInput(final SettingsValues settingsValues,
             final KeyboardSwitcher keyboardSwitcher) {
         mWordBeingCorrectedByCursor = null;
+        
+        // Check deferred space before canceling - if set and we're starting a new swipe,
+        // insert a space first to preserve the previous word's suggestions.
+        final boolean insertDeferredSpace = mTapSwipeDeferredSpace
+                && mWordComposer.isComposingWord();
+        cancelTapSwipeAutoSpace();
+        
+        if (insertDeferredSpace) {
+            commitTyped(settingsValues, " ");
+            if (isTapSwipeMode()) {
+                resetTapSwipeSession("deferred auto-space");
+            }
+            if (DEBUG_TAPSWIPE) {
+                Log.d(TAG, "tapswipe deferred space inserted before new swipe");
+            }
+        }
+        
         mInputLogicHandler.onStartBatchInput();
 
         mIme.setNeutralSuggestionStrip();
@@ -1772,6 +1880,7 @@ public final class InputLogic {
     }
 
     public void onCancelBatchInput() {
+        cancelTapSwipeAutoSpace();
         mInputLogicHandler.onCancelBatchInput();
         mIme.setNeutralSuggestionStrip();
     }
@@ -3787,6 +3896,12 @@ public final class InputLogic {
         keyboardSwitcher.requestUpdatingShiftState(getCurrentAutoCapsState(settingsValues));
 
         updateUiInputState();
+
+        // Start the auto-space timer after the decode has been applied. If no input arrives
+        // within the configured delay, a space is inserted automatically.
+        if (tapSwipeOn) {
+            scheduleTapSwipeAutoSpace();
+        }
     }
 
     private void updateUiInputState() {
