@@ -33,10 +33,9 @@ git log --oneline tapswipe..dev     # written but not released
 gh release list --repo SHAWNERZZ/tapswipe-keyboard --limit 3
 ```
 
-As of 2026-08-22, the latest release is `tapswipe-v0.7.1`. Everything in
-`docs/plans/BACKSPACE_REDESIGN.md` is built and unreleased. That is the
-backspace rework: four gestures on the key, three tap tiers, and the
-gesture trails that make the tap tiers aimable.
+As of 2026-08-22, the latest release is `tapswipe-v0.8.0`, which shipped
+the backspace redesign. `dev` and `tapswipe` are level. `docs/plans/` is
+empty, so there is no agreed work waiting.
 
 Release when the user asks. Do not release on your own.
 

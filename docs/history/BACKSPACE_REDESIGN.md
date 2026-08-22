@@ -1,11 +1,10 @@
 # Backspace redesign
 
-Agreed on 2026-08-21. All five items built on the same day, awaiting
-on-device testing. Move this file to docs/history/ once the behavior is
-confirmed and released.
+Agreed on 2026-08-21, built and confirmed on hardware, released in
+v0.8.0. Kept for the reasoning. Nothing here is pending.
 
-Check each item against the code before you act on it. An item stays here
-until it ships, then it moves to `docs/history/`.
+For what the code does now, read `TAPSWIPE_ARCHITECTURE.md` section 7 for
+the key and section 10 for the trails.
 
 ## Why
 
