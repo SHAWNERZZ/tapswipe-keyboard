@@ -616,9 +616,9 @@ public final class InputLogic {
 
         if (!mTapSwipeSession.popLastStroke()) return false;
 
-        // Keep the drawn gestures in step with the evidence. The brightest trail is what the next
-        // tap removes, so it has to disappear along with the stroke it stood for.
-        WordGestureTrail.removeLast();
+        // Redraw from what is left. The brightest trail is what the next tap removes, so it has
+        // to go with the stroke it stood for.
+        publishGestureTrail();
 
         // Popping the last stroke ends the word. Clear the composing region the same way the
         // ordinary delete path does; an empty commit is what actually erases it, including under
@@ -783,6 +783,39 @@ public final class InputLogic {
     }
 
     /**
+     * Redraws the word's gestures from the session.
+     *
+     * Called after every change to the strokes. Publishing the whole list rather than adding or
+     * removing one at a time is what keeps the drawing and the evidence in agreement: there is one
+     * order and one count, and no way for the two to drift.
+     *
+     * Cheap enough to run on every stroke change. A word holds a handful of strokes, and the
+     * points are already in memory.
+     */
+    private void publishGestureTrail() {
+        if (!DataStoreHelper.getSetting(
+                SwipeDecoderDictionaryKt.getTapSwipeWordTrailsSetting())) {
+            return;
+        }
+        final float keyWidth = mImeHelper.getKeyboardSwitcher().getMainKeyboardView() != null
+                ? SwipeDecoderDictionary.letterKeyWidthPx() : 0f;
+
+        final java.util.List<TapSwipeSession.Stroke> strokes = mTapSwipeSession.getStrokes();
+        final java.util.ArrayList<WordGestureTrail.Gesture> out =
+                new java.util.ArrayList<>(strokes.size());
+        for (final TapSwipeSession.Stroke s : strokes) {
+            // A stroke with no view points was recorded without a touch position. Nothing to draw,
+            // and it is skipped rather than guessed at.
+            if (!s.getHasViewPoints()) continue;
+            final float[] xs = s.getViewX();
+            final float[] ys = s.getViewY();
+            out.add(new WordGestureTrail.Gesture(
+                    WordGestureTrail.looksLikeTap(xs, ys, keyWidth), xs, ys));
+        }
+        WordGestureTrail.publish(out);
+    }
+
+    /**
      * Offers the just-finished word to the adaptive touch model.
      *
      * Wrapped because it runs on the commit path: learning is a nice-to-have, and nothing about it
@@ -910,6 +943,7 @@ public final class InputLogic {
 
         final int added = session.addSwipeSegments(batchPointers.getGestureSegments(), batchOrigin,
                 mTapSwipeSessionOriginMs, norm.getX(), norm.getY());
+        publishGestureTrail();
         // A swipe joining the word ends peck mode immediately, and proves this is not someone
         // who only taps, so legacy-tap mode drops too.
         clearLegacyTapRun();
@@ -957,7 +991,9 @@ public final class InputLogic {
         // Order within a stream is what the beam search relies on; ordering *between* streams is
         // resolved by the lexicon (Phase 0 / S2), so this is safe even when a swipe used the right.
         mTapSwipeSession.addTap(codePoint, pos[0], pos[1],
-                (float) (now - mTapSwipeSessionOriginMs), TapSwipeSession.Hand.LEFT);
+                (float) (now - mTapSwipeSessionOriginMs), TapSwipeSession.Hand.LEFT,
+                rawX, rawY);
+        publishGestureTrail();
     }
 
     /**

@@ -579,6 +579,21 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             return floatArrayOf(halfW, halfH)
         }
 
+        /**
+         * Width of a letter key in keyboard view pixels, or 0 when no layout has been applied.
+         *
+         * For deciding whether a drawn stroke stayed within one key, which is what separates a tap
+         * from a swipe on screen. In view pixels rather than normalized units because the drawing
+         * works in view pixels, and converting the threshold once is cheaper than converting every
+         * point.
+         */
+        @JvmStatic
+        fun letterKeyWidthPx(): Float {
+            val kb = prevKeyboard ?: return 0f
+            val key = kb.sortedKeys.firstOrNull { Character.isLetter(it.code) } ?: return 0f
+            return key.width.toFloat()
+        }
+
         /** Which bucket of learned geometry the current layout and orientation belong to. */
         @JvmStatic
         fun currentTouchModelLayoutKey(): String? {

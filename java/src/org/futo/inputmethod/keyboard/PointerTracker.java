@@ -26,7 +26,6 @@ import org.futo.inputmethod.engine.IMEInterfaceKt;
 import org.futo.inputmethod.engine.StateHint;
 import org.futo.inputmethod.keyboard.internal.BackspaceSlideMode;
 import org.futo.inputmethod.keyboard.internal.BackspaceSwipeUp;
-import org.futo.inputmethod.keyboard.internal.WordGestureTrail;
 import org.futo.inputmethod.keyboard.internal.BatchInputArbiter;
 import org.futo.inputmethod.keyboard.internal.BatchInputArbiter.BatchInputArbiterListener;
 import org.futo.inputmethod.keyboard.internal.BogusMoveEventDetector;
@@ -218,12 +217,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     /** Whether this touch has already deleted a word with an upward swipe. */
     private boolean mBackspaceSwipeUpFired;
 
-    /** This stroke's path in view pixels, for the word-level gesture trail. */
-    private static final int WORD_GESTURE_MAX_POINTS = 192;
-    private static final float WORD_GESTURE_MIN_SPACING_SQ = 16.0f * 16.0f;
-    private final float[] mWordGestureXs = new float[WORD_GESTURE_MAX_POINTS];
-    private final float[] mWordGestureYs = new float[WORD_GESTURE_MAX_POINTS];
-    private int mWordGesturePointCount;
 
     /**
      * When a plain tap released the delete key, so a slide starting soon after can tell that it
@@ -667,36 +660,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         sTimerProxy.cancelLongPressTimersOf(this);
     }
 
-    /**
-     * Collects this stroke's path in view pixels, for the word-level trail.
-     *
-     * A private copy rather than a read of {@link GestureStrokeDrawingPoints}, whose buffers are
-     * private and are consumed by the live preview as it draws. Sampled every few pixels, because
-     * the drawn path does not need the resolution the decoder gets.
-     */
-    private void appendWordGesturePoint(final int x, final int y) {
-        // Only a touch that began on a letter can become a word gesture. Backspace slides and
-        // enter swipes reach this method through the historical-point loop, which runs for every
-        // touch, and their points have no business in a word's trail.
-        if (mDownKey == null || !Character.isLetter(mDownKey.getCode())) return;
-        if (mWordGesturePointCount >= WORD_GESTURE_MAX_POINTS) return;
-        if (mWordGesturePointCount > 0) {
-            final float dx = x - mWordGestureXs[mWordGesturePointCount - 1];
-            final float dy = y - mWordGestureYs[mWordGesturePointCount - 1];
-            if (dx * dx + dy * dy < WORD_GESTURE_MIN_SPACING_SQ) return;
-        }
-        mWordGestureXs[mWordGesturePointCount] = x;
-        mWordGestureYs[mWordGesturePointCount] = y;
-        mWordGesturePointCount++;
-    }
-
-    /** Hands the finished stroke to the word-level trail, if it became a gesture at all. */
-    private void recordWordGestureSwipe() {
-        if (mWordGesturePointCount >= 2) {
-            WordGestureTrail.addSwipe(mWordGestureXs, mWordGestureYs, mWordGesturePointCount);
-        }
-        mWordGesturePointCount = 0;
-    }
 
     private void showGestureTrail() {
         if (mIsTrackingForActionDisabled) {
@@ -916,12 +879,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             // each step while the origin stays put, since escalation measures total travel.
             mBackspaceSlide = new BackspaceSlideMode.State(x, 0, 0);
             mBackspaceSwipeUpFired = false;
-            // Start this stroke's trail buffer empty. Without this the buffer keeps whatever a
-            // previous touch left in it: historical points are fed to the gesture path for every
-            // touch, including taps and slides on backspace or enter, and only a completed word
-            // gesture ever flushes the buffer. Those leftovers were then drawn joined onto the
-            // front of the next real swipe.
-            mWordGesturePointCount = 0;
             // Decided here, once, rather than during the slide. mStartTime is this touch's own
             // down time on the same clock as the release stamp below. eventTime elsewhere in this
             // class runs on a different clock and is deliberately not compared with it.
@@ -966,7 +923,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         }
         mGestureStrokeDrawingPoints.onMoveEvent(
                 x, y, mBatchInputArbiter.getElapsedTimeSinceFirstDown(eventTime));
-        appendWordGesturePoint(x, y);
         // If the MoreKeysPanel is showing then do not attempt to enter gesture mode. However,
         // the gestured touch points are still being recorded in case the panel is dismissed.
         if (isShowingMoreKeysPanel()) {
@@ -1393,10 +1349,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                     eventTime, getActivePointerTrackerCount(), this)) {
                 sInGesture = false;
             }
-            // Here, once, rather than inside showGestureTrail. That method runs on every move
-            // event while a gesture is in flight, so flushing from it emptied the buffer as soon
-            // as the gesture started and left only the opening fragment to draw.
-            recordWordGestureSwipe();
             showGestureTrail();
             return;
         }
@@ -1703,11 +1655,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         }
 
         final int code = key.getCode();
-        // Record the touch point, not the key centre, so the marker sits where the finger landed.
-        // Letters only: a shift or a delete is not part of the word being spelled.
-        if (Character.isLetter(code)) {
-            WordGestureTrail.addTap(mStartX, mStartY);
-        }
         callListenerOnCodeInput(key, code, x, y, eventTime, false /* isKeyRepeat */);
         callListenerOnRelease(key, code, false /* withSliding */);
     }

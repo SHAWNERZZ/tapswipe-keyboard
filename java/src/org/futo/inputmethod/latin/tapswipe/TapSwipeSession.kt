@@ -39,14 +39,32 @@ class TapSwipeSession {
         val y: FloatArray,
         val t: FloatArray,
         /** Code point, for TAP strokes where the key identity is known. */
-        val codePoint: Int
+        val codePoint: Int,
+        /**
+         * The same points in keyboard view pixels, for drawing.
+         *
+         * Carried here rather than collected separately by the touch layer. The drawing has to
+         * agree with this list about which strokes exist, in what order, and how many there are,
+         * and the only way to guarantee that is for both to come from the same place. A parallel
+         * copy assembled from touch events drifted on all three counts: it ordered two-thumb swipes
+         * by which finger lifted while this list orders them by which went down, and it applied
+         * different tests for whether a stroke happened at all.
+         *
+         * Empty when the caller had no view coordinates, which happens for a key with no proximity
+         * correction. Such a stroke simply is not drawn.
+         */
+        val viewX: FloatArray = EMPTY_POINTS,
+        val viewY: FloatArray = EMPTY_POINTS
     ) {
         val isEmpty: Boolean get() = x.isEmpty()
+        val hasViewPoints: Boolean get() = viewX.isNotEmpty() && viewX.size == viewY.size
         fun toSeg(): SwipeDecoder.SwipeSeg = SwipeDecoder.SwipeSeg(x, y, t)
     }
 
     companion object {
         const val TAG = "TapSwipeSession"
+
+        private val EMPTY_POINTS = FloatArray(0)
 
         /**
          * Fail-safe cap. Past this many strokes something has leaked; we log loudly and reset
@@ -257,14 +275,27 @@ class TapSwipeSession {
         return true
     }
 
-    fun addTap(codePoint: Int, x: Float, y: Float, t: Float, hand: Hand = Hand.LEFT): Boolean =
-        addStroke(
+    /**
+     * @param x,y the tap in normalized layout space, for the decoder
+     * @param viewX,viewY the same tap in keyboard view pixels, for drawing. Pass a negative value
+     *   when the touch position is unknown, which happens for a key with no proximity correction.
+     */
+    @JvmOverloads
+    fun addTap(
+        codePoint: Int, x: Float, y: Float, t: Float, hand: Hand = Hand.LEFT,
+        viewX: Float = -1f, viewY: Float = -1f
+    ): Boolean {
+        val hasView = viewX >= 0f && viewY >= 0f
+        return addStroke(
             Stroke(
                 Kind.TAP, hand,
                 floatArrayOf(x), floatArrayOf(y), floatArrayOf(t),
-                codePoint
+                codePoint,
+                if (hasView) floatArrayOf(viewX) else EMPTY_POINTS,
+                if (hasView) floatArrayOf(viewY) else EMPTY_POINTS
             )
         )
+    }
 
     /**
      * Deep-copies the gesture segments of a completed batch into the session.
@@ -295,17 +326,23 @@ class TapSwipeSession {
             val xs = FloatArray(n)
             val ys = FloatArray(n)
             val ts = FloatArray(n)
+            // The same points twice: normalized for the decoder, and as they arrived for drawing.
+            // Taken here so both come from one segment at one moment.
+            val viewXs = FloatArray(n)
+            val viewYs = FloatArray(n)
             val rawX = seg.x.primitiveArray
             val rawY = seg.y.primitiveArray
             val rawT = seg.t.primitiveArray
             for (i in 0 until n) {
-                xs[i] = normalizeX(rawX[i].toFloat())
-                ys[i] = normalizeY(rawY[i].toFloat())
+                viewXs[i] = rawX[i].toFloat()
+                viewYs[i] = rawY[i].toFloat()
+                xs[i] = normalizeX(viewXs[i])
+                ys[i] = normalizeY(viewYs[i])
                 ts[i] = rawT[i] + shift
             }
 
             val hand = if (seg.pointerId == 1) Hand.RIGHT else Hand.LEFT
-            if (addStroke(Stroke(Kind.SWIPE, hand, xs, ys, ts, 0))) added++
+            if (addStroke(Stroke(Kind.SWIPE, hand, xs, ys, ts, 0, viewXs, viewYs))) added++
         }
         return added
     }
