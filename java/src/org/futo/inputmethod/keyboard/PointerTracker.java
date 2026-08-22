@@ -242,14 +242,18 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     /**
      * How far the finger may stray on the delete key before its auto-repeat is called off.
      *
-     * Deliberately far below one step of any granularity. Auto-repeat and slide-to-delete both
-     * begin with a finger resting on backspace, and the repeat timer fires on a clock while the
-     * slide waits for distance - so a slow slide used to have a word deleted out from under it
-     * before its first step ever registered, which is not something the slide can undo. Movement
-     * this far is not a hold, whether or not it has yet earned a step.
+     * Below one character step, so a slide always silences the repeat before its own first step
+     * lands. Auto-repeat and slide-to-delete both begin with a finger resting on backspace, and
+     * the repeat timer fires on a clock while the slide waits for distance. A slow slide used to
+     * have a word deleted out from under it, which is not something the slide can undo.
+     *
+     * Not much below it, though. A finger holding a key is never perfectly still, and every pixel
+     * between this and the step is a gap where the repeat has stopped and the slide has not
+     * started, so the key appears to do nothing. Widened once after that gap was reported as a
+     * hold being easy to lose by accident.
      */
     private static final int BACKSPACE_SLIDE_SLOP_PX =
-            (int)(6.0 * Resources.getSystem().getDisplayMetrics().density);
+            (int)(11.0 * Resources.getSystem().getDisplayMetrics().density);
 
     /**
      * How many characters the editor moved over during the delete-step in progress.

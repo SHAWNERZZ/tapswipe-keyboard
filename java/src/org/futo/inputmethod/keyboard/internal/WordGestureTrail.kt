@@ -70,21 +70,30 @@ object WordGestureTrail {
     /**
      * Whether a stroke should be drawn as a tap rather than as a path.
      *
-     * Decided by how far the finger travelled, not by how the session labelled the stroke. A tap
-     * made while another finger is mid-swipe reaches the session through the swipe path and is
-     * recorded as a swipe, because the flag that says "a gesture is in progress" is shared by every
-     * finger. Drawing that as a path would show a stroke the user never made.
+     * Decided by what the finger did, not by how the session labelled the stroke. A tap made while
+     * another finger is mid-swipe reaches the session through the swipe path and is recorded as a
+     * swipe, because the flag that says "a gesture is in progress" is shared by every finger.
+     * Drawing that as a path would show a stroke the user never made.
      *
-     * Travel below one key width means the finger did not leave the key it started on, whatever the
-     * label says. Drawing it as a tap is what the user did.
+     * Two conditions, both required.
+     *
+     * The stroke has to be short, no further than one key width. And it has to have stayed on one
+     * key. Distance alone is not enough: a swipe between two neighbouring keys can travel less than
+     * a key width if it runs edge to edge, and drawing that as a dot hides a real swipe. Swiping
+     * `bet` and then `er` should show two paths, not a path and a dot.
      *
      * @param keyWidthPx width of a letter key. A non-positive value disables the test, so an
      *   unknown key width leaves the session's own labelling in charge.
+     * @param stayedOnOneKey whether every point falls on the key the stroke began on. See
+     *   [withinKey], which the caller uses to work this out.
      */
     @JvmStatic
-    fun looksLikeTap(xs: FloatArray, ys: FloatArray, keyWidthPx: Float): Boolean {
+    fun looksLikeTap(
+        xs: FloatArray, ys: FloatArray, keyWidthPx: Float, stayedOnOneKey: Boolean
+    ): Boolean {
         if (xs.size <= 1) return true
         if (keyWidthPx <= 0f) return false
+        if (!stayedOnOneKey) return false
 
         var minX = xs[0]; var maxX = xs[0]
         var minY = ys[0]; var maxY = ys[0]
@@ -96,7 +105,32 @@ object WordGestureTrail {
         }
         // The larger of the two extents, so a stroke that is long in one direction only still
         // counts as a swipe.
-        return max(abs(maxX - minX), abs(maxY - minY)) < keyWidthPx
+        return max(abs(maxX - minX), abs(maxY - minY)) <= keyWidthPx
+    }
+
+    /**
+     * Whether every point sits inside a key's box, allowing for the box being in the wrong place.
+     *
+     * The drawn key is where the layout puts it. Where the user's finger actually goes for that key
+     * can be somewhere else, which is the whole premise of the learned geometry. A tap that lands
+     * consistently low and left would otherwise cross the drawn boundary and be read as a swipe.
+     *
+     * [tolerancePx] absorbs that. Passing the cap the learned model is allowed to shift a key by
+     * means no amount of learning can move a key far enough to break this test, without this code
+     * having to read the model.
+     */
+    @JvmStatic
+    fun withinKey(
+        xs: FloatArray, ys: FloatArray,
+        left: Float, top: Float, right: Float, bottom: Float,
+        tolerancePx: Float
+    ): Boolean {
+        if (right <= left || bottom <= top) return false
+        for (i in xs.indices) {
+            if (xs[i] < left - tolerancePx || xs[i] > right + tolerancePx) return false
+            if (ys[i] < top - tolerancePx || ys[i] > bottom + tolerancePx) return false
+        }
+        return true
     }
 
     // ---------------------------------------------------------------- the grading rule

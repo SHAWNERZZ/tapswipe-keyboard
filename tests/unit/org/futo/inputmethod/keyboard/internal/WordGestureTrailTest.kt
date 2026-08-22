@@ -94,9 +94,13 @@ class WordGestureTrailTest {
 
     // ---------------------------------------------------------------- tap or path
 
+    /** Shorthand for a stroke that the caller found stayed on one key. */
+    private fun tapOf(xs: FloatArray, ys: FloatArray, onOneKey: Boolean = true) =
+        WordGestureTrail.looksLikeTap(xs, ys, keyWidth, onOneKey)
+
     @Test
     fun `a single point is a tap`() {
-        assertTrue(WordGestureTrail.looksLikeTap(floatArrayOf(5f), floatArrayOf(5f), keyWidth))
+        assertTrue(tapOf(floatArrayOf(5f), floatArrayOf(5f)))
     }
 
     /**
@@ -108,14 +112,14 @@ class WordGestureTrailTest {
     fun `a stroke that stayed inside one key is a tap`() {
         val xs = floatArrayOf(50f, 54f, 58f, 55f)
         val ys = floatArrayOf(50f, 52f, 49f, 51f)
-        assertTrue(WordGestureTrail.looksLikeTap(xs, ys, keyWidth))
+        assertTrue(tapOf(xs, ys))
     }
 
     @Test
     fun `a stroke that crossed a key width is a swipe`() {
         val xs = floatArrayOf(0f, 60f, 130f)
         val ys = floatArrayOf(0f, 5f, 8f)
-        assertFalse(WordGestureTrail.looksLikeTap(xs, ys, keyWidth))
+        assertFalse(tapOf(xs, ys))
     }
 
     /** Travel in either direction counts, so a vertical swipe is still a swipe. */
@@ -123,7 +127,7 @@ class WordGestureTrailTest {
     fun `a vertical stroke is measured too`() {
         val xs = floatArrayOf(10f, 12f, 11f)
         val ys = floatArrayOf(0f, 70f, 140f)
-        assertFalse(WordGestureTrail.looksLikeTap(xs, ys, keyWidth))
+        assertFalse(tapOf(xs, ys))
     }
 
     @Test
@@ -131,8 +135,8 @@ class WordGestureTrailTest {
         val justUnder = floatArrayOf(0f, keyWidth - 1f)
         val justOver = floatArrayOf(0f, keyWidth + 1f)
         val flat = floatArrayOf(0f, 0f)
-        assertTrue(WordGestureTrail.looksLikeTap(justUnder, flat, keyWidth))
-        assertFalse(WordGestureTrail.looksLikeTap(justOver, flat, keyWidth))
+        assertTrue(tapOf(justUnder, flat))
+        assertFalse(tapOf(justOver, flat))
     }
 
     /** With no layout applied there is no threshold, so shape cannot be judged. */
@@ -140,9 +144,57 @@ class WordGestureTrailTest {
     fun `an unknown key width leaves a multi-point stroke as a path`() {
         val xs = floatArrayOf(0f, 2f)
         val ys = floatArrayOf(0f, 2f)
-        assertFalse(WordGestureTrail.looksLikeTap(xs, ys, 0f))
+        assertFalse(WordGestureTrail.looksLikeTap(xs, ys, 0f, true))
         assertTrue("a single point is still a tap",
-            WordGestureTrail.looksLikeTap(floatArrayOf(1f), floatArrayOf(1f), 0f))
+            WordGestureTrail.looksLikeTap(floatArrayOf(1f), floatArrayOf(1f), 0f, true))
+    }
+
+    /**
+     * The reported case. Swiping `bet` and then `er` should draw two paths. An `e` to `r` swipe run
+     * edge to edge covers less than a key width, so distance alone would call it a tap and hide a
+     * real swipe. Leaving the key is what settles it.
+     */
+    @Test
+    fun `a short swipe between neighbouring keys is not a tap`() {
+        val xs = floatArrayOf(90f, 120f, 150f)
+        val ys = floatArrayOf(50f, 50f, 50f)
+        assertTrue("premise: this is short enough to fool the distance test alone",
+            WordGestureTrail.looksLikeTap(xs, ys, keyWidth, true))
+        assertFalse("leaving the key makes it a swipe", tapOf(xs, ys, onOneKey = false))
+    }
+
+    // ---------------------------------------------------------------- staying on a key
+
+    @Test
+    fun `points inside the box are on the key`() {
+        assertTrue(WordGestureTrail.withinKey(
+            floatArrayOf(10f, 40f), floatArrayOf(10f, 40f), 0f, 0f, 50f, 50f, 0f))
+    }
+
+    @Test
+    fun `a point outside the box is not`() {
+        assertFalse(WordGestureTrail.withinKey(
+            floatArrayOf(10f, 60f), floatArrayOf(10f, 10f), 0f, 0f, 50f, 50f, 0f))
+    }
+
+    /**
+     * The drawn key is where the layout puts it, and where a finger goes for that key can be
+     * elsewhere. The tolerance is what stops a consistently off-centre tap reading as a swipe.
+     */
+    @Test
+    fun `the tolerance lets a point sit just outside the drawn key`() {
+        val xs = floatArrayOf(10f, 60f)
+        val ys = floatArrayOf(10f, 10f)
+        assertFalse("no tolerance, so this is off the key",
+            WordGestureTrail.withinKey(xs, ys, 0f, 0f, 50f, 50f, 0f))
+        assertTrue("within the tolerance, so still the same key",
+            WordGestureTrail.withinKey(xs, ys, 0f, 0f, 50f, 50f, 15f))
+    }
+
+    @Test
+    fun `a box with no area holds nothing`() {
+        assertFalse(WordGestureTrail.withinKey(
+            floatArrayOf(0f), floatArrayOf(0f), 0f, 0f, 0f, 0f, 5f))
     }
 
     // ---------------------------------------------------------------- brightness

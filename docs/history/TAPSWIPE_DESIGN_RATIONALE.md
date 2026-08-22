@@ -1,61 +1,34 @@
-# TapSwipe — historical design record
+# TapSwipe design rationale
 
-> **Read this first.**
->
-> This document is a historical design record. It contains superseded
-> plans, original checklists, and implementation history. Do not treat
-> any "Original plan" or completed-phase checklist here as pending work.
->
-> For current behavior, read `TAPSWIPE_ARCHITECTURE.md`.
-> For testing, read `TAPSWIPE_TESTING.md`.
-> For fix-by-fix history, read `docs/history/TAPSWIPE_IMPLEMENTATION_HISTORY.md`.
+Why the design is what it is. Historical, and kept for the reasoning
+rather than for the conclusions.
 
-## Why keep this document
+Some decisions here were later settled differently. Read the superseded
+list below before quoting anything from this document.
 
-The original plan captures the reasoning that led to the current
-architecture. Later work resolved some decisions differently. Use this
-document to answer "why did we choose this" questions. Use the
-architecture doc to answer "what does it do now" questions.
+For current behavior, read `TAPSWIPE_ARCHITECTURE.md`.
+For the fix-by-fix record, read `TAPSWIPE_IMPLEMENTATION_HISTORY.md`.
+
+Never treat a section here as pending work.
 
 ## Superseded or resolved decisions
 
-Read these before quoting the plan.
+Read these before quoting the rest.
 
-- **Finalizers.** The plan opens with "space is the only finalizer". The
-  resolved decision is space, the existing separator punctuation, and
-  Enter. See `TAPSWIPE_ARCHITECTURE.md` §5.
-- **Peck mode entry.** The plan uses a length threshold. The current
-  code uses a cadence gate, decided per word and latched. See
-  `TAPSWIPE_ARCHITECTURE.md` §4.
-- **Tap dwell.** The plan spike S4 concluded a single raw point is
-  enough. Do not synthesize dwell.
-- **Cross-hand ordering.** The plan spike S2 confirmed the beam search
-  resolves interleaving through the lexicon, not by timestamps.
-- **Backspace.** Now two-tier, per `TAPSWIPE_ARCHITECTURE.md` §7.
+- **Finalizers.** The original plan opens with "space is the only
+  finalizer". The resolved decision is space, the existing separator
+  punctuation, and Enter. See `TAPSWIPE_ARCHITECTURE.md` section 5.
+- **Peck mode entry.** The plan uses a length threshold. The code uses a
+  cadence gate, decided per word and latched, plus an idle timeout. See
+  section 4 of the architecture.
+- **Tap dwell.** Spike S4 concluded a single raw point is enough. Do not
+  synthesize dwell.
+- **Cross-hand ordering.** Spike S2 confirmed the beam search resolves
+  interleaving through the lexicon, not by timestamps.
+- **Backspace.** Now four gestures on one key. See section 7 of the
+  architecture.
 - **Peck-mode strip.** Suggestions remain tappable. Only autocorrect is
   gated.
-
-## Reading the plan
-
-The remainder of this document (below the `<!-- BEGIN HISTORICAL PLAN -->
-
-# TapSwipe — implementation plan
-
-TapSwipe reimplements the input model of the discontinued **Nintype** keyboard on top of FUTO's
-neural swipe decoder. "Nintype" below refers to that original keyboard; "TapSwipe" refers to this
-implementation.
-
-Personal fork, published at https://github.com/SHAWNERZZ/tapswipe-keyboard.
-Changes are not submitted upstream to FUTO.
-
-Target behaviour (from the original Nintype keyboard):
-
-1. **Peck mode** — a word in which no swipe occurred. No autocorrect, no gesture suggestions. The literal tapped string is committed verbatim even if out-of-dictionary, then learned so it becomes swipeable later.
-2. **Swipe mode** — a word built from *interleaved taps and swipes*, including two thumbs operating with temporal overlap. `tap H, tap E, tap L, swipe L→O` ⇒ `hello`. Thumb A `S→A→W` overlapping thumb B `H→N` ⇒ `shawn`.
-3. **Space is the only finalizer.** Lifting a finger never commits. Further taps/swipes keep accumulating and re-decode into a new candidate. Modes are implicit — never surfaced to the user.
-4. **Gestures that are not words.** Shapes claimed before the decoder sees them (a pull from V to the space bar for a comma), directional shortcuts off keys that never spell (punctuation and actions off enter), and a slide-to-delete that changes granularity when it reverses. Nintype's own wiki calls these "edge slide shortcuts" and treats them as a general system rather than a fixed list — see Phase 9.
-
----
 
 ## 0. Key findings that shape the design
 

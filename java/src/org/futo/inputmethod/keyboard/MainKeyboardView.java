@@ -47,6 +47,7 @@ import org.futo.inputmethod.keyboard.internal.WordGestureTrailPreview;
 import org.futo.inputmethod.latin.SwipeDecoderDictionaryKt;
 import org.futo.inputmethod.latin.uix.DataStoreHelper;
 import org.futo.inputmethod.keyboard.internal.KeyDrawParams;
+import org.futo.inputmethod.keyboard.internal.KeyboardStateKt;
 import org.futo.inputmethod.keyboard.internal.KeyPreviewChoreographer;
 import org.futo.inputmethod.keyboard.internal.KeyPreviewDrawParams;
 import org.futo.inputmethod.keyboard.internal.KeyPreviewView;
@@ -409,6 +410,15 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
                 keyboard, -getPaddingLeft(), -getPaddingTop() + getVerticalCorrection());
         PointerTracker.setKeyDetector(mKeyDetector);
         mMoreKeysKeyboardCache.clear();
+
+        // The word's gestures were drawn against the letter layout, so they mean nothing over the
+        // symbols or number pad. Their coordinates would point at whatever key now occupies that
+        // space. Cleared on the way out rather than hidden, because the word ends when the layout
+        // changes under it anyway.
+        mWordGestureTrailPreview.setPreviewEnabled(
+                KeyboardStateKt.isAlphabet(keyboard.mId.mElement.getKind())
+                        && DataStoreHelper.getSetting(
+                                SwipeDecoderDictionaryKt.getTapSwipeWordTrailsSetting()));
 
         mSpaceKey = keyboard.getKey(Constants.CODE_SPACE);
         final int keyHeight = keyboard.mMostCommonKeyHeight - keyboard.mVerticalGap;

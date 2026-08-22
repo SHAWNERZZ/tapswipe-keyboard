@@ -62,6 +62,7 @@ import org.futo.inputmethod.latin.tapswipe.TapSwipeMode;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeSession;
+import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel;
 import org.futo.inputmethod.keyboard.internal.WordGestureTrail;
 import org.futo.inputmethod.latin.tapswipe.WholeWordDelete;
 import org.futo.inputmethod.latin.uix.DataStoreHelper;
@@ -356,6 +357,12 @@ public final class InputLogic {
         if (!isTapSwipeMode()) return TapSwipeMode.SWIPE;
         if (mTapSwipeSession.getHasSwipe()) return TapSwipeMode.SWIPE;
 
+        // A password field is always peck, whatever the cadence says. Nothing typed here is a word
+        // the decoder should guess at, and under Master Mode the letters need to be readable while
+        // entering a string that cannot be checked by reading it back. Learning is suppressed
+        // separately, in isTapSwipeLearningAllowed.
+        if (isPasswordField()) return TapSwipeMode.PECK;
+
         if (mTapSwipeSession.getLatchedMode() == TapSwipeMode.PECK) return TapSwipeMode.PECK;
 
         // Peck is decided purely on how deliberately the word is being tapped. A word-length gate
@@ -381,6 +388,24 @@ public final class InputLogic {
      */
     public boolean isTapSwipePeckWord() {
         return tapSwipeMode() == TapSwipeMode.PECK;
+    }
+
+    private boolean isPasswordField() {
+        final SettingsValues values = Settings.getInstance().getCurrent();
+        return values != null && values.mInputAttributes != null
+                && values.mInputAttributes.mIsPasswordField;
+    }
+
+    /**
+     * Whether anything typed now may be remembered.
+     *
+     * False in a password field. Peck words are force-learned so they become swipeable, and key
+     * geometry is learned from where fingers land, and neither is wanted for a password. Stock
+     * already declines to add these to the dictionary; this covers the two fork paths that do their
+     * own learning.
+     */
+    public boolean isTapSwipeLearningAllowed() {
+        return !isPasswordField();
     }
 
     /**
@@ -809,8 +834,17 @@ public final class InputLogic {
             if (!s.getHasViewPoints()) continue;
             final float[] xs = s.getViewX();
             final float[] ys = s.getViewY();
+
+            // A short stroke is only a tap if it also stayed on one key. The box is allowed to be
+            // in the wrong place by up to the cap the learned model may shift a key, so a finger
+            // that consistently lands off-centre is not read as swiping.
+            final float[] box = SwipeDecoderDictionary.keyBoundsAt(xs[0], ys[0]);
+            final boolean stayedOnOneKey = box != null && WordGestureTrail.withinKey(
+                    xs, ys, box[0], box[1], box[2], box[3],
+                    keyWidth * TapSwipeTouchModel.MAX_SHIFT_FRACTION);
+
             out.add(new WordGestureTrail.Gesture(
-                    WordGestureTrail.looksLikeTap(xs, ys, keyWidth), xs, ys));
+                    WordGestureTrail.looksLikeTap(xs, ys, keyWidth, stayedOnOneKey), xs, ys));
         }
         WordGestureTrail.publish(out);
     }
@@ -823,6 +857,7 @@ public final class InputLogic {
      */
     private void maybeLearnTapSwipeGeometry(final SettingsValues settingsValues) {
         if (!TapSwipeLearner.isEnabled()) return;
+        if (!isTapSwipeLearningAllowed()) return;
         try {
             final LastComposedWord last = mLastComposedWord;
             final String committed = (last != null && last.mCommittedWord != null)
@@ -3072,7 +3107,9 @@ public final class InputLogic {
         // every dictionary. Without this an out-of-dictionary word is stored with count 0, has no
         // usable probability, and stays unreachable by the swipe decoder until a second commit.
         // Only affects words that are actually OOV; known words already have a real frequency.
-        final boolean forceValidWord = isTapSwipePeckWord();
+        // Not in a password field. Peck is forced there, so without this check every password
+        // would be force-learned as a valid word and become swipeable afterwards.
+        final boolean forceValidWord = isTapSwipePeckWord() && isTapSwipeLearningAllowed();
 
         mIme.addToHistory(suggestion, wasAutoCapitalized,
                 ngramContext, timeStampInSeconds, settingsValues.mBlockPotentiallyOffensive,

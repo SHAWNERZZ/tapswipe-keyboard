@@ -594,6 +594,24 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             return key.width.toFloat()
         }
 
+        /**
+         * The box of the key under a view point, as left, top, right, bottom in view pixels.
+         *
+         * For deciding whether a drawn stroke stayed on one key. Null when no layout is applied or
+         * the point is not on a key.
+         */
+        @JvmStatic
+        fun keyBoundsAt(x: Float, y: Float): FloatArray? {
+            val kb = prevKeyboard ?: return null
+            val xi = x.toInt()
+            val yi = y.toInt()
+            val key = kb.getNearestKeys(xi, yi).firstOrNull { it.isOnKey(xi, yi) } ?: return null
+            return floatArrayOf(
+                key.x.toFloat(), key.y.toFloat(),
+                (key.x + key.width).toFloat(), (key.y + key.height).toFloat()
+            )
+        }
+
         /** Which bucket of learned geometry the current layout and orientation belong to. */
         @JvmStatic
         fun currentTouchModelLayoutKey(): String? {

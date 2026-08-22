@@ -5,7 +5,7 @@ checklists. It is read-only reference material. Do not treat entries
 here as pending work.
 
 For current behavior, read `TAPSWIPE_ARCHITECTURE.md`.
-For rationale that led to the design, read `TAPSWIPE_PLAN.md`.
+For rationale that led to the design, read `TAPSWIPE_DESIGN_RATIONALE.md`.
 
 ## How to read this document
 

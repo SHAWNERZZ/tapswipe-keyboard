@@ -16,7 +16,7 @@ Use this before merging or accepting a TapSwipe change.
    match the architecture doc, or the doc must be updated in the same
    change.
 
-3. **Do not use `TAPSWIPE_PLAN.md` as a source of truth.** Use it only
+3. **Do not use `docs/history/` as a source of truth.** Use it only
    for historical rationale. Never treat an original checklist or a
    completed phase as pending work.
 

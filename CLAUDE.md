@@ -33,14 +33,15 @@ git log --oneline tapswipe..dev     # written but not released
 gh release list --repo SHAWNERZZ/tapswipe-keyboard --limit 3
 ```
 
-As of 2026-08-20, the latest release is `tapswipe-v0.7.1`. Three code
-commits sit on `dev` and are not released. All three rework the
-backspace slide. The user has tested each round on hardware and reported
-back. The last round removed a dead zone that blocked the reversal
-gesture. That round is built and pushed. On-device confirmation is still
-open.
+As of 2026-08-22, the latest release is `tapswipe-v0.7.1`. Everything in
+`docs/plans/BACKSPACE_REDESIGN.md` is built and unreleased. That is the
+backspace rework: four gestures on the key, three tap tiers, and the
+gesture trails that make the tap tiers aimable.
 
 Release when the user asks. Do not release on your own.
+
+Keep this section short and dated. A stale note here is worse than none,
+because it invites acting on a state that no longer exists.
 
 ## How this project runs
 
@@ -74,19 +75,17 @@ question.
    and known risks
 3. `TAPSWIPE_TESTING.md`. How to run tests and the manual matrix
 4. `README.md`. User-facing overview and license notice
-5. `TAPSWIPE_PLAN.md`. Historical rationale only; do not treat as pending
-   work
-6. `docs/history/TAPSWIPE_IMPLEMENTATION_HISTORY.md`. Completed phases
-   and fixes, kept for context
-7. `docs/plans/`. Agreed and not yet built. Check each item against the
+5. `docs/history/`. Why the design is what it is, and the fix-by-fix
+   record. Historical only; never treat as pending work
+6. `docs/plans/`. Agreed and not yet built. Check each item against the
    code before you act on it
 
 Never treat an "Original plan" section or a completed phase checklist as
 an open task. Verify claims against the current code first.
 
 Planned work goes in `docs/plans/`, one file per initiative. Move a plan
-to `docs/history/` when it ships. Do not write planned work into
-`TAPSWIPE_PLAN.md`. That file is historical.
+to `docs/history/` when it ships. Nothing in `docs/history/` is pending,
+whatever it appears to propose.
 
 ## Working rules
 

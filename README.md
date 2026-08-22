@@ -82,7 +82,7 @@ are capped, confidence-gated, suppressed on keys you hit inconsistently, and fad
 **Learned key geometry** draws the model over your layout and replays the last word it learned from,
 at the timing you typed it.
 
-Design notes and the full bug history are in [TAPSWIPE_PLAN.md](TAPSWIPE_PLAN.md); the testing
+Design notes and the full bug history are in [docs/history/](docs/history/); the testing
 approach is in [TAPSWIPE_TESTING.md](TAPSWIPE_TESTING.md).
 
 ## Licensing

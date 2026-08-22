@@ -1,8 +1,7 @@
 # TapSwipe architecture (current behavior)
 
-This document describes what the code does **today**. Historical rationale
-lives in `TAPSWIPE_PLAN.md`. Completed phases and fix history live in
-`docs/history/TAPSWIPE_IMPLEMENTATION_HISTORY.md`.
+This document describes what the code does **today**. Why it is that way,
+and how it got there, live in `docs/history/`.
 
 If this document conflicts with the code, the code wins. Fix this
 document, then continue.
