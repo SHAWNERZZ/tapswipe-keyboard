@@ -879,6 +879,36 @@ object TapSwipeScenarios {
                 check = { _ -> if (detail.startsWith("OK")) null else detail })
         },
 
+        run {
+            var afterPop = ""
+            Scenario("popping a swipe leaves the taps that preceded it",
+                group = "Stroke undo",
+                // The reported case, typed as three taps and a swipe. Removing the swipe must put
+                // the word back to what the taps spell. Deleting one code point instead leaves the
+                // decoded word short of a letter, which no surviving stroke accounts for, and the
+                // remaining presses then walk that wrong word down one letter at a time.
+                //
+                // Asserts a prefix rather than a decoded word: the taps are exact, and what the
+                // swipe decoded to is the decoder's business.
+                run = { ime ->
+                    clearField(ime)
+                    tap(ime, 'w'.code); settle()
+                    tap(ime, 'o'.code); settle()
+                    tap(ime, 'r'.code); settle()
+                    swipe(ime, "king"); settle()
+                    tap(ime, Constants.CODE_DELETE); settle()
+                    afterPop = textBeforeCursor(ime).trim()
+                },
+                check = {
+                    when {
+                        afterPop.equals("wor", ignoreCase = true) -> null
+                        afterPop.length > 3 ->
+                            "popping the swipe left decoded text behind: '$afterPop'"
+                        else -> "expected 'wor' after popping the swipe, got '$afterPop'"
+                    }
+                })
+        },
+
         // --- grace reopen (tier 0) ----------------------------------------------------------
         // One backspace, right after a word finishes, should pop its last stroke rather than
         // deleting a raw character or (with whole-word backspace on) the whole word outright.

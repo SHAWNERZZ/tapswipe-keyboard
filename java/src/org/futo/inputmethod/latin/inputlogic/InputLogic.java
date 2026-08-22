@@ -609,6 +609,11 @@ public final class InputLogic {
      */
     private boolean handleTapSwipeStrokeUndo(final Event event,
             final InputTransaction inputTransaction) {
+        // Noted before the pop, because what was removed decides how the remainder is rewritten.
+        final java.util.List<TapSwipeSession.Stroke> before = mTapSwipeSession.getStrokes();
+        final boolean poppedSwipe = !before.isEmpty()
+                && before.get(before.size() - 1).getKind() == TapSwipeSession.Kind.SWIPE;
+
         if (!mTapSwipeSession.popLastStroke()) return false;
 
         // Keep the drawn gestures in step with the evidence. The brightest trail is what the next
@@ -640,12 +645,45 @@ public final class InputLogic {
             return true;
         }
 
-        // No swipe left, so there is nothing to decode - the composing text is the literal the
-        // user tapped, and one code point comes off it.
+        // A swipe was just removed and none is left, so the composing text is still the word that
+        // swipe was decoded into. The remaining strokes are taps, and taps spell themselves, so the
+        // word is now their literal.
+        //
+        // Deleting one code point here instead would leave the decoded word short of a letter,
+        // which is not what any surviving stroke says. Typing "working" as three taps and a swipe
+        // and then undoing gesture by gesture used to give "workin", "worki", "work", and then an
+        // empty field: four presses, each removing one letter of a decode that no longer applied,
+        // rather than one press removing the swipe and three removing the taps.
+        if (poppedSwipe) {
+            final String literal = mTapSwipeSession.getLiteralText();
+            if (literal.isEmpty()) {
+                mWordComposer.reset(true);
+                mConnection.commitText("", 1);
+                resetTapSwipeSession("stroke undo left no spellable strokes");
+                inputTransaction.setRequiresUpdateSuggestions();
+                return true;
+            }
+            final int[] codePoints = StringUtils.toCodePointArray(literal);
+            mWordComposer.setComposingWord(
+                    codePoints, mImeHelper.getCodepointCoordinates(codePoints));
+            setComposingTextInternal(getTextWithUnderline(literal), 1);
+            mTapSwipeSession.noteComposingWrite(
+                    literal, mConnection.getExpectedSelectionStart());
+            inputTransaction.setRequiresUpdateSuggestions();
+            if (DEBUG_TAPSWIPE) {
+                Log.d(TAG, "tapswipe stroke undo -> swipe removed, back to literal '" + literal
+                        + "' (" + mTapSwipeSession.getStrokes().size() + " tap(s) left)");
+            }
+            return true;
+        }
+
+        // A tap was removed from a word that was already only taps, so the composing text is the
+        // literal and one code point comes off it.
         //
         // Deliberately NOT rewritten from the session's derived literalText: a code point the
         // layout cannot place (an apostrophe, say) never became a stroke, so that string can be
-        // missing characters the composer legitimately holds.
+        // missing characters the composer legitimately holds. That risk is accepted above, where
+        // the alternative is provably wrong, and avoided here, where it is not.
         //
         // Handled here rather than by falling through to the ordinary delete branch, because that
         // branch would change the composing word without telling the session - and the next
