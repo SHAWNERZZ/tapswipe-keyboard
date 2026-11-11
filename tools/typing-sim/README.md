@@ -1,0 +1,95 @@
+# Typing simulator
+
+Types words on the real keyboard in an emulator, scores each word, and
+names the mechanism behind each failure. Design and reasons:
+`docs/plans/TYPING_SIMULATOR.md`.
+
+## Parts
+
+| Part | Where | What it does |
+|---|---|---|
+| Recorder | `TypingTestRecorder`, `TypingTestEvents` in the app | Writes touches and keyboard decisions to `files/recordings/<id>.jsonl`, only for a field with the marker |
+| Target field | `TypingSimTargetActivity` in the app | One text field with the marker. Not exported. |
+| Touch player | `player/TouchPlayer.java` | Runs on the emulator through `app_process`. Injects multi-pointer touch events with real timing. |
+| Host | `sim.py`, `simlib/` | Builds finger paths, plays them, reads the recording, scores, and writes a report |
+
+## Run it
+
+Run these commands from `tools/typing-sim`. The emulator is
+`tapswipe-sim`, on port 5580.
+
+1. Start the emulator, if it is not running.
+
+   ```
+   /opt/android-sdk/emulator/emulator -avd tapswipe-sim -port 5580 \
+     -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+   ```
+
+2. Build the player once.
+
+   ```
+   python3 sim.py build-player
+   ```
+
+3. Install the dev build, select the keyboard, and import the user's
+   settings.
+
+   ```
+   python3 sim.py setup --apk ../../build/outputs/apk/unstable/debug/tapswipe-keyboard-unstable-debug.apk \
+     --settings /Documents/Notes/FUTOKeyboardSettings_2026-11-11_09-14-06.backup
+   ```
+
+4. Run a word list in some styles.
+
+   ```
+   python3 sim.py run --list long-words --styles S,T,S+T,T+S,S+S,S/S,mix --seed 11
+   ```
+
+   The report goes to `runs/<run id>/report.html`, with `results.json`
+   and the full `recording.jsonl` beside it. `runs/` is gitignored.
+
+5. Type one failed word again, with the same seed.
+
+   ```
+   python3 sim.py replay-word runs/<run id> <attempt index>
+   ```
+
+Unit tests for the host: `python3 -m unittest discover -s tests`.
+
+## Styles
+
+| Code | Style |
+|---|---|
+| `S` | One swipe |
+| `T` | All taps |
+| `S+T` | Swipe the start, tap the last 1 to 3 letters |
+| `T+S` | Tap the first 1 to 2 letters, swipe the rest |
+| `S+S` | Two swipes, one after the other |
+| `S/S` | Two swipes, two thumbs, overlapping in time |
+| `mix` | A random split into up to 4 strokes |
+
+## Verdicts and flags
+
+| Verdict | Meaning |
+|---|---|
+| `OK` | Committed the intended word |
+| `WRONG_DECODE` | The composing text was already wrong before space |
+| `WRONG_COMMIT` | The composing text was right, and space committed something else |
+| `SPLIT` | One word became two |
+| `LOST` | Nothing committed |
+
+| Flag | Meaning |
+|---|---|
+| `BACKSPACE_RECOVERS` | One backspace after the commit brought back the intended word. Bug A's signature. |
+| `LAST_STROKE_FLIP` | The decode of every stroke but the last was the intended word |
+
+## Gotchas
+
+- Force-stopping the app makes Android switch to another keyboard.
+  `setup` and every run select TapSwipe again.
+- The keyboard slides in. The first layout position is wrong. The host
+  waits for the settled `layout` event with a non-zero `viewW`.
+- Do not touch the emulator during a run. Any other input lands in the
+  recording.
+- Finger model defaults are guesses. Calibrate them from typing test
+  recordings.

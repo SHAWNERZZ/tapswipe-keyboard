@@ -25,6 +25,47 @@ needs that.
 - Git needs `safe.directory` for this repository, because the files
   belong to the share user, not root. Set globally for this one path.
 
+## 2026-11-11. Dismiss late reports of the keyboard's own cursor writes
+
+**Decision.** While a TapSwipe word is open, a selection report that
+names a cursor position from one of the keyboard's own recent writes
+(within one second) is dismissed, like a belated update.
+`TapSwipeOwnSelections` holds the positions.
+
+**Rejected.**
+
+- Stop resetting the session when the editor is not composing. That
+  hides the symptom, and a real cursor move by the user would then
+  extend the old word.
+- Delay the next tap until the editor confirms the decode's write. That
+  adds input latency, and the editor gives no reliable confirmation.
+- Fix it inside `RichInputConnection.isBelatedExpectedUpdate`. That
+  changes the check for every user, including stock typing. The bug only
+  exists where a decode rewrites text after a literal write.
+
+## 2026-11-11. The simulator injects touches through app_process
+
+**Decision.** A small Java program runs on the emulator as the shell
+user through `app_process`, as scrcpy does. It injects multi-pointer
+touch events through the hidden `InputManagerGlobal.injectInputEvent`.
+The text field is `TypingSimTargetActivity`, inside the app, not
+exported. The host reads the recorder's file through `adb root`.
+
+**Rejected.**
+
+- A separate driver app with an instrumentation test that injects
+  through `UiAutomation`. Same input path, but a second app to build,
+  sign, and keep in step, for no gain in fidelity.
+- `adb shell input motionevent`. One pointer only and coarse timing.
+  It cannot make two thumbs overlap.
+- Dispatching `MotionEvent`s straight into `MainKeyboardView`. That
+  skips the system input pipeline, which batches and resamples real
+  touches.
+
+**Consequence.** The target activity ships in every APK, including
+published ones. It is not exported, so no other app can open it, and
+it records nothing unless it is open.
+
 ## 2026-11-11. The apostrophe layout is a setting, in a fork-owned folder
 
 **Decision.** `qwerty_nintype.yaml` moves to

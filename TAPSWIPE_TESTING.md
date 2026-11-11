@@ -6,6 +6,8 @@
 |------------------|--------------------------------------------|--------|
 | JVM unit tests   | `./gradlew testUnstableDebugUnitTest`      | no     |
 | Scenario runner  | Memory Debug action → **Run scenarios**    | yes    |
+| Typing simulator | `tools/typing-sim/sim.py run` (emulator)   | emulator |
+| Typing test      | TapSwipe settings → **Typing test**        | yes    |
 | Manual checklist | The checklist below                        | yes    |
 
 Do not record scenario counts here. They drift. Use the runner output.
@@ -18,6 +20,7 @@ Choose the smallest layer that can catch the change.
 |-------------------------------------------------------------------------------------------------------------------|----------------------------------------------|
 | Pure logic in `TapSwipeSession`, `TapSwipeInputBuilder`, `TapSwipeMode`, `BackspaceSlideMode`, gesture arithmetic  | JVM unit tests                               |
 | Anything that touches `InputLogic`, `WordComposer`, `SwipeDecoderDictionary`, `GeneralIME`, `PointerTracker`, `BatchInputArbiter` | Scenario runner                              |
+| Accuracy of real typing: tap and swipe mixes, two thumbs, wrong commits, backspace recovery                       | Typing simulator, then the typing test       |
 | Rendering, borders, mode indicators, key layout, real finger paths                                                | Manual checklist                             |
 | Learned geometry, persistence across install                                                                      | Release checklist                            |
 
@@ -41,6 +44,24 @@ layer controls. Check the harness before you trust a failure.
 | session survived a cursor move | it did not. The check read `getTextBeforeCursor` in a scenario that parks the caret at position 0 |
 | swipe-then-tap committed the wrong word | the decoder picked a different word for an ambiguous two-key swipe. The check asserted the word instead of the invariant |
 | word lost on swipe/space/swipe | real. The window is under 50 ms. See the known limitation below |
+
+## Typing simulator and typing test
+
+The simulator injects real touch events on the `tapswipe-sim` emulator
+and scores every word. How to run it: `tools/typing-sim/README.md`.
+Design: `docs/plans/TYPING_SIMULATOR.md`.
+
+- It finds accuracy problems. It does not replace the scenario runner,
+  which asserts invariants.
+- It types with a finger model, not a finger. Confirm a finding on the
+  phone, or with a typing test recording, before you change a
+  threshold.
+- Run it with the user's settings imported. Most features are off by
+  default.
+
+The typing test is the phone side. The user types a word list, and the
+recording holds every touch with the intended word. Use recordings to
+calibrate the finger model and to replay real failures.
 
 ## The in-app scenario runner
 

@@ -105,6 +105,9 @@ object TypingTestRecorder {
             currentId = id
             currentFile = file
             recording = true
+            TapSwipeSession.resetListener = { reason, strokes, gen ->
+                TypingTestEvents.sessionReset(reason, strokes, gen)
+            }
             emit(event("recording_start").put("id", id).put("file", file.name))
             scheduleLayout("recording_start")
             file

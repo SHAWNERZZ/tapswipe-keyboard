@@ -89,8 +89,9 @@ def cmd_run(args) -> None:
                 continue
             attempts.append(a)
             mark = "ok " if a.verdict == "OK" else a.verdict
-            print(f"[{n}/{total}] {st:4} {w:14} {mark} {' | '.join(a.committed)} {' '.join(a.flags)}",
+            print(f"[{n}/{total}] {st:4} {w:14} {mark} {' '.join(a.landed)} {' '.join(a.flags)} {'; '.join(a.resets)}",
                   flush=True)
+    sess.close()
     meta = {"run": run_id, "list": args.list, "styles": styles, "seed": args.seed, "words": len(words),
             "serial": args.serial, "params": finger.FingerParams().__dict__}
     s = summary(attempts)
@@ -112,7 +113,56 @@ def cmd_replay_word(args) -> None:
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     sess = Session(dev, f"replay-{stamp}", finger.FingerParams())
     r = sess.type_word(a["word"], a["style"], a["seed"])
+    sess.close()
     print(json.dumps(r.as_dict() if r else None, indent=1))
+
+
+def cmd_replay_recording(args) -> None:
+    """Replays every touch of a recording (a typing test from the phone, or an earlier run) into a
+    fresh field, and compares the texts word by word."""
+    from simlib import replay
+    from simlib.score import align
+    with open(args.recording) as f:
+        events = [json.loads(l) for l in f if l.strip()]
+    dev = Device(args.serial)
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_id = f"replay-{stamp}"
+    sess = Session(dev, run_id, finger.FingerParams())
+    target = replay.Frame.of(sess.layout_event)
+    lines = replay.script(events, target)
+    if not lines:
+        raise SystemExit("no touches with a layout in that recording")
+    print(f"replaying {len(lines)} touch events, {int(lines[-1].split()[0]) / 1000:.1f} s")
+    print(sess.player.play(lines))
+    import time
+    time.sleep(1.0)
+    sess.close()
+    emu = replay.final_text(dev.recording(run_id))
+    phone = replay.final_text(events)
+    prompt = replay.prompt_words(events)
+    run_dir = os.path.join(RUNS, run_id)
+    os.makedirs(run_dir, exist_ok=True)
+    out = {"source": os.path.abspath(args.recording), "prompt": prompt, "phone": phone, "emulator": emu}
+    reference = prompt if prompt else phone.split()
+    out["phone_vs_reference"] = align(reference, phone.split())
+    out["emulator_vs_reference"] = align(reference, emu.split())
+    with open(os.path.join(run_dir, "replay.json"), "w") as f:
+        json.dump(out, f, indent=1)
+    with open(os.path.join(run_dir, "recording.jsonl"), "w") as f:
+        for e in dev.recording(run_id):
+            f.write(json.dumps(e) + "\n")
+    ref_name = "prompt" if prompt else "phone"
+    pm = sum(k == "MATCH" for k, _, _ in out["phone_vs_reference"])
+    em = sum(k == "MATCH" for k, _, _ in out["emulator_vs_reference"])
+    print(f"reference: {ref_name}, {len(reference)} words")
+    if prompt:
+        print(f"phone matched {pm}, emulator matched {em}")
+    else:
+        print(f"emulator matched {em} of the phone's {len(reference)} words")
+    diffs = [(r, e) for r, e in zip(out["phone_vs_reference"], out["emulator_vs_reference"]) if r != e]
+    for r, e in diffs[:40]:
+        print(f"  {r[1] or '-':14} phone={r[2] or '-':14} emulator={e[2] or '-'}")
+    print("saved", run_dir)
 
 
 def main() -> None:
@@ -136,6 +186,9 @@ def main() -> None:
     p.add_argument("run_dir")
     p.add_argument("index", type=int)
     p.set_defaults(fn=cmd_replay_word)
+    p = sub.add_parser("replay-recording")
+    p.add_argument("recording", help="a .jsonl recording: a phone typing test, or a run's recording.jsonl")
+    p.set_defaults(fn=cmd_replay_recording)
     args = ap.parse_args()
     args.fn(args)
 

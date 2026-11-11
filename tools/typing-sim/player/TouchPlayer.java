@@ -62,14 +62,47 @@ public class TouchPlayer {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
-            System.err.println("usage: TouchPlayer <script>");
+            System.err.println("usage: TouchPlayer <script> | TouchPlayer -");
             System.exit(2);
         }
-        List<Ev> events = new ArrayList<>();
+        initInjector();
+        int device = touchDeviceId();
+        if (args[0].equals("-")) {
+            // Server mode: read batches from stdin. A line "go" plays the batch read so far, then
+            // prints "done ..." and waits for the next one. One process for a whole run saves the
+            // second of app_process start-up on every word.
+            BufferedReader in = new BufferedReader(new java.io.InputStreamReader(System.in));
+            List<String> batch = new ArrayList<>();
+            String line;
+            System.out.println("ready");
+            System.out.flush();
+            while ((line = in.readLine()) != null) {
+                line = line.trim();
+                if (line.equals("quit")) break;
+                if (line.equals("go")) {
+                    String result = play(parse(batch), device);
+                    batch.clear();
+                    System.out.println("done " + result);
+                    System.out.flush();
+                } else if (!line.isEmpty()) {
+                    batch.add(line);
+                }
+            }
+            return;
+        }
+        List<String> lines = new ArrayList<>();
         try (BufferedReader r = new BufferedReader(new FileReader(args[0]))) {
             String line;
-            while ((line = r.readLine()) != null) {
-                line = line.trim();
+            while ((line = r.readLine()) != null) lines.add(line);
+        }
+        System.out.println("TouchPlayer " + play(parse(lines), device));
+    }
+
+    private static List<Ev> parse(List<String> lines) {
+        List<Ev> events = new ArrayList<>();
+        {
+            for (String raw : lines) {
+                String line = raw.trim();
                 if (line.isEmpty() || line.startsWith("#")) continue;
                 String[] p = line.split("\\s+");
                 Ev e = new Ev();
@@ -92,9 +125,10 @@ public class TouchPlayer {
                 events.add(e);
             }
         }
+        return events;
+    }
 
-        initInjector();
-        int device = touchDeviceId();
+    private static String play(List<Ev> events, int device) throws Exception {
         long base = SystemClock.uptimeMillis() + 50;
         long downTime = base;
         int sent = 0, failed = 0;
@@ -133,6 +167,6 @@ public class TouchPlayer {
             if (inject(me)) sent++; else failed++;
             me.recycle();
         }
-        System.out.println("TouchPlayer sent=" + sent + " failed=" + failed);
+        return "sent=" + sent + " failed=" + failed;
     }
 }

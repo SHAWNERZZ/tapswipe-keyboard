@@ -64,6 +64,13 @@ class TapSwipeSession {
     companion object {
         const val TAG = "TapSwipeSession"
 
+        /**
+         * Observer for resets of an open session: reason, stroke count, generation. Set by the
+         * typing test recorder. Observation only: it must not touch the session.
+         */
+        @JvmField
+        var resetListener: ((String, Int, Int) -> Unit)? = null
+
         private val EMPTY_POINTS = FloatArray(0)
 
         /**
@@ -308,6 +315,7 @@ class TapSwipeSession {
         if (isOpen || anchorSelStart != NO_ANCHOR) {
             lastResetReason = "$reason (had ${strokesInternal.size} strokes)"
             resetCount++
+            resetListener?.invoke(reason, strokesInternal.size, generation)
             if (DEBUG) Log.d(TAG, "reset (${strokesInternal.size} strokes): $reason")
         }
         strokesInternal.clear()

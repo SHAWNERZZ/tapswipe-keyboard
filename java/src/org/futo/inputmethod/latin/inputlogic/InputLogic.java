@@ -1746,6 +1746,16 @@ public final class InputLogic {
         mConnection.updateICCursor(oldSelStart, newSelStart, oldSelEnd, newSelEnd);
 
         if (mConnection.isBelatedExpectedUpdate(oldSelStart, newSelStart, oldSelEnd, newSelEnd, composingStart, composingEnd)) {
+            org.futo.inputmethod.latin.tapswipe.TypingTestEvents.selection(oldSelStart, newSelStart, composingStart, composingEnd,
+                    mConnection.getExpectedSelectionStart(), "belated", mWordComposer.getTypedWord());
+            return false;
+        }
+
+        // TapSwipe: a late report of the keyboard's own earlier write. Treated like a belated
+        // update: the cursor did not move, the keyboard moved it and has since moved it again.
+        if (isStaleTapSwipeSelectionUpdate(newSelStart, newSelEnd)) {
+            org.futo.inputmethod.latin.tapswipe.TypingTestEvents.selection(oldSelStart, newSelStart, composingStart, composingEnd,
+                    mConnection.getExpectedSelectionStart(), "stale_own", mWordComposer.getTypedWord());
             return false;
         }
 
@@ -1773,6 +1783,10 @@ public final class InputLogic {
         boolean suggestionsDisabled = !settingsValues.needsToLookupSuggestions();
         boolean noLongerInWord = selectionChangedOrSafeToReset && !mWordComposer.moveCursorByAndReturnIfInsideComposingWord(moveAmount);
         if (hasOrHadSelection || suggestionsDisabled || noLongerInWord) {
+            org.futo.inputmethod.latin.tapswipe.TypingTestEvents.selection(oldSelStart, newSelStart, composingStart, composingEnd,
+                    mConnection.getExpectedSelectionStart(),
+                    noLongerInWord ? "reset_left_word" : (hasOrHadSelection ? "reset_selection" : "reset_no_suggestions"),
+                    mWordComposer.getTypedWord());
             // If we are composing a word and moving the cursor, we would want to set a
             // suggestion span for recorrection to work correctly. Unfortunately, that
             // would involve the keyboard committing some new text, which would move the
@@ -1801,6 +1815,8 @@ public final class InputLogic {
             // composition to end. But in all cases where we don't reset the entire input
             // state, we still want to tell the rich input connection about the new cursor
             // position so that it can update its caches.
+            org.futo.inputmethod.latin.tapswipe.TypingTestEvents.selection(oldSelStart, newSelStart, composingStart, composingEnd,
+                    mConnection.getExpectedSelectionStart(), "kept", mWordComposer.getTypedWord());
             mConnection.resetCachesUponCursorMoveAndReturnSuccess(
                     newSelStart, newSelEnd, false /* shouldFinishComposition */);
         }
@@ -4401,6 +4417,29 @@ public final class InputLogic {
     private void setComposingTextInternal(final CharSequence newComposingText,
             final int newCursorPosition) {
         mConnection.setComposingText(newComposingText, newCursorPosition);
+        // TapSwipe: remember where this write left the cursor, so a late report of it is not read
+        // as the user moving the cursor. See TapSwipeOwnSelections.
+        if (isTapSwipeMode()) {
+            mTapSwipeOwnSelections.note(mConnection.getExpectedSelectionStart(),
+                    android.os.SystemClock.uptimeMillis());
+        }
+    }
+
+    private final org.futo.inputmethod.latin.tapswipe.TapSwipeOwnSelections mTapSwipeOwnSelections =
+            new org.futo.inputmethod.latin.tapswipe.TapSwipeOwnSelections();
+
+    /**
+     * A selection report that names one of this keyboard's own earlier cursor positions, arriving
+     * after a later write moved the expectation on. Only while a TapSwipe word is open and still
+     * composing, and only for a plain cursor (no selection).
+     */
+    private boolean isStaleTapSwipeSelectionUpdate(final int newSelStart, final int newSelEnd) {
+        if (!isTapSwipeMode() || !mTapSwipeSession.isOpen() || !mWordComposer.isComposingWord()) {
+            return false;
+        }
+        if (newSelStart != newSelEnd) return false;
+        return mTapSwipeOwnSelections.consumeIfStale(newSelStart,
+                mConnection.getExpectedSelectionStart(), android.os.SystemClock.uptimeMillis());
     }
 
     /**

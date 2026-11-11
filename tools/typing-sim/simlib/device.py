@@ -72,6 +72,8 @@ class Device:
                 self.sh(f"mkdir -p {d} && cp {remote_tmp} {APP_DIR}/{dest} && "
                         f"chown -R {uid}:{uid} {APP_DIR}/files && rm {remote_tmp}")
                 done.append(dest)
+        # Force-stopping the app makes Android fall back to another keyboard. Select ours again.
+        self.set_ime()
         return done
 
     def start_target(self, run_id: str) -> None:
@@ -92,6 +94,30 @@ class Device:
                 except json.JSONDecodeError:
                     pass  # a line still being written
         return events
+
+    def player(self) -> "Player":
+        """A long-lived player process. Saves app_process start-up on every word."""
+        return Player(self)
+
+    def recording_since(self, run_id: str, offset: int) -> tuple[list[dict], int]:
+        """Events after byte `offset`, and the new offset. Reads only new bytes, and only whole
+        lines, so a line still being written is picked up next time."""
+        path = f"{APP_DIR}/files/recordings/{run_id}.jsonl"
+        r = subprocess.run([ADB, "-s", self.serial, "exec-out", f"tail -c +{offset + 1} {path}"],
+                           capture_output=True, timeout=60)
+        data = r.stdout
+        end = data.rfind(b"\n")
+        if end < 0:
+            return [], offset
+        events = []
+        for line in data[:end].splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+        return events, offset + end + 1
 
     def play(self, lines: list[str]) -> str:
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
@@ -124,3 +150,34 @@ class Device:
                     return ev
             time.sleep(0.5)
         raise RuntimeError("no keyboard layout in the recording; is the keyboard showing?")
+
+
+class Player:
+    """Runs TouchPlayer in stdin mode over one adb shell, and plays batches through it."""
+
+    def __init__(self, dev: Device):
+        self.proc = subprocess.Popen(
+            [ADB, "-s", dev.serial, "shell", f"CLASSPATH={PLAYER_DEX} app_process / TouchPlayer -"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        first = self.proc.stdout.readline().strip()
+        if first != "ready":
+            raise RuntimeError(f"player did not start: {first}")
+
+    def play(self, lines: list[str]) -> str:
+        self.proc.stdin.write("\n".join(lines) + "\ngo\n")
+        self.proc.stdin.flush()
+        while True:
+            out = self.proc.stdout.readline()
+            if not out:
+                raise RuntimeError("player exited")
+            out = out.strip()
+            if out.startswith("done"):
+                return out
+
+    def close(self) -> None:
+        try:
+            self.proc.stdin.write("quit\n")
+            self.proc.stdin.flush()
+            self.proc.wait(timeout=5)
+        except Exception:
+            self.proc.kill()

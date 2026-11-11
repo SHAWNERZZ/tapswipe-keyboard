@@ -29,9 +29,9 @@ def write(run_dir: str, meta: dict, attempts: list[Attempt], summary: dict) -> s
         cands = ", ".join(f"{w} ({s})" for w, s in a.candidates[:4])
         fails.append(
             f"<tr><td>{e(a.word)}</td><td>{e(a.style)}</td><td>{e(plan)}</td><td>{e(a.verdict)}</td>"
-            f"<td>{e(' | '.join(a.committed))}</td><td>{e(a.composing or '')}</td>"
+            f"<td>{e(' '.join(a.landed))}</td><td>{e(' | '.join(a.committed))}</td><td>{e(a.composing or '')}</td>"
             f"<td>{e(', '.join(a.flags))}</td><td>{e(a.probe or '')}</td><td>{e(cands)}</td>"
-            f"<td>{'' if a.rank is None else a.rank}</td><td>{a.seed}</td></tr>")
+            f"<td>{'' if a.rank is None else a.rank}</td><td>{e('; '.join(a.resets))}</td><td>{a.seed}</td></tr>")
     page = f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Typing sim run</title><style>
 :root{{--bg:#fff;--fg:#1b1b1b;--line:#ddd;--muted:#666}}
@@ -48,8 +48,8 @@ td,th{{border-bottom:1px solid var(--line);padding:4px 8px;text-align:left;white
 <table><tr><th>Style</th><th>Words</th><th>Right</th><th>Penalty vs S (pts)</th><th>Verdicts</th><th>Flags</th></tr>
 {''.join(rows)}</table>
 <h2>Failures</h2>
-<table><tr><th>Word</th><th>Style</th><th>Strokes</th><th>Verdict</th><th>Committed</th><th>Composing</th>
-<th>Flags</th><th>After 1 backspace</th><th>Top candidates</th><th>Rank</th><th>Seed</th></tr>
+<table><tr><th>Word</th><th>Style</th><th>Strokes</th><th>Verdict</th><th>Landed</th><th>Commit events</th><th>Composing</th>
+<th>Flags</th><th>After 1 backspace</th><th>Top candidates</th><th>Rank</th><th>Session resets</th><th>Seed</th></tr>
 {''.join(fails)}</table></body></html>"""
     path = os.path.join(run_dir, "report.html")
     with open(path, "w") as f:

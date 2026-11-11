@@ -83,6 +83,26 @@ object TypingTestEvents {
             .put("tier", tier).put("detail", detail))
     }
 
+    /**
+     * A selection update from the editor. `outcome` is `belated` (matched what the keyboard expected
+     * and was dismissed), `kept` (cursor stayed inside the word), or a `reset_*` that ended the word.
+     */
+    @JvmStatic
+    fun selection(oldStart: Int, newStart: Int, composingStart: Int, composingEnd: Int,
+                  expectedStart: Int, outcome: String, composing: String?) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("selection")
+            .put("old", oldStart).put("new", newStart)
+            .put("compStart", composingStart).put("compEnd", composingEnd)
+            .put("expected", expectedStart).put("outcome", outcome).put("composing", composing))
+    }
+
+    /** The word session dropped while it held strokes. `reason` names the invariant that fired. */
+    @JvmStatic
+    fun sessionReset(reason: String, strokes: Int, generation: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("session_reset")
+            .put("reason", reason).put("strokes", strokes).put("gen", generation))
+    }
+
     @JvmStatic
     fun pick(word: String, index: Int) = ifActive {
         TypingTestRecorder.emit(TypingTestRecorder.event("pick").put("word", word).put("index", index))

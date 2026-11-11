@@ -42,14 +42,25 @@ class Attempt:
     flags: list = field(default_factory=list)
     probe: str | None = None
     script_lines: int = 0
+    landed: list = field(default_factory=list)
+    resets: list = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return self.__dict__.copy()
 
 
-def classify(a: Attempt, events: list[dict]) -> Attempt:
-    """Fills the attempt from the events recorded between its first touch and its commit."""
+def classify(a: Attempt, events: list[dict], landed: list[str] | None = None) -> Attempt:
+    """Fills the attempt from the events recorded between its first touch and its commit.
+
+    `landed` is the words the field gained during the attempt, from the field text before and after.
+    It is the ground truth. Commit events only explain how the text got there: a word can land
+    without one, when the keyboard's word state was already gone.
+    """
     commits = [e for e in events if e.get("type") == "commit"]
+    # A finalizer resets the session by design. Only other resets are evidence of a problem.
+    resets = [e for e in events if e.get("type") == "session_reset"
+              and not str(e.get("reason", "")).startswith("finalizer")]
+    a.resets = [f"{r.get('reason')} ({r.get('strokes')} strokes)" for r in resets]
     finals = [e for e in events if e.get("type") == "finalize"]
     decodes = [e for e in events if e.get("type") == "decode"]
     a.committed = [c.get("text", "") for c in commits]
@@ -68,16 +79,22 @@ def classify(a: Attempt, events: list[dict]) -> Attempt:
             if d.get("covered", -1) > 0 and d.get("text"):
                 a.readings[d["covered"]] = d["text"]
 
-    if not commits:
+    words = landed if landed is not None else [w for c in a.committed for w in c.split()]
+    a.landed = words
+    if not words:
         a.verdict = "LOST"
-    elif len(commits) > 1 or " " in commits[-1].get("text", "").strip():
-        a.verdict = "OK" if same(" ".join(a.committed), a.word) else "SPLIT"
-    elif same(commits[-1].get("text"), a.word):
+    elif len(words) == 1 and same(words[0], a.word):
         a.verdict = "OK"
+    elif len(words) > 1:
+        a.verdict = "SPLIT"
     elif same(a.composing, a.word):
         a.verdict = "WRONG_COMMIT"
     else:
         a.verdict = "WRONG_DECODE"
+    if words and not commits:
+        a.flags.append("NO_COMMIT_EVENT")
+    if resets:
+        a.flags.append("SESSION_RESET")
 
     strokes = len(a.plan)
     if a.verdict != "OK" and strokes > 1:
@@ -115,3 +132,35 @@ def summary(attempts: list[Attempt]) -> dict:
     total = len(attempts)
     ok = sum(a.verdict == "OK" for a in attempts)
     return {"attempts": total, "ok": ok, "accuracy": ok / total if total else 0.0, "by_style": by_style}
+
+
+def align(prompt: list[str], typed: list[str]) -> list[tuple[str, str | None, str | None]]:
+    """Word alignment by edit distance, as TypingTestScore.align in the app.
+    Returns (kind, prompt word, typed word) with kind MATCH, WRONG, MISSED, or EXTRA."""
+    n, m = len(prompt), len(typed)
+    d = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n + 1):
+        d[i][0] = i
+    for j in range(m + 1):
+        d[0][j] = j
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            sub = d[i - 1][j - 1] + (0 if same(prompt[i - 1], typed[j - 1]) else 1)
+            d[i][j] = min(sub, d[i - 1][j] + 1, d[i][j - 1] + 1)
+    out = []
+    i, j = n, m
+    while i > 0 or j > 0:
+        if i > 0 and j > 0:
+            match = same(prompt[i - 1], typed[j - 1])
+            if d[i][j] == d[i - 1][j - 1] + (0 if match else 1):
+                out.append(("MATCH" if match else "WRONG", prompt[i - 1], typed[j - 1]))
+                i -= 1
+                j -= 1
+                continue
+        if i > 0 and d[i][j] == d[i - 1][j] + 1:
+            out.append(("MISSED", prompt[i - 1], None))
+            i -= 1
+        else:
+            out.append(("EXTRA", None, typed[j - 1]))
+            j -= 1
+    return out[::-1]

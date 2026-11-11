@@ -1,6 +1,19 @@
 # Typing simulator
 
-Proposed 2026-11-11. Not agreed. Nothing here is built.
+Agreed 2026-11-11. Partly built. How to run it: `tools/typing-sim/README.md`.
+
+| Step | State |
+|---|---|
+| 1. Typing test mode and recorder | Built. Needs a device check. |
+| 2. Emulator on the server | Built: `tapswipe-sim`, port 5580 |
+| 3. Debug hooks: layout and trace | Built, as the recorder's events |
+| 4. Player | Built, as `app_process` injection. No separate driver app. See `docs/decisions.md`. |
+| 5. Host: generator, styles, scoring, report | Built. Finger model not yet calibrated. |
+| 6. Settings import | Built: settings datastore and touch model |
+| 7. Decoder bench | Not built. See below. |
+
+Not built yet: replay of a phone recording on the emulator, finger model
+calibration from recordings, and baseline comparison between runs.
 
 ## Goal
 

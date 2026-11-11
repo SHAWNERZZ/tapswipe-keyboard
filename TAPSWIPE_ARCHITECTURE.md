@@ -273,6 +273,24 @@ A re-entrancy flag (`mTapSwipeApplyingDecode`) suspends validation for
 the duration of an apply. The composer and the session are legitimately
 out of step during that window.
 
+**Late reports of the keyboard's own writes.** The editor reports each
+cursor change late. A tap writes the literal (cursor +1), then the
+decode rewrites the word (cursor back). The report of the tap's write
+can arrive after the rewrite. It no longer matches the expected cursor,
+so `onUpdateSelection` used to read it as the user leaving the word, and
+reset the input state mid-word. The next tap then began a new word.
+`TapSwipeOwnSelections` remembers the cursor positions of recent own
+writes. While a TapSwipe word is open, a report that names one of them
+is dismissed like a belated update. Found by the typing simulator on
+2026-11-11: 11 of 25 swipe-then-tap words dropped their session before
+the fix, none after.
+
+**Recorder hooks.** `TypingTestRecorder` and `TypingTestEvents` observe
+touches, layout, strokes, decodes, commits, backspace tiers, selection
+reports, and session resets. They only record in a field that carries
+the recording marker. When off, each hook costs one volatile read. See
+`tools/typing-sim/README.md`.
+
 ## 9. Key gestures and shortcuts
 
 - **Comma pull.** A straight pull from V onto the space bar produces a

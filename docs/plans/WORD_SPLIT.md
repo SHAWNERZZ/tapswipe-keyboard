@@ -398,6 +398,19 @@ running together, because the guard that inserts the separating space at
 the start of the next word reads the same phantom. The fix has to address
 why the session is dropping, not the space that follows from it.
 
+## Likely cause found, 2026-11-11
+
+The typing simulator caught the session dropping mid-word with the
+reason `editor is no longer composing`, in 11 of 25 swipe-then-tap
+words, with the split off. The cause was a late selection report of the
+keyboard's own tap write, arriving after the decode rewrote the word.
+`onUpdateSelection` read it as a cursor move and reset the input state.
+The next tap then began a new word, which is the symptom above.
+
+Fixed by `TapSwipeOwnSelections`. See `TAPSWIPE_ARCHITECTURE.md`,
+section 8. Confirm on the phone: the `autoSpaces` and `resets` counts in
+the debug panel should stop rising with the symptom.
+
 ## Decisions still open
 
 - **Capitalization of `i`.** A tap-only word commits literally in peck

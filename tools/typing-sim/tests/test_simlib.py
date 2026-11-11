@@ -108,3 +108,52 @@ class ScoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReplayTest(unittest.TestCase):
+    def test_frame_maps_keyboard_corners(self):
+        from simlib.replay import Frame
+        phone = Frame.of({"padLeft": 0, "padTop": 0, "verticalCorrection": 0, "kbW": 1000, "kbH": 500,
+                          "screenX": 0, "screenY": 1500})
+        emu = Frame.of({"padLeft": 0, "padTop": 0, "verticalCorrection": 0, "kbW": 2000, "kbH": 600,
+                        "screenX": 10, "screenY": 1000})
+        self.assertEqual(emu.place(*phone.normalize(1000, 500)), (2010, 1600))
+        self.assertEqual(emu.place(*phone.normalize(500, 250)), (1010, 1300))
+
+    def test_script_expands_history_and_caps_pauses(self):
+        from simlib.replay import Frame, script
+        lay = {"type": "layout", "viewW": 100, "padLeft": 0, "padTop": 0, "verticalCorrection": 0,
+               "kbW": 100, "kbH": 100, "screenX": 0, "screenY": 0}
+        ev = [lay,
+              {"type": "touch", "action": "ACTION_DOWN", "index": 0, "et": 1000, "ids": [0], "x": [1], "y": [1]},
+              {"type": "touch", "action": "ACTION_MOVE", "index": 0, "et": 1020, "ids": [0], "x": [3], "y": [3],
+               "ht": [1010], "hx": [2], "hy": [2]},
+              {"type": "touch", "action": "ACTION_UP", "index": 0, "et": 1030, "ids": [0], "x": [3], "y": [3]},
+              {"type": "touch", "action": "ACTION_DOWN", "index": 0, "et": 9000, "ids": [0], "x": [5], "y": [5]}]
+        lines = script(ev, Frame.of(lay))
+        self.assertEqual([int(l.split()[0]) for l in lines], [0, 10, 20, 30, 1530])
+        self.assertEqual([int(l.split()[1]) for l in lines], [0, 2, 2, 1, 0])
+
+    def test_align_counts_one_mistake_once(self):
+        from simlib.score import align
+        a = align(["see", "me", "now"], ["seem", "now"])
+        self.assertEqual(sum(k == "MATCH" for k, _, _ in a), 1)
+        self.assertEqual(a[-1], ("MATCH", "now", "now"))
+
+
+class LandedTest(unittest.TestCase):
+    def test_landed_words(self):
+        from simlib.runner import landed_words
+        self.assertEqual(landed_words("the ", "the cat "), ["cat"])
+        self.assertEqual(landed_words("", "The "), ["The"])
+        # The repro: "something" then a new word "g" glued to it.
+        self.assertEqual(landed_words("a ", "a somethingg "), ["somethingg"])
+        self.assertEqual(landed_words("a ", "a are a "), ["are", "a"])
+
+    def test_no_commit_event_and_reset_flags(self):
+        a = Attempt("because", "S+T", [("swipe", "becaus"), ("tap", "e")], 1)
+        r = classify(a, [{"type": "session_reset", "reason": "editor is no longer composing", "strokes": 2}],
+                     landed=["because"])
+        self.assertEqual(r.verdict, "OK")
+        self.assertIn("NO_COMMIT_EVENT", r.flags)
+        self.assertIn("SESSION_RESET", r.flags)
