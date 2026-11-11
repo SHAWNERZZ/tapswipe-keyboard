@@ -82,6 +82,7 @@ class FingerParams:
     space_gap_ms: tuple = (150, 260)
     overlap: float = 0.55          # two-thumb style: second thumb starts at this fraction
     swipe_speed_keyw: float | None = None  # from `stats`; if set, overrides swipe_speed per layout
+    tap_bias: dict | None = None   # from `stats`: char -> [dx, dy] in key units; "*" for any other key
 
 
 @dataclass
@@ -100,9 +101,28 @@ def _scatter(rng: random.Random, key: Key, sigma: float) -> tuple[float, float]:
     return x, y
 
 
+def _on_letter_area(layout: Layout, key: Key, x: float, y: float) -> bool:
+    """True if the point is on the intended key or on any key of the same kind. A letter tap that
+    lands on a function key (emoji, shift, symbols) would change the keyboard, not misspell a word."""
+    for k in layout.keys:
+        if k.x <= x < k.x + k.w and k.y <= y < k.y + k.h:
+            return k is key or (k.code > 32 and key.code > 32) or k.code == key.code
+    return False
+
+
 def tap(rng: random.Random, layout: Layout, ch: str, p: FingerParams, t0: float) -> Stroke:
     key = layout.key_for(ch)
-    x, y = _scatter(rng, key, p.tap_sigma)
+    bx, by = 0.0, 0.0
+    if p.tap_bias and ch.isalpha():
+        bx, by = p.tap_bias.get(ch.lower(), p.tap_bias.get("*", [0.0, 0.0]))
+    for _ in range(20):
+        x, y = _scatter(rng, key, p.tap_sigma)
+        x += bx * key.w
+        y += by * key.h
+        if _on_letter_area(layout, key, x, y):
+            break
+    else:
+        x, y = key.cx, key.cy
     hold = rng.uniform(*p.tap_hold_ms)
     jitter = 1.5
     pts = [(t0, x, y),

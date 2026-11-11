@@ -89,6 +89,7 @@ def measure(events: list[dict]) -> dict:
         return best
 
     tap_dx, tap_dy, holds, speeds, durs = [], [], [], [], []
+    per_key: dict[str, list[tuple[float, float]]] = {}
     key_w_px = []
     for g in gestures:
         st = g.get("stroke")
@@ -108,8 +109,11 @@ def measure(events: list[dict]) -> dict:
                 continue
             _, x, y = g["pts"][0]
             kx, ky = kb(x, y)
-            tap_dx.append((kx - (key["x"] + key["w"] / 2)) / key["w"])
-            tap_dy.append((ky - (key["y"] + key["h"] / 2)) / key["h"])
+            dx = (kx - (key["x"] + key["w"] / 2)) / key["w"]
+            dy = (ky - (key["y"] + key["h"] / 2)) / key["h"]
+            tap_dx.append(dx)
+            tap_dy.append(dy)
+            per_key.setdefault(chr(code).lower(), []).append((dx, dy))
             holds.append(g["t1"] - g["t0"])
         else:
             pts = g["pts"]
@@ -141,12 +145,30 @@ def measure(events: list[dict]) -> dict:
     def summ(v):
         if not v:
             return None
-        return {"n": len(v), "median": round(statistics.median(v), 4),
+        med = statistics.median(v)
+        # Robust spread: 1.4826 x median absolute deviation equals the standard deviation for a
+        # normal distribution, but one tap matched to the wrong key cannot inflate it.
+        mad = statistics.median(abs(x - med) for x in v) * 1.4826 if len(v) > 1 else 0.0
+        return {"n": len(v), "median": round(med, 4),
                 "mean": round(statistics.fmean(v), 4),
-                "sd": round(statistics.pstdev(v), 4) if len(v) > 1 else 0.0}
+                "sd": round(statistics.pstdev(v), 4) if len(v) > 1 else 0.0,
+                "robust_sd": round(mad, 4)}
+
+    # Taps are offset per key, by the angle of the thumb, more than they are scattered. Measure the
+    # offset of each key with enough taps, then the scatter left once offsets are removed.
+    bias = {"*": [round(statistics.median(tap_dx), 3), round(statistics.median(tap_dy), 3)]} if tap_dx else {}
+    for ch, v in per_key.items():
+        if len(v) >= 3:
+            bias[ch] = [round(statistics.median(a for a, _ in v), 3), round(statistics.median(b for _, b in v), 3)]
+    res_dx, res_dy = [], []
+    for ch, v in per_key.items():
+        bx, by = bias.get(ch, bias.get("*", [0, 0]))
+        res_dx.extend(a - bx for a, _ in v)
+        res_dy.extend(b - by for _, b in v)
 
     return {
-        "taps": {"dx_keys": summ(tap_dx), "dy_keys": summ(tap_dy), "hold_ms": summ(holds)},
+        "taps": {"dx_keys": summ(tap_dx), "dy_keys": summ(tap_dy), "hold_ms": summ(holds),
+                 "bias_keys": bias, "residual_dx": summ(res_dx), "residual_dy": summ(res_dy)},
         "swipes": {"speed_keyw_per_ms": summ(speeds), "duration_ms": summ(durs)},
         "gaps_in_word_ms": summ(gaps),
         "word_styles": dict(styles.most_common()),
@@ -176,16 +198,17 @@ def finger_params(m: dict) -> dict:
     (`swipe_speed_keyw`); the run converts it with the emulator's own key width."""
     out = {}
     t = m["taps"]
-    if t["dx_keys"] and t["dy_keys"]:
-        # The model scatters by one sigma for both axes. Use the larger, as the safer test.
-        out["tap_sigma"] = round(max(t["dx_keys"]["sd"], t["dy_keys"]["sd"]), 3)
+    if t.get("residual_dx") and t.get("residual_dy"):
+        # Scatter after per-key offsets. The model uses one sigma for both axes: the larger.
+        out["tap_sigma"] = round(max(t["residual_dx"]["robust_sd"], t["residual_dy"]["robust_sd"]), 3)
+        out["tap_bias"] = t["bias_keys"]
     if t["hold_ms"]:
         h = t["hold_ms"]
-        out["tap_hold_ms"] = [max(20, round(h["median"] - h["sd"])), round(h["median"] + h["sd"])]
+        out["tap_hold_ms"] = [max(20, round(h["median"] - h["robust_sd"])), round(h["median"] + h["robust_sd"])]
     sp = m["swipes"]["speed_keyw_per_ms"]
     if sp:
         out["swipe_speed_keyw"] = round(sp["median"], 5)
     g = m["gaps_in_word_ms"]
     if g:
-        out["gap_ms"] = [max(20, round(g["median"] - g["sd"])), round(g["median"] + g["sd"])]
+        out["gap_ms"] = [max(20, round(g["median"] - g["robust_sd"])), round(g["median"] + g["robust_sd"])]
     return out

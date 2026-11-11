@@ -49,6 +49,22 @@ class Session:
         self.field_text = ""
         self.player = dev.player()
 
+    def recover_if_off_letters(self, events: list[dict]) -> None:
+        """If the keyboard left the letter layout (emoji, symbols), reopen the field. The recording
+        continues in the same file."""
+        layouts = [e for e in events if e.get("type") == "layout" and e.get("viewW", 0) > 0]
+        if not layouts:
+            return
+        if any(97 <= k["code"] <= 122 or 65 <= k["code"] <= 90 for k in layouts[-1]["keys"]):
+            return
+        print("  keyboard left the letters; reopening the field", flush=True)
+        self.dev.start_target(self.run_id)
+        self.layout_event = self.dev.wait_for_layout(self.run_id)
+        self.layout = finger.Layout.from_layout_event(self.layout_event)
+        time.sleep(1.5)
+        self.new_events()
+        self.field_text = ""
+
     def close(self) -> None:
         self.player.close()
 
@@ -71,7 +87,9 @@ class Session:
         lines = finger.to_script(strokes)
         a = Attempt(word=word, style=style, plan=[(s.kind, s.text) for s in strokes[:-1]], seed=seed,
                     script_lines=len(lines))
-        before = self.last_field_text(self.new_events())
+        pending = self.new_events()
+        self.recover_if_off_letters(pending)
+        before = self.last_field_text(pending)
         if before is not None:
             self.field_text = before
         self.player.play(lines)
