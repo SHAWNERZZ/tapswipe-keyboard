@@ -85,6 +85,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Typing simulator target field. Not exported: only root (adb root on the emulator) can
+             start it, so no other app can open a recorded field. -->
+        <activity android:name=".tapswipe.TypingSimTargetActivity"
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize"
+            android:exported="false" />
+
         <activity android:name=".uix.ImportResourceActivity"
             android:label="@string/language_settings_import_dictionary_or_model"
             android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"

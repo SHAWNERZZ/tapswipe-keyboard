@@ -1,0 +1,26 @@
+# Short words next to longer ones. Tests the word split and spacing.
+i think
+a lot
+see me
+this is
+i am
+be there
+to do
+so much
+a way
+in to
+may be
+no one
+it is
+at home
+me too
+i can
+go to
+on it
+as well
+of course
+i know
+a new
+be careful
+i was
+we are

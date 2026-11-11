@@ -690,6 +690,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         onSizeMaybeUpdated()
         imeManager.onStartInput()
         latinIMELegacy.onStartInputView(info, restarting)
+        org.futo.inputmethod.latin.tapswipe.TypingTestRecorder.onStartInputView(this, info)
         lifecycleScope.launch { uixManager.showUpdateNoticeIfNeeded() }
         updateColorsIfDynamicChanged()
         uixManager.updateEmojiTranslationsIfNeeded()
@@ -698,6 +699,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         latinIMELegacy.onFinishInputView(finishingInput)
+        org.futo.inputmethod.latin.tapswipe.TypingTestRecorder.onFinishInputView()
         uixManager.onInputFinishing()
         imeManager.onFinishInput()
     }

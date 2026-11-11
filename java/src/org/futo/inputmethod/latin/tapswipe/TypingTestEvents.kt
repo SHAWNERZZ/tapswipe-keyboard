@@ -1,0 +1,96 @@
+package org.futo.inputmethod.latin.tapswipe
+
+import org.futo.inputmethod.latin.SuggestedWords
+
+/**
+ * Keyboard decisions, as recorder events. Each call is one line in `InputLogic` and returns at once
+ * unless [TypingTestRecorder.active] is true.
+ *
+ * These are observations only. Nothing here may change state or call back into the input logic.
+ */
+object TypingTestEvents {
+    private inline fun ifActive(block: () -> Unit) {
+        if (TypingTestRecorder.active) block()
+    }
+
+    @JvmStatic
+    fun swipeAbsorbed(segments: Int, strokes: Int, generation: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("stroke")
+            .put("kind", "swipe").put("segments", segments)
+            .put("strokes", strokes).put("gen", generation))
+    }
+
+    @JvmStatic
+    fun tapAdded(codePoint: Int, strokes: Int, generation: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("stroke")
+            .put("kind", "tap").put("code", codePoint)
+            .put("char", String(Character.toChars(codePoint)))
+            .put("strokes", strokes).put("gen", generation))
+    }
+
+    /** A decode the generation guard dropped. */
+    @JvmStatic
+    fun decodeStale(text: String?, decodeGeneration: Int, sessionGeneration: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("decode_stale")
+            .put("text", text).put("gen", decodeGeneration).put("sessionGen", sessionGeneration))
+    }
+
+    /**
+     * A decode that passed the guard, before it is written. `covered` below `strokes` means it was
+     * computed before the newest stroke joined.
+     */
+    @JvmStatic
+    fun decodeArrived(words: SuggestedWords, covered: Int, strokes: Int, generation: Int) = ifActive {
+        val n = minOf(words.size(), 5)
+        val list = ArrayList<String>(n)
+        val scores = IntArray(n)
+        for (i in 0 until n) {
+            list.add(words.getWord(i))
+            scores[i] = words.getInfo(i).mScore
+        }
+        TypingTestRecorder.emit(TypingTestRecorder.event("decode")
+            .put("text", if (n > 0) list[0] else null)
+            .putStrings("candidates", list).putInts("scores", scores)
+            .put("covered", covered).put("strokes", strokes).put("gen", generation))
+    }
+
+    /** A separator ended a word. `verbatim` says which commit path it took. */
+    @JvmStatic
+    fun finalize(codePoint: Int, verbatim: Boolean, typedWord: String?, autoCorrection: String?,
+                 mode: String?) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("finalize")
+            .put("code", codePoint).put("verbatim", verbatim)
+            .put("typedWord", typedWord).put("autoCorrection", autoCorrection).put("mode", mode))
+    }
+
+    @JvmStatic
+    fun commit(text: String, commitType: Int, separator: String?) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("commit")
+            .put("text", text).put("commitType", commitType).put("separator", separator))
+    }
+
+    @JvmStatic
+    fun backspace(composing: String?, strokes: Int, sessionOpen: Boolean, keyRepeat: Boolean) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("backspace")
+            .put("composing", composing).put("strokes", strokes)
+            .put("sessionOpen", sessionOpen).put("repeat", keyRepeat))
+    }
+
+    /** Which backspace branch handled the press: `grace_reopen`, `stroke_undo`, or `revert_commit`. */
+    @JvmStatic
+    fun backspaceTier(tier: String, detail: String?) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("backspace_tier")
+            .put("tier", tier).put("detail", detail))
+    }
+
+    @JvmStatic
+    fun pick(word: String, index: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("pick").put("word", word).put("index", index))
+    }
+
+    @JvmStatic
+    fun split(head: String, at: Int, strokes: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("split")
+            .put("head", head).put("at", at).put("strokes", strokes))
+    }
+}

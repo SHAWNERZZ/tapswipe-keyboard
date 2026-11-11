@@ -170,6 +170,7 @@ fun SettingsNavigator(
             }
             composable("advancedparams") { AdvancedParametersScreen(navController) }
             composable("tapswipeGeometry") { TapSwipeGeometryScreen(navController) }
+            composable("tapswipeTypingTest") { org.futo.inputmethod.latin.uix.settings.pages.TypingTestScreen(navController) }
             composable("enterKeyFlicks") { EnterKeyFlicksScreen(navController) }
             composable("backspaceGestures") { BackspaceGesturesScreen(navController) }
             composable("actionEdit") { ActionEditorScreen(navController) }

@@ -629,6 +629,7 @@ public final class InputLogic {
         setComposingTextInternal(getTextWithUnderline(record.committedWord), 1);
 
         mTapSwipeSession.restoreStrokes(record.strokes);
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.backspaceTier("grace_reopen", record.committedWord);
         mTapSwipeSession.noteComposingWrite(
                 record.committedWord, mConnection.getExpectedSelectionStart());
 
@@ -674,6 +675,7 @@ public final class InputLogic {
                 && before.get(before.size() - 1).getKind() == TapSwipeSession.Kind.SWIPE;
 
         if (!mTapSwipeSession.popLastStroke()) return false;
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.backspaceTier("stroke_undo", null);
 
         // Redraw from what is left. The brightest trail is what the next tap removes, so it has
         // to go with the stroke it stood for.
@@ -1019,6 +1021,7 @@ public final class InputLogic {
 
         final int added = session.addSwipeSegments(batchPointers.getGestureSegments(), batchOrigin,
                 mTapSwipeSessionOriginMs, norm.getX(), norm.getY());
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.swipeAbsorbed(added, session.getStrokes().size(), session.getGeneration());
         publishGestureTrail();
         // A swipe joining the word ends peck mode immediately, and proves this is not someone
         // who only taps, so legacy-tap mode drops too.
@@ -1074,6 +1077,8 @@ public final class InputLogic {
         mTapSwipeSession.addTap(codePoint, pos[0], pos[1],
                 (float) (now - mTapSwipeSessionOriginMs), TapSwipeSession.Hand.LEFT,
                 rawX, rawY);
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.tapAdded(codePoint, mTapSwipeSession.getStrokes().size(),
+                mTapSwipeSession.getGeneration());
         publishGestureTrail();
     }
 
@@ -1227,6 +1232,7 @@ public final class InputLogic {
         // future caller that forgets the gate would otherwise change text with the feature off.
         if (!isTapSwipeMode() || !isTapSwipeAutoSplitEnabled()) return false;
         if (at < 1 || at >= mTapSwipeSession.getStrokes().size()) return false;
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.split(head, at, mTapSwipeSession.getStrokes().size());
 
         final java.util.List<TapSwipeSession.Stroke> headStrokes = mTapSwipeSession.strokesUpTo(at);
         final java.util.List<TapSwipeSession.Stroke> tailStrokes = mTapSwipeSession.strokesFrom(at);
@@ -1610,6 +1616,7 @@ public final class InputLogic {
             final int currentKeyboardScriptId) {
         final SuggestedWords suggestedWords = mSuggestedWords;
         final String suggestion = suggestionInfo.mWord;
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.pick(suggestion, -1);
         // If this is a punctuation picked from the suggestion strip, pass it to onCodeInput
         if (suggestion.length() == 1 && suggestedWords.isPunctuationSuggestions()) {
             // We still want to log a suggestion click.
@@ -2500,6 +2507,11 @@ public final class InputLogic {
             // TapSwipe: peck words and swiped words alike are committed exactly as shown - see
             // isTapSwipeVerbatimWord() for why a swipe must never be autocorrected on commit.
             final boolean commitVerbatim = isTapSwipeVerbatimWord();
+            {
+                final SuggestedWordInfo acInfo = mWordComposer.getAutoCorrectionOrNull();
+                org.futo.inputmethod.latin.tapswipe.TypingTestEvents.finalize(codePoint, commitVerbatim, mWordComposer.getTypedWord(),
+                        acInfo == null ? null : acInfo.mWord, String.valueOf(tapSwipeMode()));
+            }
             if (DEBUG_TAPSWIPE) {
                 final SuggestedWordInfo ac = mWordComposer.getAutoCorrectionOrNull();
                 Log.d(TAG, "tapswipe COMMIT verbatim=" + commitVerbatim
@@ -2717,6 +2729,8 @@ public final class InputLogic {
             final int currentKeyboardScriptId) {
         mSpaceState = SpaceState.NONE;
         mDeleteCount++;
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.backspace(mWordComposer.getTypedWord(), mTapSwipeSession.getStrokes().size(),
+                mTapSwipeSession.isOpen(), event.isKeyRepeat());
 
         // In many cases after backspace, we need to update the shift state. Normally we need
         // to do this right away to avoid the shift state being out of date in case the user types
@@ -2795,6 +2809,8 @@ public final class InputLogic {
             if (mLastComposedWord.canRevertCommit()
                     && inputTransaction.mSettingsValues.mBackspaceUndoesAutocorrect) {
                 final String lastComposedWord = mLastComposedWord.mTypedWord;
+                org.futo.inputmethod.latin.tapswipe.TypingTestEvents.backspaceTier("revert_commit", mLastComposedWord.mTypedWord == null
+                        ? null : mLastComposedWord.mTypedWord.toString());
                 revertCommit(inputTransaction, inputTransaction.mSettingsValues);
                 StatsUtils.onRevertAutoCorrect(mImeHelper.getContext(), lastComposedWord);
                 StatsUtils.onWordCommitUserTyped(lastComposedWord, mWordComposer.isBatchMode());
@@ -4019,6 +4035,8 @@ public final class InputLogic {
             if (in instanceof TapSwipeDecodeInput
                     && !mTapSwipeSession.isCurrent(((TapSwipeDecodeInput) in).generation)) {
                 TapSwipeSplitDebug.note("skipped: stale generation");
+                org.futo.inputmethod.latin.tapswipe.TypingTestEvents.decodeStale(batchInputText,
+                        ((TapSwipeDecodeInput) in).generation, mTapSwipeSession.getGeneration());
                 if (DEBUG_TAPSWIPE) {
                     Log.d(TAG, "tapswipe TAIL dropped (stale gen "
                             + ((TapSwipeDecodeInput) in).generation + " vs "
@@ -4059,6 +4077,8 @@ public final class InputLogic {
                 decodeCoveredStrokes = ((TapSwipeDecodeInput) decodedFrom).getSegmentCount();
             }
         }
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.decodeArrived(suggestedWords, decodeCoveredStrokes,
+                mTapSwipeSession.getStrokes().size(), mTapSwipeSession.getGeneration());
 
         // Keep what this decode read, against the number of strokes it covered. Each boundary needs
         // the reading of the strokes in front of it, and this is where those readings come from.
@@ -4255,6 +4275,7 @@ public final class InputLogic {
         // Typing speed counts committed text here rather than keystrokes: every word reaches this
         // point whether it was tapped, swiped, autocorrected or picked, so a swiped word counts for
         // its whole length instead of the single gesture that produced it.
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.commit(chosenWord, commitType, separatorString);
         WpmTracker.onCharsProduced(
                 chosenWord.length() + (separatorString != null ? separatorString.length() : 0));
         refreshSpacebarSpeed();

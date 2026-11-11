@@ -1,0 +1,15 @@
+# Words from fixed bugs, one case per line. See docs/plans/WORD_SPLIT.md.
+but
+by
+ava i
+this is
+are a
+area
+cats
+worked
+seem
+see me
+hello i
+i think
+its
+it's

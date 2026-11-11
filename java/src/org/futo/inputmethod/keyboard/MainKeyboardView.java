@@ -408,6 +408,8 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
         super.setKeyboard(keyboard);
         mKeyDetector.setKeyboard(
                 keyboard, -getPaddingLeft(), -getPaddingTop() + getVerticalCorrection());
+        org.futo.inputmethod.latin.tapswipe.TypingTestRecorder.onKeyboardSet(
+                this, keyboard, getVerticalCorrection());
         PointerTracker.setKeyDetector(mKeyDetector);
         mMoreKeysKeyboardCache.clear();
 
@@ -724,6 +726,10 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
     public boolean onTouchEvent(final MotionEvent event) {
         if (getKeyboard() == null) {
             return false;
+        }
+        // Typing test and simulator recording. One volatile read when off.
+        if (org.futo.inputmethod.latin.tapswipe.TypingTestRecorder.getActive()) {
+            org.futo.inputmethod.latin.tapswipe.TypingTestRecorder.touch(event);
         }
         if (mNonDistinctMultitouchHelper != null) {
             if (event.getPointerCount() > 1 && mTimerHandler.isInKeyRepeat()) {

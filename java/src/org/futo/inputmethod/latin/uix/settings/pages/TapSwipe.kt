@@ -161,6 +161,16 @@ val TapSwipeMenu = UserSettingsMenu(
             icon = R.drawable.direction_arrows
         ),
 
+        // Records real typing with the intended words, for the typing simulator. Not gated on
+        // tapSwipeEnabled: a recording of stock typing is a useful baseline too.
+        userSettingNavigationItem(
+            title = R.string.tapswipe_settings_typing_test,
+            subtitle = R.string.tapswipe_settings_typing_test_subtitle,
+            style = NavigationItemStyle.HomeSecondary,
+            navigateTo = "tapswipeTypingTest",
+            icon = R.drawable.activity
+        ),
+
         userSettingToggleDataStore(
             title = R.string.tapswipe_settings_wpm,
             subtitle = R.string.tapswipe_settings_wpm_subtitle,
