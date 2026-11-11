@@ -190,6 +190,16 @@ public interface DictionaryFacilitator {
 
     boolean isValidSuggestionWord(final String word);
 
+    /**
+     * How common a word is, on the 0 to 255 scale the dictionaries use, or
+     * {@link Dictionary#NOT_A_PROBABILITY} when no dictionary holds it.
+     *
+     * Added by this fork for the automatic word split, which has to weigh one word against two.
+     * Knowing only that a word exists is not enough: `Irk` and `I` are both real, and only their
+     * frequencies say which reading someone meant.
+     */
+    int getWordFrequency(final String word);
+
     boolean clearUserHistoryDictionary(final Context context);
 
     void flushUserHistoryDictionaries();

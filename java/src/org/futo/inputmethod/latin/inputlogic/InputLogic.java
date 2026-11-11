@@ -41,6 +41,7 @@ import org.futo.inputmethod.keyboard.KeyboardSwitcher;
 import org.futo.inputmethod.keyboard.internal.WpmTracker;
 import org.futo.inputmethod.keyboard.MainKeyboardView;
 import org.futo.inputmethod.latin.BinaryDictionary;
+import org.futo.inputmethod.latin.Dictionary;
 import org.futo.inputmethod.latin.DictionaryFacilitator;
 import org.futo.inputmethod.latin.LastComposedWord;
 import org.futo.inputmethod.latin.NgramContext;
@@ -62,7 +63,9 @@ import org.futo.inputmethod.latin.tapswipe.TapSwipeMode;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeSession;
+import org.futo.inputmethod.latin.tapswipe.TapSwipeSplitDebug;
 import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel;
+import org.futo.inputmethod.latin.tapswipe.TapSwipeWordSplit;
 import org.futo.inputmethod.keyboard.internal.WordGestureTrail;
 import org.futo.inputmethod.latin.tapswipe.WholeWordDelete;
 import org.futo.inputmethod.latin.uix.DataStoreHelper;
@@ -425,11 +428,33 @@ public final class InputLogic {
      *
      * LEGACY_TAP is deliberately excluded: fluent typing is ordinary typing, and autocorrect is
      * what makes it work.
+     *
+     * A word the automatic split just produced is included, and that inclusion is load-bearing.
+     * Reported from hardware: swipe `ava`, tap `i`, then press space, and the `i` committed as
+     * `ava`. The tap fires two suggestion queries. One decodes the strokes and lands the split. The
+     * other is an ordinary typing query over the pre-split literal `avai`, and `ava` is one deletion
+     * away from that, so it produces `ava` as an autocorrection. It arrives after the split and
+     * stamps itself on the composer, which by then holds `i`. Space took the autocorrect branch and
+     * committed the stale answer. Treating a split word as verbatim routes the commit through
+     * {@link #commitTyped} instead, which reads the composer rather than a stamped result.
+     *
+     * The split already required both sides to be dictionary words, so there is nothing for
+     * autocorrect to add here. See {@code docs/plans/WORD_SPLIT.md}.
      */
     public boolean isTapSwipeVerbatimWord() {
+        if (mTapSwipeWordFromSplit) return true;
         final TapSwipeMode mode = tapSwipeMode();
         return mode == TapSwipeMode.SWIPE || mode == TapSwipeMode.PECK;
     }
+
+    /**
+     * Whether the open word is exactly what an automatic split produced, with nothing added since.
+     *
+     * Cleared as soon as another stroke joins, because the word is then no longer the one the split
+     * decided. Without that, a long word typed out after a split would lose autocorrect for the rest
+     * of its length.
+     */
+    private boolean mTapSwipeWordFromSplit = false;
 
     /**
      * Writes a candidate into the composing region and re-anchors the session.
@@ -514,7 +539,16 @@ public final class InputLogic {
      * geometry learner, since both need the same "word just settled" moment.
      */
     private void captureTapSwipeGraceRecord() {
-        final java.util.List<TapSwipeSession.Stroke> strokes = mTapSwipeSession.getStrokes();
+        captureTapSwipeGraceRecord(mTapSwipeSession.getStrokes());
+    }
+
+    /**
+     * As {@link #captureTapSwipeGraceRecord()}, but for a caller that already knows which strokes
+     * produced the word. An automatic split commits only the strokes before the boundary, so the
+     * live session is not a description of what just committed.
+     */
+    private void captureTapSwipeGraceRecord(
+            final java.util.List<TapSwipeSession.Stroke> strokes) {
         if (strokes.isEmpty()) {
             mTapSwipeGraceRecord = null;
             return;
@@ -906,6 +940,7 @@ public final class InputLogic {
         cancelTapSwipePeckIdleCheck();
         mTapSwipeSession.reset(reason);
         mTapSwipeSessionOriginMs = -1;
+        mTapSwipeWordFromSplit = false;
         // The drawn gestures belong to the word that just ended. This is the one place every route
         // out of a word passes through, so it is the only place they need clearing.
         WordGestureTrail.clear();
@@ -966,13 +1001,19 @@ public final class InputLogic {
      * before the tail-batch suggestion request is dispatched.
      */
     private void absorbBatchIntoTapSwipeSession(final InputPointers batchPointers) {
+        // The word is no longer the one a split decided, so it stops being verbatim on that account.
+        mTapSwipeWordFromSplit = false;
         final TapSwipeNormalizers norm = SwipeDecoderDictionary.currentNormalizers();
         if (norm == null) return;
 
         final long batchOrigin = BatchInputArbiter.getBatchOriginTime();
         final TapSwipeSession session = tapSwipeSession();
-        if (mTapSwipeSessionOriginMs < 0) {
-            // First stroke of the word establishes the session timeline.
+        // The first stroke of a word establishes the timeline. Testing the session rather than only
+        // the stored value is what makes that true: the session can drop itself from inside
+        // validateOrReset, which never passes through resetTapSwipeSession, so a word could open on
+        // an origin belonging to a word from minutes ago. That put a 128 second gap between two
+        // strokes made half a second apart.
+        if (mTapSwipeSessionOriginMs < 0 || !session.isOpen()) {
             mTapSwipeSessionOriginMs = batchOrigin > 0 ? batchOrigin : SystemClock.uptimeMillis();
         }
 
@@ -999,6 +1040,9 @@ public final class InputLogic {
      * O" resolve to "hello".
      */
     private void absorbTapIntoTapSwipeSession(final int codePoint, final int rawX, final int rawY) {
+        // Cleared before the early return below on purpose: the word grew whether or not the layout
+        // could place this key, so it is no longer the word a split decided.
+        mTapSwipeWordFromSplit = false;
         // Where the finger actually landed, when we have it and the preference is on. The decoder
         // reads shape, so an off-centre tap is evidence rather than noise - and it puts the tap
         // stream in the same continuous space as the swipe stream they fuse with, instead of
@@ -1019,7 +1063,9 @@ public final class InputLogic {
         // segment is resampled relative to its own first point and the beam search never sees
         // timestamps at all - but only by accident, so keep the clocks consistent.)
         final long now = SystemClock.uptimeMillis();
-        if (mTapSwipeSessionOriginMs < 0) {
+        // As in absorbBatch: the first stroke of a word establishes the timeline, and a session that
+        // dropped itself leaves the stored origin behind.
+        if (mTapSwipeSessionOriginMs < 0 || !mTapSwipeSession.isOpen()) {
             mTapSwipeSessionOriginMs = now;
         }
         // Taps go to the left stream so that sequential taps and swipes form one ordered sequence.
@@ -1029,6 +1075,217 @@ public final class InputLogic {
                 (float) (now - mTapSwipeSessionOriginMs), TapSwipeSession.Hand.LEFT,
                 rawX, rawY);
         publishGestureTrail();
+    }
+
+    /**
+     * The pending-space state, for the debug panel.
+     *
+     * PHANTOM means a space is owed and the next letter will write it. That is the state to look at
+     * when a word appears to split on its own: a phantom armed after a gesture, plus a session that
+     * drops before the next tap, inserts a space in the middle of a word without the automatic split
+     * being involved at all.
+     */
+    public String debugSpaceState() {
+        switch (mSpaceState) {
+            case SpaceState.NONE: return "NONE";
+            case SpaceState.DOUBLE: return "DOUBLE";
+            case SpaceState.SWAP_PUNCTUATION: return "SWAP_PUNCTUATION";
+            case SpaceState.WEAK: return "WEAK";
+            case SpaceState.PHANTOM: return "PHANTOM";
+            case SpaceState.ANTIPHANTOM: return "ANTIPHANTOM";
+            case SpaceState.SYMBOL_PREFIX: return "SYMBOL_PREFIX";
+            default: return String.valueOf(mSpaceState);
+        }
+    }
+
+    /** Whether the automatic word split is switched on. */
+    private boolean isTapSwipeAutoSplitEnabled() {
+        return DataStoreHelper.getSetting(SwipeDecoderDictionaryKt.getTapSwipeAutoSplitSetting());
+    }
+
+    /**
+     * The dictionary answers {@link TapSwipeWordSplit} needs.
+     *
+     * Pair probability is still unwired: it lives on {@code BinaryDictionary} rather than on
+     * {@code Dictionary}, so reaching it means adding a method to the base class and overriding it in
+     * the two wrappers. Until then the rule falls back to the fused word's own rarity.
+     */
+    private final TapSwipeWordSplit.Lexicon mTapSwipeLexicon = new TapSwipeWordSplit.Lexicon() {
+        @Override
+        public boolean isWord(final String text) {
+            if (TextUtils.isEmpty(text)) return false;
+            if (mDictionaryFacilitator.isValidSuggestionWord(text)) return true;
+            // A tapped letter arrives shifted on a capitalised layout, and the decoder answers in
+            // lower case. Checking both keeps `I` a word without also accepting a proper noun's
+            // lower-case form as one.
+            final String lower = lowerCased(text);
+            return !lower.equals(text) && mDictionaryFacilitator.isValidSuggestionWord(lower);
+        }
+
+        @Override
+        public int frequency(final String text) {
+            if (TextUtils.isEmpty(text)) return TapSwipeWordSplit.UNKNOWN_FREQUENCY;
+            final int direct = mDictionaryFacilitator.getWordFrequency(text);
+            if (direct != Dictionary.NOT_A_PROBABILITY) return direct;
+            // Same reason as isWord: a sentence-initial word arrives capitalised while the
+            // dictionaries hold it in lower case, and reporting it as unknown would make a common
+            // word look rare.
+            final String lower = lowerCased(text);
+            if (lower.equals(text)) return TapSwipeWordSplit.UNKNOWN_FREQUENCY;
+            final int folded = mDictionaryFacilitator.getWordFrequency(lower);
+            return folded == Dictionary.NOT_A_PROBABILITY
+                    ? TapSwipeWordSplit.UNKNOWN_FREQUENCY : folded;
+        }
+
+        @Override
+        public int pairFrequency(final String first, final String second) {
+            return TapSwipeWordSplit.UNKNOWN_FREQUENCY;
+        }
+    };
+
+    private String lowerCased(final String text) {
+        return text.toLowerCase(getDictionaryFacilitatorLocale());
+    }
+
+    /**
+     * Every place the open word could break in two.
+     *
+     * A gesture run followed by a tap run can break anywhere inside that tap run, not only where the
+     * kind changes. `this` typed as a gesture over t, h, i plus a tapped `s` leaves the taps `s`,
+     * `i`, `s`. Only the boundary after the first of them is right. Treating the whole run as one
+     * word gave `to sis`: `to` was the gesture read on its own, and `sis` was every tap after it.
+     *
+     * Each boundary needs a reading of the strokes in front of it, and that is not recomputed here.
+     * The decode covering exactly those strokes already produced it. See
+     * {@link #mTapSwipeReadingByStrokes}.
+     */
+    private java.util.List<TapSwipeWordSplit.Option> buildTapSwipeSplitOptions(
+            final SuggestedWords suggestedWords) {
+        final java.util.List<TapSwipeWordSplit.Option> options = new java.util.ArrayList<>();
+        final int strokeCount = mTapSwipeSession.getStrokes().size();
+        if (strokeCount < 2) return options;
+
+        final java.util.List<String> candidates = new java.util.ArrayList<>(suggestedWords.size());
+        for (int i = 0; i < suggestedWords.size(); i++) {
+            final String word = suggestedWords.getWord(i);
+            if (word != null && !word.isEmpty()) candidates.add(word);
+        }
+
+        final int leadingSwipes = mTapSwipeSession.leadingSwipeCount();
+
+        if (leadingSwipes == 0) {
+            // Taps first, then a gesture. The only boundary is where the kind changes. One inside
+            // the leading taps would leave a tail holding both taps and a gesture, and a tail has to
+            // be describable on its own.
+            final int at = mTapSwipeSession.soleKindChange();
+            if (at < 1) return options;
+            final TapSwipeWordSplit.Boundary boundary = TapSwipeWordSplit.boundaryFor(
+                    "", mTapSwipeSession.tapTextIn(0, at), true, candidates,
+                    mTapSwipeSession.gapMsAt(at));
+            if (boundary != null) options.add(new TapSwipeWordSplit.Option(at, boundary));
+            return options;
+        }
+
+        // A gesture run then a tap run. Anything else, such as a gesture after taps after a gesture,
+        // is declined rather than guessed at.
+        if (leadingSwipes >= strokeCount) return options;
+        if (!mTapSwipeSession.tapsOnlyFrom(leadingSwipes)) return options;
+
+        for (int at = leadingSwipes; at < strokeCount; at++) {
+            final String head = mTapSwipeSession.readingFor(at);
+            // Skip a boundary with no reading rather than declining the whole word. Declining was a
+            // guard against readings left over from an earlier word, and that is now prevented at
+            // the source by keeping them on the session. A decode that produced nothing is common,
+            // and it must not stop the boundaries either side of it from being judged.
+            if (head == null || head.isEmpty()) continue;
+            final TapSwipeWordSplit.Boundary boundary = TapSwipeWordSplit.boundaryFor(
+                    head, mTapSwipeSession.tapTextIn(at, strokeCount), false, candidates,
+                    mTapSwipeSession.gapMsAt(at));
+            if (boundary != null) options.add(new TapSwipeWordSplit.Option(at, boundary));
+        }
+        return options;
+    }
+
+    /**
+     * Commits the head of the open word and reopens the tail as a word of its own.
+     *
+     * Runs on the main thread, from the decode-apply path, after the generation guard. The commit is
+     * the irreversible part, so nothing here may run on a stale decode.
+     *
+     * The separator recorded is a space that is never written. {@code SpaceState.PHANTOM} puts it in
+     * when the tail word reaches the editor, so a split never leaves a trailing space behind for the
+     * user to delete, and punctuation typed next drops it as usual.
+     *
+     * @param at the boundary index the verdict was computed for, passed in rather than recomputed so
+     *           the split cannot act on a different boundary than the one that was judged
+     * @return true when the word was split, so the caller must not apply its own candidate
+     */
+    private boolean performTapSwipeSplit(final SettingsValues settingsValues, final String head,
+            final int at, final KeyboardSwitcher keyboardSwitcher) {
+        // Checked again here, at the only place that commits. The caller checks it too, so this is
+        // redundant by design: this method is the single point where a word is broken in two, and a
+        // future caller that forgets the gate would otherwise change text with the feature off.
+        if (!isTapSwipeMode() || !isTapSwipeAutoSplitEnabled()) return false;
+        if (at < 1 || at >= mTapSwipeSession.getStrokes().size()) return false;
+
+        final java.util.List<TapSwipeSession.Stroke> headStrokes = mTapSwipeSession.strokesUpTo(at);
+        final java.util.List<TapSwipeSession.Stroke> tailStrokes = mTapSwipeSession.strokesFrom(at);
+        if (headStrokes.isEmpty() || tailStrokes.isEmpty()) return false;
+
+        boolean tailHasSwipe = false;
+        for (final TapSwipeSession.Stroke stroke : tailStrokes) {
+            if (stroke.getKind() == TapSwipeSession.Kind.SWIPE) {
+                tailHasSwipe = true;
+                break;
+            }
+        }
+        final String tailLiteral =
+                mTapSwipeSession.tapTextIn(at, mTapSwipeSession.getStrokes().size());
+        if (!tailHasSwipe && tailLiteral.isEmpty()) return false;
+
+        if (DEBUG_TAPSWIPE) {
+            Log.d(TAG, "tapswipe SPLIT head='" + head + "' at stroke " + at
+                    + " tailHasSwipe=" + tailHasSwipe + " tailLiteral='" + tailLiteral + "'");
+        }
+
+        TapSwipeSplitDebug.notePerformed(head, at);
+
+        // Write the head on its own, then finalize it the way a space would.
+        applyTapSwipeCandidate(settingsValues, head, false, false);
+        commitTyped(settingsValues, Constants.STRING_SPACE);
+        // Geometry is deliberately not learned here. The learner aligns a word against the strokes
+        // that produced it, and teaching it a word whose stroke list was just cut in half would
+        // feed it a false alignment. Splitting words earn their geometry once the split itself is
+        // trusted.
+        captureTapSwipeGraceRecord(headStrokes);
+        resetTapSwipeSession("automatic split");
+        if (settingsValues.mAltSpacesMode != Settings.SPACES_MODE_NONE) {
+            mSpaceState = SpaceState.PHANTOM;
+        }
+
+        // Reopen the tail. restoreStrokes leaves the anchor clear, so the session reports itself as
+        // not yet composed and the write below counts as the first stroke of a word - which is what
+        // consumes the phantom space above.
+        mTapSwipeSession.restoreStrokes(tailStrokes);
+        mTapSwipeSessionOriginMs = SystemClock.uptimeMillis();
+        // Set before anything writes the tail, so a suggestion result that lands during or after
+        // this cannot mark the word auto-correctable. See isTapSwipeVerbatimWord.
+        mTapSwipeWordFromSplit = true;
+        publishGestureTrail();
+
+        if (tailHasSwipe) {
+            // The swiped tail has no reading of its own yet, because every decode so far included
+            // the taps. Ask for one. The composing region is legitimately empty until it lands: the
+            // session has no anchor, so validate-on-read passes.
+            postUpdateSuggestionStrip(SuggestedWords.INPUT_STYLE_TAIL_BATCH);
+        } else {
+            applyTapSwipeCandidate(settingsValues, tailLiteral, false, true);
+        }
+
+        refreshTapSwipePeckIndicator();
+        keyboardSwitcher.requestUpdatingShiftState(getCurrentAutoCapsState(settingsValues));
+        updateUiInputState();
+        return true;
     }
 
     /**
@@ -2096,6 +2353,15 @@ public final class InputLogic {
             if (isComposingWord) {
                 // Validity check
                 throw new RuntimeException("Should not be composing here");
+            }
+            // Recorded because this is where a word appears to split on its own. A space owed from a
+            // gesture is suppressed while a TapSwipe word is open, and that guard reads the session.
+            // If the session has been dropped, the space lands here instead, in the middle of what
+            // the user was still typing.
+            if (isTapSwipeMode()) {
+                TapSwipeSplitDebug.noteAutoSpace("'" + (char) codePoint + "' after "
+                        + mTapSwipeSession.getResetCount() + " reset(s), last: "
+                        + mTapSwipeSession.getLastResetReason());
             }
             insertAutomaticSpaceIfOptionsAndTextAllow(settingsValues);
         }
@@ -3721,7 +3987,15 @@ public final class InputLogic {
             final SuggestedWords suggestedWords, final KeyboardSwitcher keyboardSwitcher,
             final boolean distinct) {
         final String batchInputText = suggestedWords.isEmpty() ? null : suggestedWords.getWord(0);
-        if (TextUtils.isEmpty(batchInputText)) {
+        // A decode that read nothing used to return here, and that skipped the split decision with
+        // it. Nothing fitting these strokes as one word is the strongest evidence there is that they
+        // are two, so this is exactly the case the split most wants to see. It is also common: the
+        // beam search finds no lexicon word for a gesture with unrelated taps stuck on the end,
+        // which is what a word followed by another word looks like.
+        //
+        // There is still nothing to write, so the write below is skipped instead.
+        final boolean hasDecodedText = !TextUtils.isEmpty(batchInputText);
+        if (!hasDecodedText && !isTapSwipeMode()) {
             return;
         }
 
@@ -3735,6 +4009,7 @@ public final class InputLogic {
         // actually wired into the apply path.
         if (isTapSwipeMode()) {
             if (!mTapSwipeSession.isOpen()) {
+                TapSwipeSplitDebug.note("skipped: session closed");
                 if (DEBUG_TAPSWIPE) {
                     Log.d(TAG, "tapswipe TAIL dropped (session closed) text='" + batchInputText + "'");
                 }
@@ -3743,6 +4018,7 @@ public final class InputLogic {
             final Object in = mWordComposer.getTapSwipeInput();
             if (in instanceof TapSwipeDecodeInput
                     && !mTapSwipeSession.isCurrent(((TapSwipeDecodeInput) in).generation)) {
+                TapSwipeSplitDebug.note("skipped: stale generation");
                 if (DEBUG_TAPSWIPE) {
                     Log.d(TAG, "tapswipe TAIL dropped (stale gen "
                             + ((TapSwipeDecodeInput) in).generation + " vs "
@@ -3752,7 +4028,10 @@ public final class InputLogic {
             }
         }
 
-        rememberSuggestedWords(mConnection.getExpectedSelectionStart(), batchInputText, suggestedWords);
+        if (hasDecodedText) {
+            rememberSuggestedWords(
+                    mConnection.getExpectedSelectionStart(), batchInputText, suggestedWords);
+        }
 
         // TapSwipe: only a *continuation* stroke (one extending a word this session has already
         // written) may skip finalizing the previous composing region and skip the auto-space.
@@ -3769,6 +4048,83 @@ public final class InputLogic {
         final TapSwipeSession tapSwipeSession = tapSwipeOn ? mTapSwipeSession : null;
         final boolean tapSwipeContinuation =
                 tapSwipeSession != null && tapSwipeSession.isOpen() && tapSwipeSession.getHasComposed();
+
+        // How many strokes the decode being applied was computed from. Adding a stroke does not bump
+        // the session generation, so a decode dispatched before the latest stroke still passes the
+        // guard above and arrives describing fewer strokes than the session now holds.
+        int decodeCoveredStrokes = -1;
+        if (tapSwipeOn) {
+            final Object decodedFrom = mWordComposer.getTapSwipeInput();
+            if (decodedFrom instanceof TapSwipeDecodeInput) {
+                decodeCoveredStrokes = ((TapSwipeDecodeInput) decodedFrom).getSegmentCount();
+            }
+        }
+
+        // Keep what this decode read, against the number of strokes it covered. Each boundary needs
+        // the reading of the strokes in front of it, and this is where those readings come from.
+        // Stored on the session so it dies with the word: held here, it outlived one word and split
+        // the next one using the word before it.
+        if (tapSwipeOn && hasDecodedText && mTapSwipeSession.isOpen() && decodeCoveredStrokes > 0) {
+            mTapSwipeSession.noteReading(decodeCoveredStrokes, batchInputText);
+        }
+
+        // Decide the word boundary before writing anything. This is the only point that holds both
+        // the strokes and a fresh candidate list, and it is past the generation guard above, which
+        // matters more here than anywhere else: a split commits text, and committed text is not
+        // something a later decode can replace.
+        //
+        // The candidate list must describe every stroke. A decode covering only part of the word
+        // cannot contain a single-word reading of the whole, so its silence is not evidence that
+        // none exists. Judging against a gesture-only list split `are` from `a` on every fast tap,
+        // because no reading of `are` alone ends in `a`.
+        final boolean decodeCoversWholeWord = tapSwipeOn
+                && decodeCoveredStrokes == mTapSwipeSession.getStrokes().size();
+        final boolean splitEligible = tapSwipeOn && tapSwipeContinuation && decodeCoversWholeWord
+                && isTapSwipeAutoSplitEnabled() && mWordComposer.isComposingWord();
+        if (tapSwipeOn && isTapSwipeAutoSplitEnabled() && !splitEligible) {
+            // Say why, rather than leaving the previous word's decision standing and looking like
+            // this one's. A stale line read as a decision that had been made and cost a diagnosis.
+            TapSwipeSplitDebug.note("skipped:"
+                    + (tapSwipeContinuation ? "" : " notContinuation")
+                    + (decodeCoversWholeWord ? "" : " decodeCovered=" + decodeCoveredStrokes
+                            + "/" + mTapSwipeSession.getStrokes().size())
+                    + (mWordComposer.isComposingWord() ? "" : " notComposing"));
+        }
+        if (splitEligible) {
+            final java.util.List<TapSwipeWordSplit.Option> options =
+                    buildTapSwipeSplitOptions(suggestedWords);
+            final TapSwipeWordSplit.Option chosen =
+                    TapSwipeWordSplit.chooseSplit(options, mTapSwipeLexicon);
+
+            // Recorded rather than only logged. The scenario runner's report is the only channel
+            // available when logcat is not, and "expected two words" alone cannot be acted on.
+            final StringBuilder decision = new StringBuilder();
+            for (final TapSwipeWordSplit.Option option : options) {
+                if (decision.length() > 0) decision.append("; ");
+                decision.append("at=").append(option.at)
+                        .append(" '").append(option.boundary.head).append("'+'")
+                        .append(option.boundary.tail).append("'")
+                        .append(option.boundary.tapRunLeads ? " tapsLead" : "")
+                        .append(" gap=").append(option.boundary.gapMs)
+                        .append(" fus=").append(option.boundary.fusions.size())
+                        .append("->")
+                        .append(TapSwipeWordSplit.decide(option.boundary, mTapSwipeLexicon));
+            }
+            if (options.isEmpty()) decision.append("no boundary");
+            decision.append(" | chose ").append(chosen == null ? "none" : "at=" + chosen.at);
+            TapSwipeSplitDebug.note(decision.toString());
+            if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe SPLIT " + decision);
+            if (chosen != null) {
+                if (performTapSwipeSplit(settingsValues, chosen.boundary.head,
+                        chosen.at, keyboardSwitcher)) {
+                    return;
+                }
+            }
+        }
+
+        // Nothing was decoded, so there is nothing to write. Reaching here at all is the point: the
+        // split decision above needed to see this word, and only the write is skipped.
+        if (!hasDecodedText) return;
 
         if (DEBUG_TAPSWIPE) {
             Log.d(TAG, "tapswipe TAIL applied text='" + batchInputText + "'"

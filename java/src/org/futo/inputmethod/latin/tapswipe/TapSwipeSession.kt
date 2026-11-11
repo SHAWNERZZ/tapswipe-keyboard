@@ -94,6 +94,30 @@ class TapSwipeSession {
     var lastComposedText: String = ""
         private set
 
+    /**
+     * What each decode read, indexed by how many strokes it covered.
+     *
+     * An automatic split needs a reading of the strokes in front of each candidate boundary, and the
+     * decode covering exactly those strokes already produced one. Kept here rather than in
+     * `InputLogic` so it dies with the word it describes: [validateOrReset] calls [reset] from five
+     * places, and none of those go through the caller's own teardown. Held outside this class, the
+     * readings survived into the next word - a gesture over t, h, i plus tapped `s`, `i`, `s` was
+     * split using `Cats`, left over from the word before it.
+     */
+    private val readings = arrayOfNulls<String>(MAX_STROKES + 2)
+
+    /** Records what a decode covering [strokeCount] strokes read. */
+    fun noteReading(strokeCount: Int, text: String) {
+        if (strokeCount < 1 || strokeCount >= readings.size) return
+        readings[strokeCount] = text
+    }
+
+    /** What the decode covering [strokeCount] strokes read, or null when none has. */
+    fun readingFor(strokeCount: Int): String? {
+        if (strokeCount < 1 || strokeCount >= readings.size) return null
+        return readings[strokeCount]
+    }
+
     val isOpen: Boolean get() = strokesInternal.isNotEmpty()
 
     /**
@@ -163,11 +187,127 @@ class TapSwipeSession {
 
     fun isCurrent(gen: Int): Boolean = gen == generation
 
+    // ------------------------------------------------------------------ word boundaries
+
+    /**
+     * The one stroke index where the kind changes between tap and swipe, or -1 when there is not
+     * exactly one such place.
+     *
+     * A word can only break where the user changed how they were typing, so these indices are the
+     * complete set of candidate word boundaries. Returning -1 for two or more changes keeps the
+     * automatic split to one decision per word, which is all that can arise while every confident
+     * boundary commits at once. See [TapSwipeWordSplit].
+     */
+    fun soleKindChange(): Int {
+        var found = -1
+        for (i in 1 until strokesInternal.size) {
+            if (strokesInternal[i].kind != strokesInternal[i - 1].kind) {
+                if (found >= 0) return -1
+                found = i
+            }
+        }
+        return found
+    }
+
+    /** True when [index] starts a run of taps, so the leading part of the word was tapped. */
+    fun tapRunLeadsAt(index: Int): Boolean =
+        index in 1..strokesInternal.size && strokesInternal[0].kind == Kind.TAP
+
+    /**
+     * How many strokes at the start of the word are gestures.
+     *
+     * The word can break anywhere in the run of taps that follows them, not only where the kind
+     * changes. `this` typed as a gesture over t, h, i plus a tapped `s` leaves the taps `s`, `i`,
+     * `s`, and the first of those belongs to the gestured word while the last two are the next word.
+     */
+    fun leadingSwipeCount(): Int {
+        var n = 0
+        while (n < strokesInternal.size && strokesInternal[n].kind == Kind.SWIPE) n++
+        return n
+    }
+
+    /** True when every stroke from [index] onward is a tap, so its text is known exactly. */
+    fun tapsOnlyFrom(index: Int): Boolean {
+        if (index < 0 || index >= strokesInternal.size) return false
+        for (i in index until strokesInternal.size) {
+            if (strokesInternal[i].kind != Kind.TAP) return false
+        }
+        return true
+    }
+
+    /**
+     * The letters of the tap strokes in `[from, to)`, in stroke order.
+     *
+     * Exact typed text, unlike anything on the swiped side. A stroke whose key the layout could not
+     * place carries no code point and contributes nothing, which matches what the decoder received.
+     */
+    fun tapTextIn(from: Int, to: Int): String = buildString {
+        var i = if (from < 0) 0 else from
+        val end = if (to > strokesInternal.size) strokesInternal.size else to
+        while (i < end) {
+            val s = strokesInternal[i]
+            if (s.kind == Kind.TAP && s.codePoint > 0) appendCodePoint(s.codePoint)
+            i++
+        }
+    }
+
+    /**
+     * Milliseconds between the end of the stroke before [index] and the start of the stroke at
+     * [index], or -1 when either side has no usable times.
+     *
+     * Every stroke is re-based onto one session timeline, so these are directly comparable.
+     */
+    fun gapMsAt(index: Int): Int {
+        if (index < 1 || index >= strokesInternal.size) return -1
+        val end = strokesInternal[index - 1].t.lastOrNull() ?: return -1
+        val start = strokesInternal[index].t.firstOrNull() ?: return -1
+        val gap = start - end
+        return if (gap < 0f) -1 else gap.toInt()
+    }
+
+    /** A copy of the strokes from [index] onward, for reopening them as a word of their own. */
+    fun strokesFrom(index: Int): List<Stroke> {
+        if (index < 0 || index >= strokesInternal.size) return emptyList()
+        return ArrayList(strokesInternal.subList(index, strokesInternal.size))
+    }
+
+    /**
+     * A copy of the strokes before [index], which are the ones a split commits.
+     *
+     * A copy rather than a view, because the caller holds it across the [reset] that the commit
+     * performs.
+     */
+    fun strokesUpTo(index: Int): List<Stroke> {
+        if (index <= 0) return emptyList()
+        val end = if (index > strokesInternal.size) strokesInternal.size else index
+        return ArrayList(strokesInternal.subList(0, end))
+    }
+
+    /** True when the most recent stroke was a gesture, so the next tap begins a new tap run. */
+    val lastStrokeIsSwipe: Boolean
+        get() = strokesInternal.lastOrNull()?.kind == Kind.SWIPE
+
     // ------------------------------------------------------------------ lifecycle
+
+    /**
+     * Why the session was last discarded, and how many times it has been.
+     *
+     * A session dropping mid-word is not visible in the text, but its consequences are: the guard
+     * that stops an owed space landing inside a word reads [isOpen], so a word that loses its
+     * session gains a space instead. Reported as words splitting on their own with the automatic
+     * split switched off. Kept so the panel can name the invariant that fired.
+     */
+    var lastResetReason: String = "none"
+        private set
+
+    var resetCount: Int = 0
+        private set
 
     /** The single atomic clear. No partial resets anywhere. */
     fun reset(reason: String) {
         if (isOpen || anchorSelStart != NO_ANCHOR) {
+            lastResetReason = "$reason (had ${strokesInternal.size} strokes)"
+            resetCount++
             if (DEBUG) Log.d(TAG, "reset (${strokesInternal.size} strokes): $reason")
         }
         strokesInternal.clear()
@@ -175,6 +315,7 @@ class TapSwipeSession {
         latchedMode = null
         anchorSelStart = NO_ANCHOR
         lastComposedText = ""
+        readings.fill(null)
         generation++
     }
 
@@ -369,6 +510,10 @@ class TapSwipeSession {
             reset("last stroke popped")
             return true
         }
+        // Readings of the prefixes that are still here stay true, because removing the last stroke
+        // does not change any shorter prefix. The one describing the stroke count that no longer
+        // exists has to go.
+        for (i in strokesInternal.size + 1 until readings.size) readings[i] = null
         generation++
         return true
     }
@@ -387,6 +532,7 @@ class TapSwipeSession {
         appendLine("anchorSelStart=$anchorSelStart lastComposed='$lastComposedText'")
         appendLine("literal='$literalText'")
         appendLine("mode=${latchedMode ?: "<undecided>"} taps=${tapTimesMs.size} medianGap=${medianTapGapMs()}ms")
+        appendLine("resets=$resetCount lastReset=$lastResetReason")
         strokesInternal.forEachIndexed { i, s ->
             val label = if (s.kind == Kind.TAP && s.codePoint > 0)
                 "TAP '${String(Character.toChars(s.codePoint))}'" else s.kind.name

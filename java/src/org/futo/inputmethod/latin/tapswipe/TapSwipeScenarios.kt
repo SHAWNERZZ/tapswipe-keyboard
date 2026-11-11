@@ -11,6 +11,7 @@ import org.futo.inputmethod.latin.LatinIME
 import org.futo.inputmethod.latin.DictionaryFacilitatorImpl
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
 import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
+import org.futo.inputmethod.latin.TapSwipeAutoSplitSetting
 import org.futo.inputmethod.latin.TapSwipeLegacyTapRunSetting
 import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.BackspaceTap
@@ -241,6 +242,31 @@ object TapSwipeScenarios {
             waited += 50
         }
         return cond()
+    }
+
+    private fun wordCount(text: String) =
+        text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.size
+
+    /**
+     * Polls the editor until its text satisfies [cond], then returns it.
+     *
+     * [awaitUntil] cannot be used for text, because reading the editor has to marshal to the main
+     * thread and its condition is synchronous. A fixed delay is not a substitute: an automatic split
+     * is two round trips, since the tap's decode has to land before the boundary can be judged and
+     * the commit follows that. Waiting on the outcome rather than on a duration keeps the assertion
+     * about behaviour. A case that never satisfies [cond] still fails, one timeout later.
+     */
+    private suspend fun awaitText(
+        ime: LatinIME, timeoutMs: Long = 2500L, cond: (String) -> Boolean
+    ): String {
+        var text = textBeforeCursor(ime)
+        var waited = 0L
+        while (waited < timeoutMs && !cond(text)) {
+            delay(50)
+            waited += 50
+            text = textBeforeCursor(ime)
+        }
+        return text
     }
 
     // ---------------------------------------------------------------- settings under test
@@ -1016,6 +1042,422 @@ object TapSwipeScenarios {
                 if (p.text.trim().lowercase().let { w -> w == "hel" || w.isEmpty() }) null
                 else "backspace acted on the wrong position: '${p.text}'"
             }),
+
+        // --- automatic word split ---------------------------------------------------------
+        // Every one of these needs a live InputConnection and a real decode round trip, so none of
+        // it is reachable from the JVM tests that cover the rule itself. Two of the three defects
+        // this feature shipped with were invisible to those tests: one lived in the commit path, and
+        // one depended on whether a decode had landed before the next tap.
+        //
+        // Assertions compare against what was on screen rather than against a word, because a
+        // partial gesture is genuinely ambiguous and the decoder is free to read it either way.
+
+        run {
+            var detail = ""
+            Scenario("a tapped word after a gesture becomes its own word",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "hel"); settle()
+                        tap(ime, 'i'.code)
+                        detail = awaitText(ime) { wordCount(it) == 2 }.trim()
+                    }
+                },
+                check = { _ ->
+                    when {
+                        wordCount(detail) == 2 -> null
+                        else -> "expected two words, got '$detail'" + TapSwipeSplitDebug.describe()
+                    }
+                })
+        },
+
+        run {
+            var detail = ""
+            Scenario("with the split off the same motion stays one word",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, false) {
+                        clearField(ime)
+                        swipe(ime, "hel"); settle()
+                        tap(ime, 'i'.code); settle()
+                        detail = textBeforeCursor(ime).trim()
+                    }
+                },
+                check = { _ ->
+                    val words = detail.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    // The control. If this splits, the setting is not gating anything.
+                    if (words.size == 1) null else "expected one word with the split off, got '$detail'" + TapSwipeSplitDebug.describe()
+                })
+        },
+
+        run {
+            // Reported: with the setting off, words still seemed to split now and then.
+            //
+            // Counts splits actually performed rather than reading the text, because the text cannot
+            // tell an automatic split from a space arriving some other way. If this passes while the
+            // symptom is still seen, the space is coming from somewhere else, and the phantom space
+            // armed after every gesture is the thing to look at.
+            var before = 0
+            var after = 0
+            var text = ""
+            Scenario("the split never runs with the setting off",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, false) {
+                        before = TapSwipeSplitDebug.performedCount
+                        // The shapes that do split when the setting is on, plus a few ordinary ones.
+                        clearField(ime); swipe(ime, "hel"); settle(); tap(ime, 'i'.code); settle()
+                        text = textBeforeCursor(ime).trim()
+                        clearField(ime); swipe(ime, "thi"); settle()
+                        tap(ime, 's'.code); settle(); tap(ime, 'i'.code); settle()
+                        tap(ime, 's'.code); settle()
+                        clearField(ime); type(ime, "i"); settle(); swipe(ime, "cat"); settle()
+                        clearField(ime); swipe(ime, "cat"); settle(); tap(ime, 's'.code); settle()
+                        clearField(ime); swipe(ime, "hel"); settle(); type(ime, " "); settle()
+                        swipe(ime, "cat"); settle()
+                        after = TapSwipeSplitDebug.performedCount
+                    }
+                },
+                check = { _ ->
+                    when {
+                        after != before ->
+                            "the split ran ${after - before} time(s) with the setting off"
+                        // A sanity check that the shapes really were typed, so a silent no-op
+                        // cannot pass this.
+                        text.isEmpty() -> "nothing was typed, so this proves nothing"
+                        else -> null
+                    }
+                })
+        },
+
+        run {
+            var detail = ""
+            Scenario("a suffix tap stays part of the gestured word",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "cat"); settle()
+                        tap(ime, 's'.code); settle()
+                        detail = textBeforeCursor(ime).trim()
+                    }
+                },
+                check = { _ ->
+                    val words = detail.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    // `s` is not a word on its own, so nothing here may split.
+                    if (words.size == 1) null else "a suffix tap split the word: '$detail'" + TapSwipeSplitDebug.describe()
+                })
+        },
+
+        run {
+            // The reported case, and the reason the boundary search needed rework.
+            //
+            // `this` was typed as a gesture over t-h-i plus a tapped `s`. So the run of taps after
+            // the gesture is s, i, s - and the first of them belongs to the gestured word while the
+            // last two are the next word. Treating the whole run as one word gave `to sis`: `to` was
+            // the gesture read on its own, and `sis` was every tap after it.
+            //
+            // The assertion is that the completing tap stays with the first word. It compares
+            // against what the screen showed once that tap landed, so it holds whichever way the
+            // decoder read a three-key gesture.
+            var shown = ""
+            var detail = ""
+            Scenario("a tap that completes the gestured word stays with it",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "thi"); settle()
+                        tap(ime, 's'.code); settle()
+                        shown = textBeforeCursor(ime).trim()
+                        tap(ime, 'i'.code); settle()
+                        tap(ime, 's'.code)
+                        detail = awaitText(ime) { wordCount(it) == 2 }.trim()
+                    }
+                },
+                // The knownLimitation marker is deliberately gone. It was set before the boundary
+                // search could look inside a tap run, and while it stood the report printed the
+                // limitation text instead of the reason this failed - which is the one thing needed
+                // to fix it.
+                check = { _ ->
+                    val words = detail.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    when {
+                        shown.isEmpty() -> "nothing was composed to compare against"
+                        words.isEmpty() -> "the field ended up empty"
+                        words.size == 1 -> "expected two words, got '$detail'" + TapSwipeSplitDebug.describe()
+                        words[0] != shown ->
+                            "the completing tap left the first word: showed '$shown', got '$detail'" +
+                                    TapSwipeSplitDebug.describe()
+                        else -> null
+                    }
+                })
+        },
+
+        run {
+            // The `ava ava` regression. A tap fires an ordinary typing query over the pre-split
+            // literal, and its autocorrection landed after the split and was committed by space.
+            var shown = ""
+            var detail = ""
+            Scenario("space after a split commits the word that was shown",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "hel"); settle()
+                        tap(ime, 'i'.code); settle()
+                        shown = textBeforeCursor(ime).trim()
+                        type(ime, " "); settle()
+                        detail = textBeforeCursor(ime).trim()
+                    }
+                },
+                check = { _ ->
+                    val before = shown.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    val after = detail.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    when {
+                        before.size != 2 -> "the split did not happen, so this proves nothing: '$shown'"
+                        after.size != 2 -> "space changed the word count: '$shown' -> '$detail'"
+                        after[1] != before[1] ->
+                            "space replaced the tapped word: '$shown' -> '$detail'"
+                        after[0] != before[0] ->
+                            "space replaced the gestured word: '$shown' -> '$detail'"
+                        else -> null
+                    }
+                })
+        },
+
+        run {
+            var detail = ""
+            Scenario("a split leaves exactly one space between the words",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "hel"); settle()
+                        tap(ime, 'i'.code); settle()
+                        type(ime, " "); settle()
+                        swipe(ime, "cat"); settle()
+                        type(ime, " "); settle()
+                        detail = textBeforeCursor(ime)
+                    }
+                },
+                check = { _ ->
+                    // The separator a split records is a space that is never written; a phantom
+                    // space puts it in when the second word lands. Getting that wrong shows up
+                    // either as a doubled space or as two words run together.
+                    when {
+                        detail.contains("  ") -> "a doubled space appeared: '$detail'"
+                        detail.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.size == 3 -> null
+                        else -> "expected three words, got '${detail.trim()}'"
+                    }
+                })
+        },
+
+        run {
+            var detail = ""
+            Scenario("punctuation after a split does not keep the space in front of it",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "hel"); settle()
+                        tap(ime, 'i'.code); settle()
+                        type(ime, "."); settle()
+                        detail = textBeforeCursor(ime)
+                    }
+                },
+                check = { _ ->
+                    if (detail.contains(" .")) "a space was left before the stop: '$detail'"
+                    else null
+                })
+        },
+
+        run {
+            // Directly aimed at the decode race. The gesture's own decode is asynchronous, so a tap
+            // arriving before it lands used to see no reading of the gesture at all. Both declining
+            // to split and splitting wrongly came out of that, which means the answer must not
+            // depend on how long the finger waited.
+            var slow = ""
+            var fast = ""
+            Scenario("the answer does not depend on how fast the tap follows",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "hel"); settle()
+                        tap(ime, 'i'.code)
+                        slow = awaitText(ime) { wordCount(it) == 2 }.trim()
+
+                        clearField(ime)
+                        swipe(ime, "hel")
+                        // 50ms, not zero. A gap under about 50ms loses the word outright, which is
+                        // the decode race already recorded as a known limitation in the session
+                        // hygiene group and has nothing to do with the split. No thumb can reach a
+                        // key that fast either. This is the fastest gap a finger can actually
+                        // produce, and the split must not care about it.
+                        delay(50)
+                        tap(ime, 'i'.code)
+                        fast = awaitText(ime) { wordCount(it) == 2 }.trim()
+                    }
+                },
+                check = { _ ->
+                    if (wordCount(slow) == wordCount(fast)) null
+                    else "waiting changed the answer: slow '$slow' vs fast '$fast'" +
+                        TapSwipeSplitDebug.describe()
+                })
+        },
+
+        run {
+            // The mirror of the same race, on a pair the numbers cannot separate. A gesture-only
+            // candidate list contains no reading of the whole word, so its silence must not be read
+            // as proof that no single-word reading exists.
+            var detail = ""
+            Scenario("a fast tap does not split a word that has a one-word reading",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "are")
+                        delay(50)               // the fastest gap a finger can produce
+                        tap(ime, 'a'.code)
+                        settle(); settle()
+                        detail = textBeforeCursor(ime).trim()
+                    }
+                },
+                // Marker removed: this passed on hardware, so the boundary it was guarding has
+                // moved and leaving it would hide a later regression behind a KNOWN.
+                check = { _ ->
+                    if (wordCount(detail) == 1) null
+                    else "a fast tap split a fusable word: '$detail'" + TapSwipeSplitDebug.describe()
+                })
+        },
+
+        run {
+            var detail = ""
+            Scenario("a tapped word before a gesture becomes its own word",
+                group = "Word split",
+                // `cat` rather than `hel`: a tapped `i` in front of h-e-l reads as `Irk`, a real
+                // word, so that pair is decided by frequency rather than by whether a fusion exists
+                // at all. Nothing beginning with `i` fits i-c-a-t, so this exercises the boundary
+                // instead of the comparison. The frequency case is the scenario below.
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        type(ime, "i"); settle()
+                        swipe(ime, "cat")
+                        detail = awaitText(ime) { wordCount(it) == 2 }.trim()
+                    }
+                },
+                check = { _ ->
+                    if (wordCount(detail) == 2) null else "expected two words, got '$detail'" + TapSwipeSplitDebug.describe()
+                },
+                // Reported as `Ivar`, and the mechanism is structural rather than a threshold.
+                //
+                // When taps lead, the tail of a one-word reading is not the tail of the split. The
+                // decoder read the tap plus c-a-t as `Ivar`, which implies a tail of `var`. The
+                // gesture on its own reads `cat`. So the comparison weighs `Ivar` against a tail
+                // that no gesture produced, and the real alternative, `I` and `cat`, is never on
+                // the table.
+                //
+                // A gesture run followed by taps does not have this problem: the head's own reading
+                // comes from the decode that covered exactly those strokes. There is no equivalent
+                // for a gesture at the end of a word, because no prefix decode covers it alone.
+                // Fixing it means decoding the gesture by itself when this shape appears, which is
+                // one extra decode in one specific case. Tuning the rarity floor instead would only
+                // move which names break.
+                knownLimitation = "when taps lead, the one-word reading's tail is not the split's " +
+                        "tail, so the gesture's own reading is never compared against it")
+        },
+
+        run {
+            // The frequency half of the same question, and it does resolve, which is what says the
+            // limitation above is about the missing reading rather than about frequency being
+            // unusable. A tapped `i` before h-e-l has a real one-word reading, and it loses.
+            var detail = ""
+            Scenario("a rare one-word reading loses to two common words",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        type(ime, "i"); settle()
+                        swipe(ime, "hel")
+                        detail = awaitText(ime) { wordCount(it) == 2 }.trim()
+                    }
+                },
+                check = { _ ->
+                    if (wordCount(detail) == 2) null
+                    else "a rare fused word won: '$detail'" + TapSwipeSplitDebug.describe()
+                })
+        },
+
+        run {
+            var detail = ""
+            Scenario("strokes do not leak across a split",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "hel"); settle()
+                        tap(ime, 'i'.code); settle()
+                        type(ime, " "); settle()
+                        swipe(ime, "cat"); settle()
+                        detail = textBeforeCursor(ime).trim()
+                    }
+                },
+                check = { _ ->
+                    val words = detail.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    // The third word must be the gesture alone. A split that left evidence behind
+                    // would grow it with the strokes of the words before it.
+                    when {
+                        words.size != 3 -> "expected three words, got '$detail'"
+                        words[2].length > 6 -> "the last word absorbed earlier strokes: '$detail'"
+                        else -> null
+                    }
+                })
+        },
+
+        run {
+            var detail = ""
+            Scenario("one backspace after a split reopens the gestured word",
+                group = "Word split",
+                run = { ime ->
+                    TapSwipeSplitDebug.clear()
+                    withSetting(ime, TapSwipeAutoSplitSetting, true) {
+                        clearField(ime)
+                        swipe(ime, "hel"); settle()
+                        tap(ime, 'i'.code); settle()
+                        val before = textBeforeCursor(ime).trim()
+                        tap(ime, Constants.CODE_DELETE); settle()
+                        tap(ime, Constants.CODE_DELETE); settle()
+                        detail = "'$before' -> '${textBeforeCursor(ime).trim()}'"
+                    }
+                },
+                check = { _ ->
+                    val parts = detail.split(" -> ")
+                    if (parts.size != 2) "could not read the field: $detail"
+                    else {
+                        val before = parts[0].trim('\'')
+                        val after = parts[1].trim('\'')
+                        // Two presses: the first takes the tapped word, the second reaches back into
+                        // the gestured one. Nothing here should have grown.
+                        if (after.length < before.length) null
+                        else "backspace did not remove anything: $detail"
+                    }
+                })
+        },
 
         // --- settings that change behaviour -----------------------------------------------
         // Each of these was a manual checklist line: turn a preference on, try something, turn it

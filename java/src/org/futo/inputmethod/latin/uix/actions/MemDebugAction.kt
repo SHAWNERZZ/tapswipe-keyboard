@@ -35,9 +35,11 @@ import org.futo.inputmethod.latin.LatinIME
 import org.futo.inputmethod.latin.LegacySwipeSetting
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
+import org.futo.inputmethod.latin.TapSwipeAutoSplitSetting
 import org.futo.inputmethod.latin.tapswipe.TapSwipeUiState
 import org.futo.inputmethod.latin.tapswipe.TapSwipeScenarios
 import org.futo.inputmethod.latin.tapswipe.TapSwipeSpikes
+import org.futo.inputmethod.latin.tapswipe.TapSwipeSplitDebug
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.DataStoreHelper
@@ -419,6 +421,17 @@ val MemoryDebugAction = Action(
                                             "verbatim=${il.isTapSwipeVerbatimWord()} cadence=${il.tapSwipePeckCadenceMs()}ms legacyRun=${il.tapSwipeLegacyTapRun()}\n" +
                                         "uiMode=${TapSwipeUiState.mode} borders=${TapSwipeUiState.showBorders()} letters=${TapSwipeUiState.showLetters()} " +
                                             "userKeyBorders=${DataStoreHelper.getSetting(KeyBordersSetting)}\n" +
+                                        // Splits performed, not attempted. Reported as words
+                                        // splitting with the setting off; a count that stays at
+                                        // zero says the space came from somewhere else.
+                                        "autoSplit=${DataStoreHelper.getSetting(TapSwipeAutoSplitSetting)} " +
+                                            "splitsPerformed=${TapSwipeSplitDebug.performedCount} " +
+                                            "lastSplit=${TapSwipeSplitDebug.lastPerformed}\n" +
+                                        // With splitsPerformed confirmed at zero while words still
+                                        // appeared to split, this is the line that names the cause.
+                                        "spaceState=${il.debugSpaceState()} " +
+                                            "autoSpaces=${TapSwipeSplitDebug.autoSpaceCount}\n" +
+                                        "lastAutoSpace=${TapSwipeSplitDebug.lastAutoSpace}\n" +
                                         il.mTapSwipeSession.describe()
                                     } else {
                                         "active IME is not GeneralIME"

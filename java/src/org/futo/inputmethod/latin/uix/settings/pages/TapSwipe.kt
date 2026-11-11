@@ -16,6 +16,7 @@ import org.futo.inputmethod.latin.TapSwipeLegacyTapRunSetting
 import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
 import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
+import org.futo.inputmethod.latin.TapSwipeAutoSplitSetting
 import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
 import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import org.futo.inputmethod.latin.TapSwipeWpmSetting
@@ -112,6 +113,15 @@ val TapSwipeMenu = UserSettingsMenu(
             subtitle = R.string.tapswipe_settings_real_tap_position_subtitle,
             setting = TapSwipeRealTapPositionSetting,
             icon = { Icon(painterResource(R.drawable.circle), contentDescription = null) }
+        ).copy(visibilityCheck = tapSwipeEnabled),
+
+        // Sits with the input-interpretation toggles rather than under Tuning: it changes what a
+        // word is, which is the same kind of decision as where a tap is taken to have landed.
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_auto_split,
+            subtitle = R.string.tapswipe_settings_auto_split_subtitle,
+            setting = TapSwipeAutoSplitSetting,
+            icon = { Icon(painterResource(R.drawable.scissors), contentDescription = null) }
         ).copy(visibilityCheck = tapSwipeEnabled),
 
         userSettingToggleDataStore(

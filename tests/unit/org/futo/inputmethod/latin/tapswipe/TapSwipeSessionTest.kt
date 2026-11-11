@@ -339,4 +339,249 @@ class TapSwipeSessionTest {
         assertEquals(1, s.leftSegs().size)
         assertEquals(1, s.rightSegs().size)
     }
+
+    // ---------------------------------------------------------------- word boundaries
+
+    /** A word made one way throughout has nowhere to break. */
+    @Test
+    fun `a word of one kind has no boundary`() {
+        val taps = session()
+        taps.tap('a'.code)
+        taps.tap('b'.code)
+        assertEquals(-1, taps.soleKindChange())
+
+        val swipes = session()
+        swipes.swipe()
+        swipes.swipe()
+        assertEquals(-1, swipes.soleKindChange())
+    }
+
+    @Test
+    fun `a swipe followed by taps breaks after the swipe`() {
+        val s = session()
+        s.swipe()
+        s.tap('i'.code)
+        assertEquals(1, s.soleKindChange())
+        assertFalse(s.tapRunLeadsAt(1))
+    }
+
+    @Test
+    fun `taps followed by a swipe break after the taps`() {
+        val s = session()
+        s.tap('i'.code)
+        s.swipe()
+        assertEquals(1, s.soleKindChange())
+        assertTrue(s.tapRunLeadsAt(1))
+    }
+
+    /**
+     * Two changes decline. One split per word is all that can arise while every confident boundary
+     * commits at once, so a third part means something is being held that should not be.
+     */
+    @Test
+    fun `two kind changes decline`() {
+        val s = session()
+        s.tap('i'.code)
+        s.swipe()
+        s.tap('s'.code)
+        assertEquals(-1, s.soleKindChange())
+    }
+
+    @Test
+    fun `tap text is read from a stroke range`() {
+        val s = session()
+        s.swipe()
+        s.tap('m'.code)
+        s.tap('e'.code)
+        assertEquals("me", s.tapTextIn(1, 3))
+        assertEquals("m", s.tapTextIn(1, 2))
+        assertEquals("", s.tapTextIn(0, 1))
+    }
+
+    /** Out-of-range asks are clamped rather than thrown, because callers derive these indices. */
+    @Test
+    fun `tap text clamps a range beyond the strokes`() {
+        val s = session()
+        s.tap('a'.code)
+        assertEquals("a", s.tapTextIn(0, 99))
+        assertEquals("a", s.tapTextIn(-5, 99))
+    }
+
+    /** The gap is what separates one action from two, so it comes from the shared timeline. */
+    @Test
+    fun `the gap at a boundary measures across the two strokes`() {
+        val s = session()
+        s.swipe(t = 100f)          // occupies 100..132
+        s.tap('i'.code, t = 632f)
+        assertEquals(500, s.gapMsAt(1))
+    }
+
+    @Test
+    fun `a gap outside the strokes is unknown`() {
+        val s = session()
+        s.swipe()
+        assertEquals(-1, s.gapMsAt(0))
+        assertEquals(-1, s.gapMsAt(1))
+    }
+
+    /** The tail strokes are copied, so reopening them cannot alias the list being reset. */
+    @Test
+    fun `strokes from an index come back as an independent copy`() {
+        val s = session()
+        s.swipe()
+        s.tap('m'.code)
+        s.tap('e'.code)
+
+        val tail = s.strokesFrom(1)
+        assertEquals(2, tail.size)
+        s.reset("done")
+        assertEquals("the copy must survive the reset", 2, tail.size)
+    }
+
+    @Test
+    fun `the last stroke kind is reported`() {
+        val s = session()
+        s.swipe()
+        assertTrue(s.lastStrokeIsSwipe)
+        s.tap('i'.code)
+        assertFalse(s.lastStrokeIsSwipe)
+    }
+
+    /**
+     * The shape the automatic split searches. `this` typed as a gesture over t, h, i plus a tapped
+     * `s`, then the word `is` tapped, is one gesture and three taps. Every position in that tap run
+     * is a place the word could break.
+     */
+    @Test
+    fun `a gesture run then a tap run is measured`() {
+        val s = session()
+        s.swipe()
+        s.tap('s'.code)
+        s.tap('i'.code)
+        s.tap('s'.code)
+
+        assertEquals(1, s.leadingSwipeCount())
+        assertTrue(s.tapsOnlyFrom(1))
+        assertEquals("sis", s.tapTextIn(1, 4))
+        assertEquals("is", s.tapTextIn(2, 4))
+        assertEquals("s", s.tapTextIn(3, 4))
+    }
+
+    @Test
+    fun `two gestures before the taps are both counted`() {
+        val s = session()
+        s.swipe()
+        s.swipe()
+        s.tap('i'.code)
+        assertEquals(2, s.leadingSwipeCount())
+        assertTrue(s.tapsOnlyFrom(2))
+    }
+
+    @Test
+    fun `a word of only taps has no leading gesture`() {
+        val s = session()
+        s.tap('i'.code)
+        s.tap('s'.code)
+        assertEquals(0, s.leadingSwipeCount())
+        assertTrue(s.tapsOnlyFrom(0))
+    }
+
+    /** A gesture after the taps means the tail is not plain text, so the search declines. */
+    @Test
+    fun `a gesture inside the tail is reported`() {
+        val s = session()
+        s.swipe()
+        s.tap('i'.code)
+        s.swipe()
+        assertEquals(1, s.leadingSwipeCount())
+        assertFalse(s.tapsOnlyFrom(1))
+    }
+
+    @Test
+    fun `taps only from an index outside the strokes is false`() {
+        val s = session()
+        s.swipe()
+        assertFalse(s.tapsOnlyFrom(1))
+        assertFalse(s.tapsOnlyFrom(-1))
+    }
+
+    // ---------------------------------------------------------------- prefix readings
+
+    @Test
+    fun `a reading is stored against the stroke count it covered`() {
+        val s = session()
+        s.noteReading(1, "to")
+        s.noteReading(2, "this")
+        assertEquals("to", s.readingFor(1))
+        assertEquals("this", s.readingFor(2))
+        assertEquals(null, s.readingFor(3))
+    }
+
+    /**
+     * The bug this exists to stop. A gesture over t, h, i plus tapped `s`, `i`, `s` was split using
+     * `Cats`, which was left over from the word before it.
+     *
+     * The readings live here rather than in the caller because [validateOrReset] resets from five
+     * places, and none of those pass through the caller's own teardown. Held anywhere else, they
+     * outlive the word they describe.
+     */
+    @Test
+    fun `readings do not survive a reset`() {
+        val s = session()
+        s.swipe()
+        s.tap('s'.code)
+        s.noteReading(1, "cat")
+        s.noteReading(2, "cats")
+
+        s.reset("next word")
+
+        assertEquals(null, s.readingFor(1))
+        assertEquals(null, s.readingFor(2))
+    }
+
+    /** The same, through the path that actually caused it: the session dropping itself on read. */
+    @Test
+    fun `readings do not survive a validate-on-read reset`() {
+        val s = session()
+        s.swipe()
+        s.noteComposingWrite("cats", 4)
+        s.noteReading(1, "cats")
+
+        // The editor is no longer composing, so the session drops itself.
+        assertFalse(s.validateOrReset(false, "cats", 4))
+
+        assertEquals(null, s.readingFor(1))
+    }
+
+    /**
+     * A pop leaves every shorter prefix untouched, so those readings stay true. Only the one
+     * describing a stroke count that no longer exists has to go.
+     */
+    @Test
+    fun `a pop keeps the readings that still describe something`() {
+        val s = session()
+        s.swipe()
+        s.tap('s'.code)
+        s.tap('i'.code)
+        s.noteReading(1, "to")
+        s.noteReading(2, "this")
+        s.noteReading(3, "thin")
+
+        s.popLastStroke()
+
+        assertEquals("to", s.readingFor(1))
+        assertEquals("this", s.readingFor(2))
+        assertEquals("a reading for a stroke count that is gone must go", null, s.readingFor(3))
+    }
+
+    @Test
+    fun `an out-of-range reading is ignored rather than thrown`() {
+        val s = session()
+        s.noteReading(0, "nope")
+        s.noteReading(-1, "nope")
+        s.noteReading(9999, "nope")
+        assertEquals(null, s.readingFor(0))
+        assertEquals(null, s.readingFor(-1))
+        assertEquals(null, s.readingFor(9999))
+    }
 }

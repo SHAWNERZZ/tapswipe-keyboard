@@ -992,6 +992,11 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
         return false;
     }
 
+    @Override
+    public int getWordFrequency(final String word) {
+        return getFrequency(word);
+    }
+
     private int getFrequency(final String word) {
         if (TextUtils.isEmpty(word)) {
             return Dictionary.NOT_A_PROBABILITY;

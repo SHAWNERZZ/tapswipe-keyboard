@@ -149,6 +149,114 @@ tap is not. Rule in `WholeWordDelete.lengthToWhitespace`.
 
 Unchanged. Repeats per the upstream `pref_backspace_mode_hold`.
 
+## 7a. Automatic word split
+
+Behind `TapSwipeAutoSplitSetting`, off by default. Lets one word break
+into two, so a tapped short word beside a swiped one stops fusing into
+it. Reasoning and open decisions live in `docs/plans/WORD_SPLIT.md`.
+
+**Taps are never given to the path decoder to test a fusion.** That is
+the whole point. Feeding a tap to the decoder as one more point on the
+path lets it re-read the swipe, which is how swiping `ava` and tapping
+`i` produced `acai`. Fusions are built by joining the two sides as
+strings instead.
+
+**A word can break anywhere in the tap run that follows a gesture.** Not
+only where the kind changes. `this` typed as a gesture over t, h, i plus
+a tapped `s` leaves the taps `s`, `i`, `s`, and the first of those
+finishes the gestured word while the last two are the next word. Judging
+only the kind change gave `to sis`, where `to` was the gesture read on
+its own and `sis` was every tap after it.
+
+So every boundary in the tap run is built and judged, and
+`TapSwipeWordSplit.chooseSplit` picks between them. **Later boundaries
+win.** Let the gestured word absorb as many following taps as it can, and
+start the new word with what is left. That is the order fingers work in.
+
+Taps followed by a gesture keep the single kind-change boundary
+(`soleKindChange`), because a boundary inside the leading taps would
+leave a tail holding both taps and a gesture, and a tail has to be
+describable on its own. Any other shape is declined.
+
+Each boundary needs a reading of the strokes in front of it.
+`mTapSwipeReadingByStrokes` holds what every decode read, indexed by how
+many strokes it covered. Nothing is recomputed: every stroke triggers a
+decode, so the readings of all shorter prefixes are already there.
+
+`TapSwipeWordSplit` holds the whole rule, from decoder candidates to
+verdict, as pure functions with JVM tests. `boundaryFor` reads the
+candidate list. `decide` judges it.
+
+**Only a decode covering every stroke may split.** Adding a stroke does
+not bump the session generation, so a decode dispatched before the newest
+stroke still passes the staleness guard while describing fewer strokes.
+A partial candidate list cannot contain a reading of the whole word, so
+its silence is not evidence that none exists.
+
+A decode covering exactly the strokes before the boundary is recorded as
+the head's reading, because that is what it is. Tap-time capture alone
+left the head unknown whenever a tap beat the gesture's own decode.
+
+**A suffix match is not a fusion.** A candidate counts as one word only
+if its leading part could be the same gesture read another way, which
+means starting on the same key and having close to the same number of
+letters. Otherwise `this` counts as a reading of `this` plus `is`.
+
+| Fused form is a word | Tap run is a word | Verdict |
+|---|---|---|
+| no | no | Wait, and behave as fuse |
+| no | yes | Split |
+| yes | no | Fuse. This is `cats` and `worked` |
+| yes | yes | Compare, below |
+
+When both are words, a fusion that had to demote the swipe's best
+reading loses. That is the `ava` case. Otherwise frequencies decide, and
+a tie fuses.
+
+**Fuse on a tie, always.** A wrong fuse leaves the composing region
+wrong, and that region is replaced for free. A wrong split has already
+committed text.
+
+Frequency and n-gram probability are not wired yet, so the comparison
+currently keeps any fused word a dictionary holds. Splits therefore come
+from the first two rows and from the demotion test.
+
+Where it runs: `InputLogic.onUpdateTailBatchInputCompleted`, after the
+generation guard and before the candidate is written. That is the only
+point holding both the strokes and a fresh candidate list.
+
+`performTapSwipeSplit` commits the head with a space separator that is
+never written, then arms `SpaceState.PHANTOM`. So the space appears when
+the tail word lands, and a split never leaves a trailing space.
+
+One field carries state. `mTapSwipeHeadBeforeTapRun` holds what the
+strokes before the current tap run decoded to. It is captured when a tap
+first follows a gesture, because by apply time the session's own record
+holds the post-tap literal. Later taps in the same run must not
+overwrite it, which is what lets the boundary move backward when `see`
+plus `m` turns out to be `see me`.
+
+**A split word is committed verbatim.** `isTapSwipeVerbatimWord` returns
+true while the open word is exactly what a split produced. The split
+already required both sides to be dictionary words, so autocorrect has
+nothing to add, and letting it run committed a stale answer. See the
+next paragraph. The flag clears the moment another stroke joins, so a
+long word typed out after a split keeps autocorrect.
+
+That defect is worth stating, because it is the recurring bug class
+again. A tap fires two suggestion queries. One decodes the strokes and
+lands the split. The other is an ordinary typing query over the
+pre-split literal `avai`, which autocorrects to `ava`. It arrived after
+the split and stamped itself on a composer that by then held `i`. Space
+took the autocorrect branch and committed `ava`, giving `ava ava`.
+
+Not done yet: geometry is not learned from a split word, because the
+learner aligns a word against the strokes that made it and half a stroke
+list is a false alignment.
+
+Also not done: the suggestion strip still lists candidates computed for
+the pre-split word for a moment after a split.
+
 ## 8. Re-entrancy guards
 
 The design is validate-on-read. Each access checks that the session
@@ -307,6 +415,7 @@ DataStore keys, verified on 2026-08-18.
 | What a backspace tap removes | `TapSwipeBackspaceTapSetting`      | `tapswipe_backspace_tap`     | last gesture |
 | Swipe up deletes a word      | `TapSwipeBackspaceSwipeUpSetting`  | `tapswipe_backspace_swipe_up`| off     |
 | Show the word's gestures     | `TapSwipeWordTrailsSetting`        | `tapswipe_word_trails`       | off     |
+| Split tapped words           | `TapSwipeAutoSplitSetting`         | `tapswipe_auto_split`        | off     |
 | Nintype gestures, comma pull | `TapSwipeNintypeGesturesSetting`   | `tapswipe_nintype_gestures`  | off     |
 | Enter key swipes             | `TapSwipeEnterFlicksSetting`       | `tapswipe_enter_flicks`      | off     |
 | Enter direction assignments  | `TapSwipeEnterFlickMapSetting`     | `tapswipe_enter_flick_map`   | four cardinals |

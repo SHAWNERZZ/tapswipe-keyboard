@@ -305,6 +305,18 @@ val TapSwipeAdaptiveGeometrySetting =
 val TapSwipeNintypeGesturesSetting =
     SettingsKey(booleanPreferencesKey("tapswipe_nintype_gestures"), false)
 
+/**
+ * Lets one word break into two when a tapped word sits beside a swiped one.
+ *
+ * A word normally runs from one finalizer to the next, so tapping `i` after swiping `hello` folds
+ * the tap into that word. This asks, on every stroke, whether the evidence reads better as two
+ * words, and inserts the space itself when it does. See `docs/plans/WORD_SPLIT.md`.
+ *
+ * Off by default. It commits text on its own judgement, which nothing else in this fork does.
+ */
+val TapSwipeAutoSplitSetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_auto_split"), false)
+
 /** What one tap of the backspace key removes. See [TapSwipeBackspaceTapSetting]. */
 object BackspaceTap {
     /** Removes the last gesture of the last word, then whole words for older text. */

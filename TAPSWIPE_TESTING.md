@@ -150,6 +150,53 @@ Gesture trails.
       as a dot.
 - [ ] Trails stay behind the key labels in Master Mode.
 
+Automatic word split has its own **Word split** group in the scenario
+runner. Run that first. The checks below are the ones a finger is needed
+for, with the setting on. Every one is also a check that ordinary swiping
+did not change.
+
+- [ ] Swipe part of a word, tap the letter that finishes it, then tap a
+      short word. The completing tap must stay with the first word. This
+      is the `to sis` case: gesture t, h, i, then tap `s`, `i`, `s`.
+
+- [ ] Swipe a word, then tap `I`. Two words, with one space.
+- [ ] Tap `I`, then swipe a word. Two words, with one space.
+- [ ] Swipe `cat`, then tap `s`. One word, `cats`.
+- [ ] Swipe a word, then tap `e`, then `d`. One word. The intermediate
+      state must not commit anything.
+- [ ] Swipe `see`, then tap `m`, then `e`. Shows `seem`, then becomes
+      `see me`. The boundary moves backward, and only the second tap
+      commits anything.
+- [ ] The reported case. Swipe across a, c, a for a saved name, then tap
+      `i`. Two words, not `acai`.
+- [ ] The same case, then press space. It must stay `ava i`. This one
+      shipped broken once: space committed `ava ava`, because a typing
+      query over the pre-split literal `avai` autocorrected to `ava` and
+      landed after the split.
+- [ ] Split, then keep tapping a longer word, then press space. That word
+      must still autocorrect. The verbatim rule covers only the word the
+      split produced.
+- [ ] Swipe `this`, then tap `i` and `s`. Two words. This one shipped
+      broken: `this` ends in those letters, so it counted as a one-word
+      reading of `this is`.
+- [ ] Tap the letter as fast as you can after the gesture ends, several
+      times. The answer must not change with speed. A fast tap arrives
+      before the gesture's own decode, and both declining to split and
+      splitting wrongly were caused by that.
+- [ ] Swipe `are`, then tap `a`, fast. It must stay `area`.
+- [ ] No trailing space is left behind. Split, then press a full stop.
+      One space is not left in front of it.
+- [ ] Backspace right after a split reopens the head word for stroke
+      undo.
+- [ ] Turn the setting off. Every case above returns to one word.
+
+Known gaps to confirm rather than report as new:
+
+- A tap-only word commits literally, so `i` stays lower case.
+- A split word teaches the geometry model nothing.
+- Frequencies are not wired, so an ambiguous pair such as `are a`
+  against `area` always fuses.
+
 Other keys.
 
 - [ ] Swipe straight down from V onto the space bar produces a comma
