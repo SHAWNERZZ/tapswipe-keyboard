@@ -40,6 +40,8 @@ class Session:
         dev.start_target(run_id)
         self.layout_event = dev.wait_for_layout(run_id)
         self.layout = finger.Layout.from_layout_event(self.layout_event)
+        if params.swipe_speed_keyw:
+            params.swipe_speed = params.swipe_speed_keyw * self.layout.key_w
         # The first touches after the keyboard appears were sometimes lost or misread. Let the
         # keyboard, the decoder, and the language model finish loading first.
         time.sleep(1.5)

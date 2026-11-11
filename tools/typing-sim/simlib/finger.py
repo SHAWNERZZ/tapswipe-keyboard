@@ -81,6 +81,7 @@ class FingerParams:
     gap_ms: tuple = (110, 230)     # lift to next touch, inside a word
     space_gap_ms: tuple = (150, 260)
     overlap: float = 0.55          # two-thumb style: second thumb starts at this fraction
+    swipe_speed_keyw: float | None = None  # from `stats`; if set, overrides swipe_speed per layout
 
 
 @dataclass

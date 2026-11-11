@@ -92,4 +92,21 @@ Unit tests for the host: `python3 -m unittest discover -s tests`.
 - Do not touch the emulator during a run. Any other input lands in the
   recording.
 - Finger model defaults are guesses. Calibrate them from typing test
-  recordings.
+  recordings: `python3 sim.py stats <recording> --out params.json`, then
+  `run --params params.json`.
+- Results vary between runs with the same seed. The touches are the
+  same, but decode timing is not. Measured on 2026-11-11: across two
+  runs of the same 50 swipe-then-tap words, 2 words flipped between
+  right and wrong for no code reason (a third change came from a fix
+  between the runs). Treat a
+  difference of a few words as noise. Repeat a run before you trust a
+  small change.
+
+## More commands
+
+| Command | Does |
+|---|---|
+| `stats <recording> [--out params.json]` | Measures tap scatter, tap hold, swipe speed, gaps, and word styles from a recording |
+| `compare <run dir> <run dir>` | Accuracy per style, and words whose result changed |
+| `replay-recording <recording>` | Replays every touch of a phone typing test (or a run) and compares the text |
+| `replay-word <run dir> <index>` | Types one attempt again, same seed |

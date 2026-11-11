@@ -75,7 +75,12 @@ def cmd_run(args) -> None:
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_id = f"sim-{stamp}"
     run_dir = os.path.join(RUNS, run_id)
-    sess = Session(dev, run_id, finger.FingerParams())
+    params = finger.FingerParams()
+    if args.params:
+        with open(args.params) as f:
+            for k, v in json.load(f).items():
+                setattr(params, k, tuple(v) if isinstance(v, list) else v)
+    sess = Session(dev, run_id, params)
     attempts: list[Attempt] = []
     rng = random.Random(args.seed)
     total = len(words) * len(styles)
@@ -93,7 +98,7 @@ def cmd_run(args) -> None:
                   flush=True)
     sess.close()
     meta = {"run": run_id, "list": args.list, "styles": styles, "seed": args.seed, "words": len(words),
-            "serial": args.serial, "params": finger.FingerParams().__dict__}
+            "serial": args.serial, "params": params.__dict__}
     s = summary(attempts)
     path = write_report(run_dir, meta, attempts, s)
     with open(os.path.join(run_dir, "recording.jsonl"), "w") as f:
@@ -165,6 +170,48 @@ def cmd_replay_recording(args) -> None:
     print("saved", run_dir)
 
 
+def cmd_stats(args) -> None:
+    """Measures a recording, and prints finger model values for the emulator."""
+    from simlib import calibrate
+    with open(args.recording) as f:
+        events = [json.loads(l) for l in f if l.strip()]
+    m = calibrate.measure(events)
+    params = calibrate.finger_params(m)
+    print(json.dumps({"measured": m, "finger_params": params}, indent=1))
+    if args.out:
+        with open(args.out, "w") as f:
+            json.dump(params, f, indent=1)
+        print("wrote", args.out)
+
+
+def cmd_compare(args) -> None:
+    """Compares two runs: accuracy per style, and words whose verdict changed."""
+    def load(d):
+        with open(os.path.join(d, "results.json")) as f:
+            return json.load(f)
+    a, b = load(args.before), load(args.after)
+    sa, sb = a["summary"], b["summary"]
+    print(f"overall  {sa['accuracy']*100:5.1f}% -> {sb['accuracy']*100:5.1f}%  "
+          f"({sa['attempts']} vs {sb['attempts']} attempts)")
+    for st in sorted(set(sa["by_style"]) | set(sb["by_style"])):
+        x = sa["by_style"].get(st, {}).get("accuracy")
+        y = sb["by_style"].get(st, {}).get("accuracy")
+        fx = "  -  " if x is None else f"{x*100:5.1f}"
+        fy = "  -  " if y is None else f"{y*100:5.1f}"
+        print(f"  {st:4} {fx}% -> {fy}%")
+    key = lambda t: (t["word"], t["style"], t["seed"])
+    before = {key(t): t for t in a["attempts"]}
+    changed = 0
+    for t in b["attempts"]:
+        o = before.get(key(t))
+        if o and (o["verdict"] != t["verdict"] or o.get("landed") != t.get("landed")):
+            changed += 1
+            print(f"  {t['style']:4} {t['word']:14} {o['verdict']:12} -> {t['verdict']:12} "
+                  f"{' '.join(o.get('landed', []))} -> {' '.join(t.get('landed', []))}")
+    if not changed:
+        print("  no word changed verdict (same word, style, and seed)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--serial", default="emulator-5580")
@@ -181,11 +228,20 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--shuffle", action="store_true")
     p.add_argument("--no-probe", action="store_true")
+    p.add_argument("--params", help="finger model values from `stats --out`")
     p.set_defaults(fn=cmd_run)
     p = sub.add_parser("replay-word")
     p.add_argument("run_dir")
     p.add_argument("index", type=int)
     p.set_defaults(fn=cmd_replay_word)
+    p = sub.add_parser("stats")
+    p.add_argument("recording")
+    p.add_argument("--out", help="write the finger model values here, for `run --params`")
+    p.set_defaults(fn=cmd_stats)
+    p = sub.add_parser("compare")
+    p.add_argument("before", help="a run folder")
+    p.add_argument("after", help="a run folder")
+    p.set_defaults(fn=cmd_compare)
     p = sub.add_parser("replay-recording")
     p.add_argument("recording", help="a .jsonl recording: a phone typing test, or a run's recording.jsonl")
     p.set_defaults(fn=cmd_replay_recording)

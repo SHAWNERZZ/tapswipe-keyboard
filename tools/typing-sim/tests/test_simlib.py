@@ -157,3 +157,29 @@ class LandedTest(unittest.TestCase):
         self.assertEqual(r.verdict, "OK")
         self.assertIn("NO_COMMIT_EVENT", r.flags)
         self.assertIn("SESSION_RESET", r.flags)
+
+
+class CalibrateTest(unittest.TestCase):
+    def test_style_names(self):
+        from simlib.calibrate import _style_name
+        self.assertEqual(_style_name(["S"]), "S")
+        self.assertEqual(_style_name(["T", "T", "T"]), "T")
+        self.assertEqual(_style_name(["S", "T", "T"]), "S+T")
+        self.assertEqual(_style_name(["T", "S"]), "T+S")
+        self.assertEqual(_style_name(["S", "S"]), "S+S")
+        self.assertEqual(_style_name(["S", "T", "S"]), "mix:STS")
+
+    def test_measure_tap_offset_in_key_units(self):
+        from simlib.calibrate import measure
+        lay = {"type": "layout", "viewW": 100, "padLeft": 0, "padTop": 0, "verticalCorrection": 0,
+               "kbW": 1000, "kbH": 500, "screenX": 0, "screenY": 0,
+               "keys": [{"code": 97, "x": 0, "y": 0, "w": 100, "h": 100}]}
+        ev = [lay,
+              {"type": "touch", "action": "ACTION_DOWN", "index": 0, "et": 0, "ids": [0], "x": [60], "y": [50]},
+              {"type": "touch", "action": "ACTION_UP", "index": 0, "et": 70, "ids": [0], "x": [60], "y": [50]},
+              {"type": "stroke", "t": 71, "kind": "tap", "code": 97, "strokes": 1},
+              {"type": "finalize", "t": 300}]
+        m = measure(ev)
+        self.assertAlmostEqual(m["taps"]["dx_keys"]["median"], 0.1)
+        self.assertEqual(m["taps"]["hold_ms"]["median"], 70)
+        self.assertEqual(m["word_styles"], {"T": 1})
