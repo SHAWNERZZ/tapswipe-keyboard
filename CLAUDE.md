@@ -33,11 +33,12 @@ git log --oneline tapswipe..dev     # written but not released
 gh release list --repo SHAWNERZZ/tapswipe-keyboard --limit 3
 ```
 
-As of 2026-11-11, the latest release is `tapswipe-v0.8.0`, which shipped
-the backspace redesign. `dev` holds the automatic word split, unreleased
-and unfinished (`docs/plans/WORD_SPLIT.md`). The typing simulator is
-proposed, not agreed (`docs/plans/TYPING_SIMULATOR.md`). Read `TODO.md`
-for the task list and `docs/decisions.md` for decisions.
+As of 2026-11-11 (evening), the latest release is `tapswipe-v0.8.0`.
+`dev` holds unreleased work: the automatic word split (unfinished,
+`docs/plans/WORD_SPLIT.md`), the apostrophe key setting, the typing test
+and typing simulator (`docs/plans/TYPING_SIMULATOR.md`), and two fixes
+the simulator found. Read `TODO.md` for the task list and
+`docs/decisions.md` for decisions.
 
 Release when the user asks. Do not release on your own.
 
@@ -179,6 +180,9 @@ control flow and system design.
 - Run the in-app scenario runner when the change touches `InputLogic`,
   `GeneralIME`, `TapSwipeSession`, `SwipeDecoderDictionary`,
   `PointerTracker`, or `BatchInputArbiter`.
+- Run the typing simulator when the change can affect what a word
+  becomes: `tools/typing-sim/README.md`. Compare against a run from
+  before the change, with `sim.py compare`.
 - Flag device-only checks that the user must run.
 - See the `verify-tapswipe-change` skill for the full checklist.
 

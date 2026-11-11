@@ -5,28 +5,35 @@ drop a task. Date each Done entry.
 
 ## Now
 
-- Typing simulator, `docs/plans/TYPING_SIMULATOR.md`. Agreed in outline
-  2026-11-11, with the user's addition of a typing test mode. Step 1 is
-  the typing test mode and its recorder.
-- The user's settings export is at
-  `/Documents/Notes/FUTOKeyboardSettings_2026-11-11_09-14-06.backup`.
-  Private. Never copy it into the repository.
+- Waiting on the user: a typing test recording from the phone (TapSwipe
+  settings, Typing test, then Save a copy to `/Documents/Notes`). Then:
+  `sim.py stats` to calibrate the finger model, and `sim.py
+  replay-recording` to replay real failures.
+- Phone check of the two fixes from 2026-11-11 (late selection report,
+  skipped tail decode). Bug A should be gone: a word built from parts
+  should no longer need a backspace to come out right.
 
 ## Next
 
 - Word split, open items. Full list in `docs/plans/WORD_SPLIT.md`.
-  - Words split with the setting off. Suspect: the phantom space after
-    the session drops. Needs the `autoSpaces` and `lastReset` counts
-    from the debug panel, read on a device after the symptom.
+  - Words split with the setting off. Likely fixed on 2026-11-11 (late
+    selection report). Confirm on the phone with the debug panel counts.
   - Wire n-gram probability through the `Dictionary` base class.
   - Offer the losing reading in the suggestion strip.
   - Decode the gesture alone for taps-then-gesture words (`Ivar`).
   - Decide: capitalize a split `i`, what to learn, undo granularity.
-- Reported bug A: a word built from parts commits wrong, and one
-  backspace returns the intended word. Diagnose with the simulator.
-- Reported bug B: sequential strokes decode worse than a two-finger
-  swipe. Measure with the decoder bench.
-- `CLAUDE.md` is 190 lines. The shared rule says under 100. Propose
+- `LAST_STROKE_FLIP`: the final tap of a swipe-then-tap word changes a
+  right decode into a wrong one. On some seeds swipe-then-tap is near
+  78%. Decoder input: a tap is resampled like a whole swipe. Needs a
+  design, see `docs/plans/TYPING_SIMULATOR.md`, Results.
+- Bug B (two thumbs read better than sequential strokes) is not
+  reproduced with synthetic paths. Recheck with a recording of the
+  user's real two-thumb typing.
+- Improve the simulator's two-thumb model: give each thumb the keys on
+  its side.
+- Recheck the swipe/space race in `TAPSWIPE_TESTING.md`. It may share
+  the skipped tail decode cause.
+- `CLAUDE.md` is over 190 lines. The shared rule says under 100. Propose
   cuts to the user before editing.
 - Delete `MIGRATION.md` and `tapswipe-claude-v2.zip` from the main
   checkout if the user agrees. Both are leftovers from 2026-08-18.
@@ -35,6 +42,13 @@ drop a task. Date each Done entry.
 
 ## Done
 
+- 2026-11-11. Typing simulator built and working: recorder, typing
+  test screen, emulator `tapswipe-sim`, touch player, host with
+  scoring, report, `stats`, `compare`, `replay-recording`.
+- 2026-11-11. Fixed: a late selection report of the keyboard's own
+  write dropped the word session mid-word (bug A's mechanism).
+- 2026-11-11. Fixed: a tap's re-decode skipped itself when the lock was
+  busy, and the literal was committed.
 - 2026-11-11. Cleaned the main checkout. Backed it up first to
   `/Documents/code-claude/mobile/tapswipe-keyboard-backup-2026-11-11.zip`.
   Discarded line-ending churn in the repository and in five

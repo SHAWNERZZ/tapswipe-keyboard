@@ -4,16 +4,48 @@ Agreed 2026-11-11. Partly built. How to run it: `tools/typing-sim/README.md`.
 
 | Step | State |
 |---|---|
-| 1. Typing test mode and recorder | Built. Needs a device check. |
+| 1. Typing test mode and recorder | Built. Checked on the emulator. Needs a phone check. |
 | 2. Emulator on the server | Built: `tapswipe-sim`, port 5580 |
 | 3. Debug hooks: layout and trace | Built, as the recorder's events |
 | 4. Player | Built, as `app_process` injection. No separate driver app. See `docs/decisions.md`. |
-| 5. Host: generator, styles, scoring, report | Built. Finger model not yet calibrated. |
+| 5. Host: generator, styles, scoring, report | Built, with `stats`, `compare`, and `replay-recording` |
 | 6. Settings import | Built: settings datastore and touch model |
-| 7. Decoder bench | Not built. See below. |
+| 7. Decoder bench | Not built. Answered end to end instead. See "Results" below. |
 
-Not built yet: replay of a phone recording on the emulator, finger model
-calibration from recordings, and baseline comparison between runs.
+Waiting on the user: a typing test recording from the phone, to
+calibrate the finger model (`stats`) and to replay real failures
+(`replay-recording`).
+
+## Results, 2026-11-11
+
+Two bugs found and fixed, both in the recurring bug class:
+
+1. **Late selection report dropped the word session.** Bug A's
+   mechanism. See `TapSwipeOwnSelections` and `TAPSWIPE_ARCHITECTURE.md`
+   section 8. Swipe-then-tap on 25 long words: 76% right with 11
+   mid-word resets before, 88% with none after.
+2. **A tap's re-decode skipped itself.** The tap's own typing update
+   superseded it while the previous job held the lock. The literal was
+   committed. See `TAPSWIPE_ARCHITECTURE.md` section 6.
+
+Baseline after the first fix, user's settings, 50 long words, 7 styles:
+343 of 350 right (98%). S 96%, T 100%, S+T 100%, T+S 100%, S+S 100%,
+S/S 92%, mix 98%.
+
+**Bug B is not reproduced.** Two sequential swipes (one decoder
+stream) scored 100%. The same splits as two overlapping thumbs (two
+streams) scored 92%. So the hypothesis that several strokes in one
+stream decode worse is not supported, with synthetic paths. The
+simulator's two-thumb model is crude: the second thumb starts at a fixed
+fraction of the first swipe, whatever side its keys are on. The user's
+impression may also come from fix 1, which only affected sequential
+strokes. A typing test recording of real two-thumb typing will settle
+it. The planned decoder bench would not add evidence beyond this.
+
+**Still failing: `LAST_STROKE_FLIP`.** On some seeds, swipe-then-tap is
+near 78%. The decode was right before the final tap, and the tap
+changed it. This is decoder input, not state: a tap is a one-point
+stroke that the decoder resamples like a whole swipe. Not addressed.
 
 ## Goal
 
