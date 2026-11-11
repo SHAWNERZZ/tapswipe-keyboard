@@ -40,6 +40,9 @@ class Session:
         dev.start_target(run_id)
         self.layout_event = dev.wait_for_layout(run_id)
         self.layout = finger.Layout.from_layout_event(self.layout_event)
+        # The first touches after the keyboard appears were sometimes lost or misread. Let the
+        # keyboard, the decoder, and the language model finish loading first.
+        time.sleep(1.5)
         _, self.offset = dev.recording_since(run_id, 0)
         self.field_text = ""
         self.player = dev.player()

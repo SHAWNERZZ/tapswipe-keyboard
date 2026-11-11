@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.latin.BuildConfig
+import org.futo.inputmethod.latin.tapswipe.TypingTestEvents
 import org.futo.inputmethod.latin.tapswipe.TypingTestJson
 import org.futo.inputmethod.latin.tapswipe.TypingTestRecorder
 import org.futo.inputmethod.latin.tapswipe.TypingTestScore
@@ -61,6 +62,10 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** Prompt words shown before and after the current one. */
+private const val WINDOW_BEHIND = 3
+private const val WINDOW_AHEAD = 15
 
 /** Folder of word lists, in `java/assets-tapswipe/typing-tests/`. */
 private const val LIST_DIR = "typing-tests"
@@ -120,6 +125,7 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
     var running by remember { mutableStateOf(false) }
     var startMs by remember { mutableStateOf(0L) }
     var deletions by remember { mutableIntStateOf(0) }
+    var backspaceBase by remember { mutableIntStateOf(0) }
     val corrected = remember { mutableStateListOf<Int>() }
     var result by remember { mutableStateOf<TypingTestScore.Totals?>(null) }
     var resultFile by remember { mutableStateOf<File?>(null) }
@@ -163,7 +169,10 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
         if (!running) return
         running = false
         val elapsed = if (startMs > 0) SystemClock.uptimeMillis() - startMs else 0L
-        val totals = TypingTestScore.totals(prompt, typed, elapsed)
+        // Finishing early scores only the words reached, not the ones never typed.
+        val reached = if (reason == "completed") prompt
+            else prompt.take(TypingTestScore.words(typed).size.coerceAtLeast(1))
+        val totals = TypingTestScore.totals(reached, typed, elapsed)
         TypingTestRecorder.emit(TypingTestRecorder.event("test_end")
             .put("reason", reason)
             .put("text", typed)
@@ -191,6 +200,7 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
         prompt = words
         typed = ""
         deletions = 0
+        backspaceBase = TypingTestEvents.backspaces.get()
         corrected.clear()
         result = null
         resultFile = null
@@ -270,9 +280,15 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
             if (prompt.isNotEmpty()) {
                 val typedWords = TypingTestScore.words(typed)
                 val finished = TypingTestScore.finishedWordCount(typed)
+                // A window around the current word, so it never scrolls off while typing.
+                val from = (finished - WINDOW_BEHIND).coerceAtLeast(0)
+                val to = (finished + WINDOW_AHEAD).coerceAtMost(prompt.size)
+                Text("Word ${(finished + 1).coerceAtMost(prompt.size)} of ${prompt.size}",
+                    style = MaterialTheme.typography.labelMedium)
                 Text(
                     buildAnnotatedString {
-                        prompt.forEachIndexed { i, w ->
+                        for (i in from until to) {
+                            val w = prompt[i]
                             val style = when {
                                 i < finished && i < typedWords.size ->
                                     SpanStyle(color = if (TypingTestScore.same(w, typedWords[i])) good else bad)
@@ -283,6 +299,7 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
                             withStyle(style) { append(w) }
                             append(' ')
                         }
+                        if (to < prompt.size) append('…')
                     },
                     fontSize = 20.sp,
                     lineHeight = 30.sp,
@@ -304,6 +321,7 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
                         textSize = 20f
                         setTextColor(textColor.toArgb())
                         hint = "Press Start, then type here"
+                        setHintTextColor(textColor.copy(alpha = 0.5f).toArgb())
                         addTextChangedListener(object : TextWatcher {
                             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -311,8 +329,11 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
                                 if (!running) return
                                 val now = s?.toString() ?: ""
                                 if (startMs == 0L && now.isNotEmpty()) startMs = SystemClock.uptimeMillis()
-                                if (now.length < typed.length) {
-                                    deletions++
+                                // Count real backspace presses. A shrinking text is not one: the
+                                // decoder often rewrites a tapped literal into a shorter word.
+                                val pressed = TypingTestEvents.backspaces.get() - backspaceBase
+                                if (pressed > deletions) {
+                                    deletions = pressed
                                     val at = TypingTestScore.finishedWordCount(now)
                                     if (at !in corrected) corrected.add(at)
                                 }
@@ -339,7 +360,7 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
                     "%.1f WPM, %.0f%% of words right\n".format(r.wpm, r.accuracy * 100) +
                         "${r.correctWords} right, ${r.wrongWords} wrong, ${r.missedWords} missed, " +
                         "${r.extraWords} extra\n" +
-                        "$deletions deletions"
+                        "$deletions backspaces"
                 )
                 if (corrected.isNotEmpty()) {
                     Text("Words that needed a correction: " +

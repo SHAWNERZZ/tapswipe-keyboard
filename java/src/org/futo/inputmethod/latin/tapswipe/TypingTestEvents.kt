@@ -69,8 +69,13 @@ object TypingTestEvents {
             .put("text", text).put("commitType", commitType).put("separator", separator))
     }
 
+    /** Backspace presses while recording. The typing test counts corrections from this. */
+    @JvmField
+    val backspaces = java.util.concurrent.atomic.AtomicInteger(0)
+
     @JvmStatic
     fun backspace(composing: String?, strokes: Int, sessionOpen: Boolean, keyRepeat: Boolean) = ifActive {
+        backspaces.incrementAndGet()
         TypingTestRecorder.emit(TypingTestRecorder.event("backspace")
             .put("composing", composing).put("strokes", strokes)
             .put("sessionOpen", sessionOpen).put("repeat", keyRepeat))
