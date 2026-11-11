@@ -25,6 +25,21 @@ needs that.
 - Git needs `safe.directory` for this repository, because the files
   belong to the share user, not root. Set globally for this one path.
 
+## 2026-11-11. Tail decodes are never skipped in TapSwipe mode
+
+**Decision.** In TapSwipe mode, a tail-batch suggestion job always runs,
+even when a newer request has been made. The session generation guard
+decides whether its result still applies.
+
+**Rejected.**
+
+- Stop the tap from requesting a typing update. The typing update feeds
+  the suggestion strip, and other code relies on it.
+- Change the rule for every user. Stock swipe has its own timing, and
+  the project rule is not to change stock behavior without need. The
+  swipe/space race in `TAPSWIPE_TESTING.md` may share this cause. Measure
+  it before widening the change.
+
 ## 2026-11-11. Dismiss late reports of the keyboard's own cursor writes
 
 **Decision.** While a TapSwipe word is open, a selection report that

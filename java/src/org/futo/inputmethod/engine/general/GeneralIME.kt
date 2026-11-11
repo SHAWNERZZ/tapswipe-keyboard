@@ -420,8 +420,10 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         swipeDistinct: Boolean = true
     ) {
         if(sequenceNumber < sequenceId.get() && inputStyle != SuggestedWords.INPUT_STYLE_TAIL_BATCH) {
+            org.futo.inputmethod.latin.tapswipe.TypingTestEvents.suggest("result_dropped", inputStyle, sequenceNumber, sequenceId.get())
             return
         }
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.suggest("result", inputStyle, sequenceNumber, sequenceId.get())
         val unfilteredWords = when {
             suggestedWords.isEmpty && (inputStyle == SuggestedWords.INPUT_STYLE_TAIL_BATCH ||
                     inputStyle == SuggestedWords.INPUT_STYLE_UPDATE_BATCH
@@ -548,6 +550,9 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         }
 
         val seqId = sequenceId.incrementAndGet()
+        val keepTailDecode = inputStyle == SuggestedWords.INPUT_STYLE_TAIL_BATCH
+                && inputLogic.isTapSwipeMode
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.suggest("request", inputStyle, seqId, seqId)
 
         val delayTime = when {
             // With transformer off keep 40ms static delay for legacy reasons (less battery use)
@@ -564,7 +569,19 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
             withContext(NonCancellable + dictionaryScope) {
                 computationMutex.withLock {
                     // double check in case sequence id incremented after we acquired scope
-                    if (sequenceId.get() > seqId) return@withContext
+                    //
+                    // TapSwipe: a tail-batch decode is never skipped for being superseded. A tap in
+                    // a swiped word requests its re-decode and then, from the same event, a typing
+                    // update. The typing request bumps the sequence id, so when the lock was busy
+                    // the re-decode skipped itself and the tap was never decoded: the literal
+                    // ("technoy", "understandd") stayed and was committed. Found by the typing
+                    // simulator, 2026-11-11. A newer sequence id does not mean the strokes changed.
+                    // Staleness of a tail decode is the session generation, which the apply path
+                    // (InputLogic.onUpdateTailBatchInputCompleted) already checks.
+                    if (sequenceId.get() > seqId && !keepTailDecode) {
+                        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.suggest("skip", inputStyle, seqId, sequenceId.get())
+                        return@withContext
+                    }
 
                     val t0 = System.currentTimeMillis()
                     updateSuggestionsDictionaryInternal(inputStyle, seqId)
@@ -574,6 +591,7 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
                     if(BuildConfig.DEBUG) Log.d(TAG, "Time taken for suggestions update = ${t1-t0} ms (avg $timeTakenToUpdate ms)")
 
                     sequenceIdCompleted.set(seqId)
+                    org.futo.inputmethod.latin.tapswipe.TypingTestEvents.suggest("done", inputStyle, seqId, sequenceId.get())
                 }
             }
         }

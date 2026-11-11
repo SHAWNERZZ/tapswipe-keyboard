@@ -101,6 +101,10 @@ non-deterministic. Assert "one word not two", "replaced not appended",
 
 ## Known limitation: swipe/space decode race
 
+Recheck this after 2026-11-11. The same skip rule in
+`GeneralIME.updateSuggestions` that lost tap re-decodes may be the
+cause here too. Tail-batch jobs are no longer skipped in TapSwipe mode.
+
 Space within about 50 ms of a swipe end loses the word. Measured with a
 ladder at 0, 50, 100, 200, 350 ms. Lost at 0 ms, safe from 50 ms up. A
 thumb needs more than 150 ms to reach the space bar. The scenario

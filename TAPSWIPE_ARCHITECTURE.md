@@ -99,6 +99,18 @@ Every decode carries the session generation it was computed for. Apply
 drops any result that does not match the current generation or arrives
 after the session has closed.
 
+**A tail decode is never skipped for being superseded.** A tap in a
+swiped word requests its re-decode, then the same event requests a
+typing update. `GeneralIME.updateSuggestions` skipped any job whose
+sequence id had been overtaken by the time it got the computation lock.
+When the previous job still held the lock, for example while waiting on
+the language model, the tap's re-decode skipped itself. The tap was
+never decoded, and space committed the literal (`technoy`,
+`understandd`). Identical touches gave different words depending on
+timing. In TapSwipe mode, tail-batch jobs now always run. The session
+generation decides staleness, as above. Found by the typing simulator
+on 2026-11-11.
+
 ## 7. Backspace
 
 Four gestures share the key. Each states its own intent, so nothing is

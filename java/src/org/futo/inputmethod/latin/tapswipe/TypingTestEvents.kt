@@ -96,6 +96,17 @@ object TypingTestEvents {
             .put("expected", expectedStart).put("outcome", outcome).put("composing", composing))
     }
 
+    /**
+     * Suggestion pipeline steps: `request`, `skip` (a newer request superseded it before it ran),
+     * `done`, and `result` / `result_dropped` when the answer reaches the main thread. `style` is a
+     * SuggestedWords.INPUT_STYLE_* value: 1 typing, 3 tail batch.
+     */
+    @JvmStatic
+    fun suggest(step: String, style: Int, seq: Int, current: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("suggest")
+            .put("step", step).put("style", style).put("seq", seq).put("current", current))
+    }
+
     /** The word session dropped while it held strokes. `reason` names the invariant that fired. */
     @JvmStatic
     fun sessionReset(reason: String, strokes: Int, generation: Int) = ifActive {
