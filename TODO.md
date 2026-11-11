@@ -11,6 +11,13 @@ drop a task. Date each Done entry.
 
 ## Next
 
+- **The Nintype apostrophe layout is not in git.** It exists only as
+  uncommitted edits in the `java/assets/layouts` submodule of the main
+  checkout: a new `Default/qwerty_nintype.yaml` and three lines in
+  `mapping.yaml`. A build from git drops the layout, and 8 tests in
+  `QwertyNintypeLayoutTest` fail. Decide where it lives. Options: fork
+  the layouts repository, or move the file into a path this repository
+  owns and merge it at build time.
 - Merge branch `worktree-linux-setup-and-sim-plan` into `dev`.
 - Word split, open items. Full list in `docs/plans/WORD_SPLIT.md`.
   - Words split with the setting off. Suspect: the phantom space after
@@ -33,6 +40,8 @@ drop a task. Date each Done entry.
 
 ## Done
 
+- 2026-11-11. Ran the JVM unit tests on Linux. 278 of 278 pass when
+  the Nintype layout files are copied in. Without them, 270 pass.
 - 2026-11-11. Set up the Linux build. Installed SDK platform 35, NDK
   28.2.13676358, and CMake 3.22.1 in `/opt/android-sdk`.
 - 2026-11-11. Committed the uncommitted word-split work from the
