@@ -12,9 +12,8 @@ Agreed 2026-11-11. Partly built. How to run it: `tools/typing-sim/README.md`.
 | 6. Settings import | Built: settings datastore and touch model |
 | 7. Decoder bench | Not built. Answered end to end instead. See "Results" below. |
 
-Waiting on the user: a typing test recording from the phone, to
-calibrate the finger model (`stats`) and to replay real failures
-(`replay-recording`).
+First phone recording received 2026-11-11 (Pixel 10 Pro Fold,
+common-100). Calibration in `tools/typing-sim/params-user-20261111.json`.
 
 ## Results, 2026-11-11
 
@@ -398,3 +397,38 @@ one backspace after a word removes its last stroke.
   apply path, widens the very windows the simulator hunts for. Buffer
   trace lines and write them off the main thread. Run once with the
   trace off and compare the scores.
+
+
+## The user's first typing test, 2026-11-11
+
+Build: had fix 1 (late selection report), not fix 2 (skipped tail
+decode). The version string in the file was stale.
+
+- 100 of 100 words right in the end, 38.8 WPM, 37 backspace presses.
+  First try right: 90 of 100.
+- No mid-word session drops. Fix 1 caught one late report on the phone.
+- The user builds most short words from parts. First-attempt patterns:
+  swipe then taps, taps then swipe, and tap-swipe-tap are the most
+  common. One single swipe: 12 of 16 right (75%), the weakest group.
+- Overlapping thumbs: 32 of 37 right (86%). One finger at a time: 58 of
+  63 (92%). Bug B is not supported by real data either, with small
+  numbers.
+- Taps are offset per key by the thumb's angle (W a quarter key right;
+  L, B, N a third of a key low). Scatter after those offsets: 0.18 of a
+  key. The finger model now applies both.
+
+Replay of that recording word by word (`replay-words`): 83 of 89 words
+matched the phone. Good enough to use real recordings as regression
+tests, with a few words of noise.
+
+Calibrated simulator run, 50 common words, 4 styles: 177 of 181 right.
+Tap then swipe is the weakest style (94%), as on the phone.
+
+Harness lessons from that day:
+
+- Newer Android writes `ACTION_POINTER_DOWN(0)`. Strip the suffix.
+- A whole-session replay drifts once one word differs. Replay per word.
+- A tap that opens the emoji panel leaves the keyboard thinking a finger
+  is down. Every later touch then types nothing. Sessions now start
+  with a fresh keyboard process, and letter taps never land on function
+  keys.

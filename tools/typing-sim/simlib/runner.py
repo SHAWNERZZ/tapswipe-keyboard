@@ -36,7 +36,11 @@ class Session:
         self.dev = dev
         self.run_id = run_id
         self.params = params
-        dev.set_ime()  # Android may have switched keyboards since setup
+        # A clean keyboard process for every session. A run that ended mid-gesture (for example when
+        # a tap opened the emoji panel) left the keyboard believing a finger was still down, and
+        # every later touch became a second finger that typed nothing.
+        dev.stop_app()
+        dev.set_ime()  # force-stop, or Android itself, may have switched keyboards
         dev.start_target(run_id)
         self.layout_event = dev.wait_for_layout(run_id)
         self.layout = finger.Layout.from_layout_event(self.layout_event)
@@ -44,7 +48,7 @@ class Session:
             params.swipe_speed = params.swipe_speed_keyw * self.layout.key_w
         # The first touches after the keyboard appears were sometimes lost or misread. Let the
         # keyboard, the decoder, and the language model finish loading first.
-        time.sleep(1.5)
+        time.sleep(4.0)  # cold keyboard process: dictionaries and models still loading
         _, self.offset = dev.recording_since(run_id, 0)
         self.field_text = ""
         self.player = dev.player()

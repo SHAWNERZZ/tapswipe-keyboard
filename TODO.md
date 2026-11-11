@@ -5,10 +5,9 @@ drop a task. Date each Done entry.
 
 ## Now
 
-- Waiting on the user: a typing test recording from the phone (TapSwipe
-  settings, Typing test, then Save a copy to `/Documents/Notes`). Then:
-  `sim.py stats` to calibrate the finger model, and `sim.py
-  replay-recording` to replay real failures.
+- Next typing test from the user, on the build with both fixes, to
+  measure first-try accuracy against the 90 of 100 baseline. Use
+  `sim.py replay-words` and `sim.py stats` on it.
 - Phone check of the two fixes from 2026-11-11 (late selection report,
   skipped tail decode). Bug A should be gone: a word built from parts
   should no longer need a backspace to come out right.
@@ -27,8 +26,10 @@ drop a task. Date each Done entry.
   78%. Decoder input: a tap is resampled like a whole swipe. Needs a
   design, see `docs/plans/TYPING_SIMULATOR.md`, Results.
 - Bug B (two thumbs read better than sequential strokes) is not
-  reproduced with synthetic paths. Recheck with a recording of the
-  user's real two-thumb typing.
+  supported by synthetic runs or by the user's first recording (86%
+  overlapping vs 92% one at a time). Recheck with more data.
+- Weakest real cases: a single swipe of a short word (75% first try),
+  and words started with a tap. Look at these next.
 - Improve the simulator's two-thumb model: give each thumb the keys on
   its side.
 - Recheck the swipe/space race in `TAPSWIPE_TESTING.md`. It may share
