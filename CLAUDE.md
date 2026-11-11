@@ -33,9 +33,11 @@ git log --oneline tapswipe..dev     # written but not released
 gh release list --repo SHAWNERZZ/tapswipe-keyboard --limit 3
 ```
 
-As of 2026-08-22, the latest release is `tapswipe-v0.8.0`, which shipped
-the backspace redesign. `dev` and `tapswipe` are level. `docs/plans/` is
-empty, so there is no agreed work waiting.
+As of 2026-11-11, the latest release is `tapswipe-v0.8.0`, which shipped
+the backspace redesign. `dev` holds the automatic word split, unreleased
+and unfinished (`docs/plans/WORD_SPLIT.md`). The typing simulator is
+proposed, not agreed (`docs/plans/TYPING_SIMULATOR.md`). Read `TODO.md`
+for the task list and `docs/decisions.md` for decisions.
 
 Release when the user asks. Do not release on your own.
 
@@ -119,6 +121,23 @@ Two consequences matter for releases.
 2. The shared keystore is public. A matching signature proves only that
    the APK was not altered after signing. It proves nothing about who
    built the APK.
+
+## Build host (Linux, since 2026-11-11)
+
+Builds and tests run on the Unraid server, in the Ubuntu container.
+
+- SDK: `/opt/android-sdk`. `local.properties` holds
+  `sdk.dir=/opt/android-sdk`. The file is gitignored, so each new
+  worktree needs it.
+- Unit tests: `./gradlew testUnstableDebugUnitTest`.
+- Dev APK: `/Documents/Notes/tapswipe-dev.apk`. This is
+  `D:\Documents\Notes` on Windows.
+- `git-lfs` is not installed. A fresh submodule checkout gets pointer
+  files for the swipe models in `java/assets/futo-swipe`. Copy the real
+  files from the main checkout, or install `git-lfs`.
+- The main checkout came from Windows. About 1,750 files there differ
+  from git only by CRLF line endings. Use `git diff --ignore-cr-at-eol`
+  to see real edits. Do not commit the line-ending churn.
 
 ## Communication style
 

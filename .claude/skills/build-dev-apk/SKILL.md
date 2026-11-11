@@ -22,7 +22,7 @@ Run both commands from the repository root, in the Bash tool.
 
    ```
    cp build/outputs/apk/unstable/debug/futo-keyboard-unstable-debug.apk \
-      "D:/Documents/Notes/tapswipe-dev.apk"
+      /Documents/Notes/tapswipe-dev.apk
    ```
 
 The build output path is fixed by the flavor and the build type. Flavor
