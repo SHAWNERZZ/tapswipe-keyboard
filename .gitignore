@@ -15,3 +15,5 @@ java/src/org/futo/inputmethod/keyboard/internal/KeyboardTextsTable.java
 .kotlin/
 # Claude Code personal preferences (machine-local)
 CLAUDE.local.md
+.claude/settings.local.json
+.claude/worktrees/
