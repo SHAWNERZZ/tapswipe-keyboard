@@ -9,7 +9,7 @@ import math
 import statistics
 from collections import Counter
 
-from .replay import ACTIONS
+from .replay import ACTIONS, action_name
 
 
 def _gestures(events: list[dict]) -> list[dict]:
@@ -19,7 +19,7 @@ def _gestures(events: list[dict]) -> list[dict]:
     for e in events:
         if e.get("type") != "touch":
             continue
-        act = ACTIONS.get(e["action"])
+        act = ACTIONS.get(action_name(e["action"]))
         ids, xs, ys = e["ids"], e["x"], e["y"]
         if act in (0, 5):
             i = e.get("index", 0) if act == 5 else 0

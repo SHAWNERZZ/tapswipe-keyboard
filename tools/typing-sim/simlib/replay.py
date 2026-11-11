@@ -10,7 +10,13 @@ from dataclasses import dataclass
 
 ACTIONS = {"ACTION_DOWN": 0, "ACTION_UP": 1, "ACTION_MOVE": 2, "ACTION_CANCEL": 3,
            "ACTION_POINTER_DOWN": 5, "ACTION_POINTER_UP": 6}
-MAX_GAP_MS = 1500  # long pauses are shortened; nothing in the keyboard waits that long
+MAX_GAP_MS = 1500
+
+
+def action_name(raw: str) -> str:
+    """Newer Android versions add the pointer index: `ACTION_POINTER_DOWN(0)`. Drop it; the
+    recorder stores the index separately."""
+    return raw.split("(", 1)[0]  # long pauses are shortened; nothing in the keyboard waits that long
 
 
 @dataclass
@@ -66,7 +72,7 @@ def script(events: list[dict], target: Frame, t_from: int | None = None, t_to: i
             continue
         if t_to is not None and et > t_to and not down:
             break
-        action = ACTIONS.get(e["action"])
+        action = ACTIONS.get(action_name(e["action"]))
         if action is None or action == 3:
             continue
         ids, xs, ys = e["ids"], e["x"], e["y"]
@@ -108,3 +114,47 @@ def prompt_words(events: list[dict]) -> list[str]:
 def final_text(events: list[dict]) -> str:
     texts = [e["text"] for e in events if e.get("type") == "field"]
     return texts[-1] if texts else ""
+
+
+def first_try(events: list[dict], n_words: int) -> list[str | None]:
+    """For each word position, the word as it stood the first time it was finished (followed by
+    whitespace), before any correction. None if never reached."""
+    first: list[str | None] = [None] * n_words
+    for e in events:
+        if e.get("type") != "field":
+            continue
+        t = e["text"]
+        toks = t.split()
+        done = len(toks) if t and t[-1].isspace() else len(toks) - 1
+        for i in range(min(done, n_words)):
+            if first[i] is None:
+                first[i] = toks[i]
+    return first
+
+
+def word_windows(events: list[dict], n_words: int) -> list[dict]:
+    """Splits a typing test into one window per prompt word: from the moment the previous word was
+    first finished to the moment this one was. A window holding a backspace is marked, because its
+    touches may fix an earlier word and cannot be replayed on their own."""
+    starts = [e["t"] for e in events if e.get("type") == "test_start"]
+    t_prev = starts[0] if starts else 0
+    finished_at: list[int | None] = [None] * n_words
+    for e in events:
+        if e.get("type") != "field":
+            continue
+        t = e["text"]
+        toks = t.split()
+        done = len(toks) if t and t[-1].isspace() else len(toks) - 1
+        for i in range(min(done, n_words)):
+            if finished_at[i] is None:
+                finished_at[i] = e["t"]
+    backspaces = [e["t"] for e in events if e.get("type") == "backspace"]
+    out = []
+    for i in range(n_words):
+        t_end = finished_at[i]
+        if t_end is None:
+            break
+        out.append({"index": i, "t_from": t_prev, "t_to": t_end,
+                    "backspace": any(t_prev < b <= t_end for b in backspaces)})
+        t_prev = t_end
+    return out

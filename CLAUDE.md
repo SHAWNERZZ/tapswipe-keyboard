@@ -138,6 +138,10 @@ Builds and tests run on the Unraid server, in the Ubuntu container.
   files from the main checkout, or install `git-lfs`.
 - Fork-owned assets go in `java/assets-tapswipe/`, never in a
   submodule. The apostrophe layout lives there.
+- The version name can be stale. A phone build reported
+  `g0733c88ae` while it held two later commits, likely from Gradle's
+  configuration cache. Check the recorder's events, not the version
+  string, to know which fixes a recording had.
 - Git data for every submodule is trusted with `safe.directory`. The
   voice-model submodule's `.git` file was repointed from a Windows
   path on 2026-11-11.

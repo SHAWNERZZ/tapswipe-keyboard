@@ -183,3 +183,11 @@ class CalibrateTest(unittest.TestCase):
         self.assertAlmostEqual(m["taps"]["dx_keys"]["median"], 0.1)
         self.assertEqual(m["taps"]["hold_ms"]["median"], 70)
         self.assertEqual(m["word_styles"], {"T": 1})
+
+
+class ActionNameTest(unittest.TestCase):
+    def test_suffix_dropped(self):
+        from simlib.replay import action_name, ACTIONS
+        self.assertEqual(ACTIONS[action_name("ACTION_POINTER_DOWN(0)")], 5)
+        self.assertEqual(ACTIONS[action_name("ACTION_POINTER_UP(1)")], 6)
+        self.assertEqual(ACTIONS[action_name("ACTION_MOVE")], 2)

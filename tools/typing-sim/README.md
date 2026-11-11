@@ -108,5 +108,14 @@ Unit tests for the host: `python3 -m unittest discover -s tests`.
 |---|---|
 | `stats <recording> [--out params.json]` | Measures tap scatter, tap hold, swipe speed, gaps, and word styles from a recording |
 | `compare <run dir> <run dir>` | Accuracy per style, and words whose result changed |
-| `replay-recording <recording>` | Replays every touch of a phone typing test (or a run) and compares the text |
+| `replay-words <recording>` | Replays each word's first attempt from a phone typing test on its own, and compares first-try results. The fair comparison. |
+| `replay-recording <recording>` | Replays the whole recording, corrections included. Drifts after the first different word, because the user's fixes reacted to the phone's text. |
 | `replay-word <run dir> <index>` | Types one attempt again, same seed |
+
+## Calibration from the user
+
+`params-user-20261111.json` comes from the user's first typing test
+(Pixel 10 Pro Fold, common-100). Use it with `run --params`. Their taps
+scatter more than the default model: 0.24 of a key, not 0.15.
+
+Per-word replay of that recording matched the phone on 83 of 89 words.

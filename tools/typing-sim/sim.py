@@ -164,9 +164,73 @@ def cmd_replay_recording(args) -> None:
         print(f"phone matched {pm}, emulator matched {em}")
     else:
         print(f"emulator matched {em} of the phone's {len(reference)} words")
+    if prompt:
+        from simlib.score import same as _same
+        emu_events = dev.recording(run_id)
+        fp = replay.first_try(events, len(prompt))
+        fe = replay.first_try(emu_events, len(prompt))
+        out["first_try"] = [{"word": w, "phone": a, "emulator": b} for w, a, b in zip(prompt, fp, fe)]
+        print(f"first try right: phone {sum(_same(a, w) for w, a in zip(prompt, fp))}, "
+              f"emulator {sum(_same(b, w) for w, b in zip(prompt, fe))} of {len(prompt)}")
+        for w, a, b in zip(prompt, fp, fe):
+            if _same(a, w) != _same(b, w):
+                print(f"  first try differs: {w:12} phone={a!r:14} emulator={b!r}")
+        with open(os.path.join(run_dir, "replay.json"), "w") as f:
+            json.dump(out, f, indent=1)
     diffs = [(r, e) for r, e in zip(out["phone_vs_reference"], out["emulator_vs_reference"]) if r != e]
     for r, e in diffs[:40]:
         print(f"  {r[1] or '-':14} phone={r[2] or '-':14} emulator={e[2] or '-'}")
+    print("saved", run_dir)
+
+
+def cmd_replay_words(args) -> None:
+    """Replays each prompt word's first attempt on its own, and compares first-try results with the
+    phone. Words whose attempt holds a backspace are skipped: those touches may fix an earlier word."""
+    import time
+    from simlib import replay
+    from simlib.runner import landed_words
+    from simlib.score import same
+    with open(args.recording) as f:
+        events = [json.loads(l) for l in f if l.strip()]
+    prompt = replay.prompt_words(events)
+    if not prompt:
+        raise SystemExit("not a typing test recording (no test_start)")
+    phone_first = replay.first_try(events, len(prompt))
+    windows = replay.word_windows(events, len(prompt))
+    dev = Device(args.serial)
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_id = f"replaywords-{stamp}"
+    sess = Session(dev, run_id, finger.FingerParams())
+    target = replay.Frame.of(sess.layout_event)
+    rows = []
+    for w in windows:
+        i = w["index"]
+        row = {"index": i, "word": prompt[i], "phone": phone_first[i], "skipped": w["backspace"]}
+        if not w["backspace"]:
+            lines = replay.script(events, target, w["t_from"] + 1, w["t_to"])
+            if lines:
+                sess.new_events()
+                sess.player.play(lines)
+                time.sleep(0.5)
+                after = sess.last_field_text(sess.new_events())
+                if after is not None:
+                    row["emulator"] = " ".join(landed_words(sess.field_text, after))
+                    sess.field_text = after
+        rows.append(row)
+        if not row["skipped"]:
+            mark = "same" if same(row.get("emulator"), row["phone"]) else "DIFF"
+            print(f"#{i:3} {prompt[i]:12} phone={row['phone']!r:14} emulator={row.get('emulator')!r:14} {mark}",
+                  flush=True)
+    sess.close()
+    compared = [r for r in rows if not r["skipped"]]
+    pr = sum(same(r["phone"], r["word"]) for r in compared)
+    er = sum(same(r.get("emulator"), r["word"]) for r in compared)
+    print(f"compared {len(compared)} words ({len(rows) - len(compared)} skipped for backspaces): "
+          f"first try right on phone {pr}, on emulator {er}")
+    run_dir = os.path.join(RUNS, run_id)
+    os.makedirs(run_dir, exist_ok=True)
+    with open(os.path.join(run_dir, "replay-words.json"), "w") as f:
+        json.dump({"source": os.path.abspath(args.recording), "rows": rows}, f, indent=1)
     print("saved", run_dir)
 
 
@@ -234,6 +298,9 @@ def main() -> None:
     p.add_argument("run_dir")
     p.add_argument("index", type=int)
     p.set_defaults(fn=cmd_replay_word)
+    p = sub.add_parser("replay-words")
+    p.add_argument("recording", help="a typing test recording from the phone")
+    p.set_defaults(fn=cmd_replay_words)
     p = sub.add_parser("stats")
     p.add_argument("recording")
     p.add_argument("--out", help="write the finger model values here, for `run --params`")

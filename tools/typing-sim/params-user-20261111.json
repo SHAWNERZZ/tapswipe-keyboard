@@ -1,0 +1,12 @@
+{
+ "tap_sigma": 0.239,
+ "tap_hold_ms": [
+  75,
+  107
+ ],
+ "swipe_speed_keyw": 0.013,
+ "gap_ms": [
+  20,
+  219
+ ]
+}
