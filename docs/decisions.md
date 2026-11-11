@@ -25,6 +25,28 @@ needs that.
 - Git needs `safe.directory` for this repository, because the files
   belong to the share user, not root. Set globally for this one path.
 
+## 2026-11-11. The apostrophe layout is a setting, in a fork-owned folder
+
+**Decision.** `qwerty_nintype.yaml` moves to
+`java/assets-tapswipe/layouts/TapSwipe/`, a second assets folder this
+repository owns. A TapSwipe setting, **Apostrophe key**, swaps it in for
+`qwerty`. It is no longer a language layout.
+
+**Rejected.**
+
+- Fork the upstream layouts repository and commit the file there. That
+  adds a second repository to maintain, and every upstream layout update
+  becomes a merge.
+- Leave it in the layouts submodule. That is how it lived until now,
+  uncommitted, so a build from git silently dropped it. It also breaks
+  the rule against editing submodules.
+- Keep it as a language layout, picked in language settings. The user
+  asked for a TapSwipe setting.
+
+**Consequence.** The user's stored subtype names `qwerty_nintype`. A
+one-time migration turns the setting on for that case, and the swap runs
+both ways, so the toggle controls the key either way.
+
 ## 2026-11-11. Commit the Windows work in progress unchanged
 
 **Decision.** The word-split work that was uncommitted on Windows went

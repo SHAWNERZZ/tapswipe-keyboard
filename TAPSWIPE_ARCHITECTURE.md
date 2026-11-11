@@ -417,12 +417,23 @@ DataStore keys, verified on 2026-08-18.
 | Show the word's gestures     | `TapSwipeWordTrailsSetting`        | `tapswipe_word_trails`       | off     |
 | Split tapped words           | `TapSwipeAutoSplitSetting`         | `tapswipe_auto_split`        | off     |
 | Nintype gestures, comma pull | `TapSwipeNintypeGesturesSetting`   | `tapswipe_nintype_gestures`  | off     |
+| Apostrophe key (QWERTY)      | `TapSwipeApostropheKeySetting`     | `tapswipe_apostrophe_key`    | off     |
 | Enter key swipes             | `TapSwipeEnterFlicksSetting`       | `tapswipe_enter_flicks`      | off     |
 | Enter direction assignments  | `TapSwipeEnterFlickMapSetting`     | `tapswipe_enter_flick_map`   | four cardinals |
 | Hide the period key          | `TapSwipeHidePeriodKeySetting`     | `tapswipe_hide_period_key`   | off     |
 | Typing speed on the spacebar | `TapSwipeWpmSetting`               | `tapswipe_wpm`               | off     |
 | Peck cadence                 | `TapSwipePeckCadenceSetting`       | `tapswipe_peck_cadence_ms`   | 250     |
 | Swipe sensitivity            | `SwipeSensitivitySetting`          | `swipe_sensitivity`          | 3.0     |
+
+**Fork-owned layouts.** `java/assets-tapswipe/` is a second assets
+folder that this repository owns. Android merges it with `java/assets`,
+so `layouts/TapSwipe/qwerty_nintype.yaml` loads like any other layout.
+It is not in `mapping.yaml`, so the language picker never offers it.
+`TapSwipeLayouts.current` swaps `qwerty` and `qwerty_nintype` by the
+apostrophe key setting, in both directions. `KeyboardLayoutSet` and
+`KeyboardSizingCalculator` both call it, so build and size agree.
+`TapSwipeLayouts.migrate` runs once. It turns the setting on for a user
+whose stored subtype already names `qwerty_nintype`.
 
 Two related settings live outside DataStore, in SharedPreferences, and
 are owned by upstream code.

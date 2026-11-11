@@ -120,6 +120,16 @@ logging under `TapSwipeTouchModel`.
 
 ### Real finger on real hardware
 
+Apostrophe key (`TapSwipeApostropheKeySetting`):
+
+- [ ] After the update, a user whose language layout was
+      `qwerty_nintype` still sees the apostrophe key, and the toggle
+      shows on. This is the one-time migration.
+- [ ] Toggle off. The key goes away at once, with no restart.
+- [ ] Toggle on. The key comes back. No other key changes size.
+- [ ] With the key on, swipe `its` and `it's`. Both still decode.
+- [ ] Switch to a non-QWERTY layout. The toggle changes nothing there.
+
 Backspace carries four gestures. Each check below is also a check that
 the other three did not fire instead.
 

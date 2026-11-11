@@ -340,7 +340,10 @@ android {
             ]
             java.srcDirs = ['common/src', 'java/src']
             manifest.srcFile 'java/AndroidManifest.xml'
-            assets.srcDirs = ['java/assets']
+            // java/assets-tapswipe holds assets this fork owns. Android merges both trees, so
+            // layouts/TapSwipe/*.yaml is found by LayoutManager like any other layout, without
+            // editing the upstream layouts submodule.
+            assets.srcDirs = ['java/assets', 'java/assets-tapswipe']
         }
 
         playstore {

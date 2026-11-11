@@ -5,20 +5,20 @@ drop a task. Date each Done entry.
 
 ## Now
 
-- Typing simulator. Plan written in `docs/plans/TYPING_SIMULATOR.md`.
-  Waiting on two things from the user: agreement on the plan, and an
-  export of the app settings (TapSwipe settings, Export).
+- Typing simulator, `docs/plans/TYPING_SIMULATOR.md`. Agreed in outline
+  2026-11-11, with the user's addition of a typing test mode. Step 1 is
+  the typing test mode and its recorder.
+- The user's settings export is at
+  `/Documents/Notes/FUTOKeyboardSettings_2026-11-11_09-14-06.backup`.
+  Private. Never copy it into the repository.
 
 ## Next
 
-- **The Nintype apostrophe layout is not in git.** It exists only as
-  uncommitted edits in the `java/assets/layouts` submodule of the main
-  checkout: a new `Default/qwerty_nintype.yaml` and three lines in
-  `mapping.yaml`. A build from git drops the layout, and 8 tests in
-  `QwertyNintypeLayoutTest` fail. Decide where it lives. Options: fork
-  the layouts repository, or move the file into a path this repository
-  owns and merge it at build time.
-- Merge branch `worktree-linux-setup-and-sim-plan` into `dev`.
+- Merge branch `worktree-linux-setup-and-sim-plan` into `dev`. Local
+  only: the user does not want pushes for now.
+- After the merge, in the main checkout: undo the uncommitted edits in
+  the `java/assets/layouts` submodule (`Default/qwerty_nintype.yaml`
+  and `mapping.yaml`). The layout now lives in `java/assets-tapswipe/`.
 - Word split, open items. Full list in `docs/plans/WORD_SPLIT.md`.
   - Words split with the setting off. Suspect: the phantom space after
     the session drops. Needs the `autoSpaces` and `lastReset` counts
@@ -31,7 +31,7 @@ drop a task. Date each Done entry.
   backspace returns the intended word. Diagnose with the simulator.
 - Reported bug B: sequential strokes decode worse than a two-finger
   swipe. Measure with the decoder bench.
-- `CLAUDE.md` is 169 lines. The shared rule says under 100. Propose
+- `CLAUDE.md` is 190 lines. The shared rule says under 100. Propose
   cuts to the user before editing.
 - Delete `MIGRATION.md` and `tapswipe-claude-v2.zip` from the main
   checkout if the user agrees. Both are leftovers from 2026-08-18.
@@ -40,8 +40,11 @@ drop a task. Date each Done entry.
 
 ## Done
 
-- 2026-11-11. Ran the JVM unit tests on Linux. 278 of 278 pass when
-  the Nintype layout files are copied in. Without them, 270 pass.
+- 2026-11-11. Made the apostrophe layout a TapSwipe setting
+  (`TapSwipeApostropheKeySetting`). Moved the file out of the layouts
+  submodule into `java/assets-tapswipe/`. One-time migration for users
+  who picked it as a language layout. Needs a device check.
+- 2026-11-11. Ran the JVM unit tests on Linux. All 284 pass.
 - 2026-11-11. Set up the Linux build. Installed SDK platform 35, NDK
   28.2.13676358, and CMake 3.22.1 in `/opt/android-sdk`.
 - 2026-11-11. Committed the uncommitted word-split work from the

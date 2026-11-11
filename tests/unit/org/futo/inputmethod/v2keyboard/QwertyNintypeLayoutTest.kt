@@ -20,7 +20,7 @@ import java.io.File
 class QwertyNintypeLayoutTest {
 
     private fun loadYaml(): String {
-        val path = "java/assets/layouts/Default/qwerty_nintype.yaml"
+        val path = "java/assets-tapswipe/layouts/TapSwipe/qwerty_nintype.yaml"
         val file = File(path)
         require(file.exists()) { "expected to find $path relative to the module directory" }
         return file.readText()

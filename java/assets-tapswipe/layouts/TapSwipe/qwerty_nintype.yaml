@@ -1,0 +1,20 @@
+name: QWERTY (Nintype apostrophe)
+# A thin apostrophe key sits in the gap to the right of L, matching the original Nintype keyboard.
+# That gap already exists on stock QWERTY - it is silently folded into L's tap hitbox - so giving it
+# a real key changes nothing else about the layout's geometry. See rows below for how.
+overrideWidths:
+  Custom1: 0.05
+rows:
+  - letters: q w e r t y u i o p
+  - letters:
+      - a
+      - s
+      - d
+      - f
+      - g
+      - h
+      - j
+      - k
+      - l
+      - {type: base, spec: "'", attributes: {width: Custom1, anchored: true, moreKeyMode: OnlyExplicit}, swipeLetter: "'"}
+  - letters: z x c v b n m

@@ -187,7 +187,10 @@ Layout: $layoutName
         }
 
     val layoutName = customLayout?.let { "custompreview" } ?: forcedLayout ?: params.keyboardLayoutSet
-    val mainLayout = customLayout ?: safeGetLayout(layoutName)
+    // TapSwipeLayouts.current applies layout-swapping settings, such as the apostrophe key.
+    // KeyboardSizingCalculator.calculate makes the same call, so build and size agree.
+    val mainLayout = customLayout ?: safeGetLayout(
+        org.futo.inputmethod.latin.tapswipe.TapSwipeLayouts.current(layoutName))
 
     val symbolsLayout = safeGetLayout(mainLayout.layoutSetOverrides.symbols)
     val symbolsShiftedLayout = safeGetLayout(mainLayout.layoutSetOverrides.symbolsShifted)

@@ -19,6 +19,7 @@ import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeAutoSplitSetting
 import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
 import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
+import org.futo.inputmethod.latin.TapSwipeApostropheKeySetting
 import org.futo.inputmethod.latin.TapSwipeWpmSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
@@ -130,6 +131,14 @@ val TapSwipeMenu = UserSettingsMenu(
             setting = TapSwipeNintypeGesturesSetting,
             icon = { Icon(painterResource(R.drawable.direction_arrows), contentDescription = null) }
         ).copy(visibilityCheck = tapSwipeEnabled),
+
+        // A layout change, not an input-model change, so it is not gated on tapSwipeEnabled.
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_apostrophe_key,
+            subtitle = R.string.tapswipe_settings_apostrophe_key_subtitle,
+            setting = TapSwipeApostropheKeySetting,
+            icon = { Icon(painterResource(R.drawable.direction_arrows), contentDescription = null) }
+        ),
 
         // Its own screen. Backspace carries four gestures now, and a flat list cannot show which
         // of them a given setting belongs to. Not gated on tapSwipeEnabled: these live in

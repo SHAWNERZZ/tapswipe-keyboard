@@ -21,17 +21,17 @@ Run both commands from the repository root, in the Bash tool.
 2. Copy the output over the dev APK.
 
    ```
-   cp build/outputs/apk/unstable/debug/futo-keyboard-unstable-debug.apk \
+   cp build/outputs/apk/unstable/debug/*-unstable-debug.apk \
       /Documents/Notes/tapswipe-dev.apk
    ```
 
-The build output path is fixed by the flavor and the build type. Flavor
-`unstable` plus build type `debug` always writes
-`build/outputs/apk/unstable/debug/futo-keyboard-unstable-debug.apk`.
-Confirm the file timestamp after the copy.
+The folder is fixed by the flavor and the build type. The file name
+starts with the project folder's name, so it differs between the main
+checkout (`tapswipe-keyboard-unstable-debug.apk`) and a worktree. The
+glob matches both. Confirm the file timestamp after the copy.
 
-3. Report only the destination path. Do not report paths under
-   `AppData\Local\Temp` or under a worktree.
+3. Report only the destination path. Do not report paths under a
+   worktree.
 
 ## Do not
 

@@ -306,6 +306,19 @@ val TapSwipeNintypeGesturesSetting =
     SettingsKey(booleanPreferencesKey("tapswipe_nintype_gestures"), false)
 
 /**
+ * Adds a thin apostrophe key in the gap to the right of L, as on the original Nintype keyboard.
+ *
+ * Swaps stock `qwerty` for `qwerty_nintype` when the keyboard is built and measured. See
+ * [org.futo.inputmethod.latin.tapswipe.TapSwipeLayouts]. Other layouts are left alone.
+ */
+val TapSwipeApostropheKeySetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_apostrophe_key"), false)
+
+/** Set once [org.futo.inputmethod.latin.tapswipe.TapSwipeLayouts.migrate] has run. */
+val TapSwipeApostropheKeyMigratedSetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_apostrophe_key_migrated"), false)
+
+/**
  * Lets one word break into two when a tapped word sits beside a swiped one.
  *
  * A word normally runs from one finalizer to the next, so tapping `i` after swiping `hello` folds

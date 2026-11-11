@@ -68,6 +68,7 @@ import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import org.futo.inputmethod.latin.TapSwipeEnterFlicksSetting
 import org.futo.inputmethod.latin.TapSwipeEnterFlickMapSetting
 import org.futo.inputmethod.latin.TapSwipeHidePeriodKeySetting
+import org.futo.inputmethod.latin.TapSwipeApostropheKeySetting
 import org.futo.inputmethod.latin.tapswipe.TapSwipeLearner
 import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel
 import org.futo.inputmethod.latin.uix.DynamicThemeProvider
@@ -463,6 +464,13 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         }
         launchJob {
             getSettingFlow(TapSwipeHidePeriodKeySetting).collect { invalidateKeyboard() }
+        }
+        launchJob {
+            org.futo.inputmethod.latin.tapswipe.TapSwipeLayouts.migrate(this@LatinIME)
+        }
+        launchJob {
+            // Swaps qwerty for the layout with the apostrophe key, so the keyboard must rebuild.
+            getSettingFlow(TapSwipeApostropheKeySetting).collect { invalidateKeyboard() }
         }
 
         launchJob {

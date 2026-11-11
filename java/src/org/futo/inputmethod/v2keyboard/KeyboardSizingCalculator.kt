@@ -427,7 +427,9 @@ class KeyboardSizingCalculator(val context: Context, val uixManager: UixManager)
         val savedSettings = getSavedSettings()
 
         val layout = try {
-            LayoutManager.getLayout(context, layoutName)
+            // Same swap as KeyboardLayoutSet, so the keyboard is sized against the rows it shows.
+            LayoutManager.getLayout(context,
+                org.futo.inputmethod.latin.tapswipe.TapSwipeLayouts.current(layoutName))
         } catch (e: Exception) {
             e.printStackTrace()
             LayoutManager.getLayout(context, "qwerty")

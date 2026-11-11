@@ -135,10 +135,8 @@ Builds and tests run on the Unraid server, in the Ubuntu container.
 - `git-lfs` is not installed. A fresh submodule checkout gets pointer
   files for the swipe models in `java/assets/futo-swipe`. Copy the real
   files from the main checkout, or install `git-lfs`.
-- The Nintype apostrophe layout is uncommitted inside the
-  `java/assets/layouts` submodule of the main checkout. A new worktree
-  lacks it. Copy `Default/qwerty_nintype.yaml` and `mapping.yaml` from
-  the main checkout, or 8 tests fail. Open item in `TODO.md`.
+- Fork-owned assets go in `java/assets-tapswipe/`, never in a
+  submodule. The apostrophe layout lives there.
 - The main checkout came from Windows. About 1,750 files there differ
   from git only by CRLF line endings. Use `git diff --ignore-cr-at-eol`
   to see real edits. Do not commit the line-ending churn.

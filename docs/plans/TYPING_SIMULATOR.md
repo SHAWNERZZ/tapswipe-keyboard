@@ -213,14 +213,83 @@ clipboard history. The simulator imports it through the same class.
 The zip is private. Keep it outside the repository. Strip the clipboard
 history before import, because the tests never need it.
 
-## Later: record on the phone, replay on the emulator
+## Typing test mode (the user's idea, 2026-11-11)
 
-A debug action saves the raw touch events of the last few words. The
-user sends that file when a word goes wrong. The player replays it on
-the emulator, against any build. A report of "I am sure I swiped it
-right" becomes a test case that runs on every build.
+A screen in the app, similar to a typing-speed test. It shows a list of
+about 100 words. The user types them the way they normally type. Every
+touch is recorded, with the word the user meant to type.
 
-This also calibrates the finger model against real paths.
+This is the most valuable data the simulator can get: real thumbs, real
+habits, and a known intended word for every stroke.
+
+### What the user sees
+
+- A line of prompt words. The current word is marked. Each finished
+  word turns green if it matches the prompt, red if not.
+- A text field under it. The keyboard is the normal TapSwipe keyboard,
+  with the user's normal settings.
+- At the end: words per minute, accuracy, backspace count, and the list
+  of words that needed a correction.
+- A **Save** button that writes the recording to a file the user can
+  sync to the server.
+
+### Word lists
+
+Plain text files, one word per line, in
+`java/assets-tapswipe/typing-tests/`. The screen lists every file there.
+The lists change with what is being tested. First lists:
+
+- `common-100`: frequent words of every length.
+- `long-words`: words that people build from parts.
+- `short-pairs`: short words next to long ones, for the split
+  (`i think`, `a lot`, `see me`).
+- `regressions`: words from fixed bugs (`but`, `ava`, `this`, `area`).
+
+A list can also be loaded from a file on the phone, so a new list does
+not need a new build.
+
+### What is recorded
+
+Only in the typing test field. The screen marks its field through
+`EditorInfo.privateImeOptions`. The keyboard records nothing in any
+other field.
+
+One JSON line per event, with `SystemClock.uptimeMillis` time:
+
+- test start: list name, words, app version, every TapSwipe setting
+- raw touch: down, move, and up for each pointer, with x, y, and the
+  pointer number. Positions are relative to the keyboard view.
+- key layout: every key's rectangle, once per keyboard rebuild
+- stroke added to the session: tap or swipe, hand, key
+- decode applied: text, strokes covered, top candidates
+- commit: text, and whether it went verbatim or through autocorrect
+- backspace: which tier handled it, and what it removed
+- suggestion picked from the strip
+- field text after each change
+- prompt position: which prompt word the user is on
+
+### How the simulator uses it
+
+1. **Calibrate the finger model.** Tap spread per key, swipe speed and
+   curve, gaps between strokes, and the user's real habits for
+   splitting a word into strokes.
+2. **Replay real failures.** Every word that needed a backspace is a
+   test case. The player replays the raw touches on the emulator,
+   against any build.
+3. **Score real typing.** Each recording is a real-world accuracy
+   score, comparable across builds.
+
+The user may type a word other than the prompt, by a slip. The scorer
+aligns typed words to prompt words, and marks a word as a slip when the
+typed letters, not the decoder, differ.
+
+### The seam
+
+- **Evidence:** touch events. **Derived result:** the recording.
+- **Invariant:** recording must not change what the keyboard does.
+- **The risk:** the touch path runs on the main thread. A file write
+  there adds delay at the moment timing matters most. Events go into an
+  in-memory buffer. A background thread writes the buffer to the file.
 
 ## Rejected alternatives
 
@@ -245,18 +314,35 @@ This also calibrates the finger model against real paths.
 
 ## Build order
 
-1. Create an emulator image on the server. Install a dev build. Inject
+1. Typing test mode, with the recorder. It runs on the phone, so the
+   user can collect real data while the rest is built.
+2. Create an emulator image on the server. Install a dev build. Inject
    one tap through `UiAutomation` and read the field.
-2. Debug hooks: layout dump and trace.
-3. Driver app and player. Type one word by tap and by swipe.
-4. Host orchestrator: generator, styles, scoring, report. First run of
-   300 words on default settings.
-5. Settings import. Run again with the user's setup.
-6. Decoder bench. Measure bug B.
-7. Record and replay from the phone.
+3. Debug hooks: layout dump and trace. The recorder's events are the
+   same events, so most of this comes from step 1.
+4. Driver app and player. Replay one recorded word on the emulator.
+5. Host orchestrator: generator, styles, scoring, report. Finger model
+   calibrated from the recordings.
+6. Settings import. Run with the user's setup.
+7. Decoder bench. Measure bug B.
 
-Steps 1 and 3 answer whether injection reaches the keyboard window. If
+Steps 2 and 4 answer whether injection reaches the keyboard window. If
 it does not, stop and revise this plan.
+
+## The user's setup
+
+From the export of 2026-11-11. The file stays in `/Documents/Notes`,
+outside the repository.
+
+- TapSwipe on, Master Mode on (letters hidden), adaptive geometry on.
+- Backspace tap mode: last gesture. Swipe up on backspace: on.
+- Word trails on. Enter flicks on, period key hidden. Nintype gestures
+  on. Typing speed on the space bar on. Automatic split: off.
+- Layout: `qwerty_nintype`, picked as a language layout. Becomes the
+  apostrophe key setting after the 2026-11-11 migration.
+
+The backspace mode makes mechanism 1 of bug A the first one to test:
+one backspace after a word removes its last stroke.
 
 ## The seam
 

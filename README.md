@@ -30,7 +30,7 @@ at once; the lexicon resolves the interleaving.
 **Only a separator commits.** Lifting a finger never does. Until you hit space, every new stroke
 re-decodes the whole word.
 
-**Apostrophe key** — optional *QWERTY (Nintype apostrophe)* layout. A thin key in the gap right of L;
+**Apostrophe key** — optional, under TapSwipe settings, *Apostrophe key*. QWERTY only. A thin key in the gap right of L;
 redirect a swipe along the right edge to keep "its" and "it's" apart. It claims the margin stock
 QWERTY already hides inside L's tap area, so no other key moves. Cost: FUTO's English/QWERTY decoder
 refinement is fixed at 26 keys, so a 27th disables it — roughly half a point of top-1 accuracy by
