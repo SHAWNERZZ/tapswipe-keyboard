@@ -137,9 +137,13 @@ Builds and tests run on the Unraid server, in the Ubuntu container.
   files from the main checkout, or install `git-lfs`.
 - Fork-owned assets go in `java/assets-tapswipe/`, never in a
   submodule. The apostrophe layout lives there.
-- The main checkout came from Windows. About 1,750 files there differ
-  from git only by CRLF line endings. Use `git diff --ignore-cr-at-eol`
-  to see real edits. Do not commit the line-ending churn.
+- Git data for every submodule is trusted with `safe.directory`. The
+  voice-model submodule's `.git` file was repointed from a Windows
+  path on 2026-11-11.
+- `java/assets/futo-swipe` always shows as modified. Git stores its
+  models as LFS pointers, and the folder holds the real files. Never
+  run `git checkout -- .` there. It would replace the models with
+  pointer text.
 
 ## Communication style
 

@@ -14,11 +14,6 @@ drop a task. Date each Done entry.
 
 ## Next
 
-- Merge branch `worktree-linux-setup-and-sim-plan` into `dev`. Local
-  only: the user does not want pushes for now.
-- After the merge, in the main checkout: undo the uncommitted edits in
-  the `java/assets/layouts` submodule (`Default/qwerty_nintype.yaml`
-  and `mapping.yaml`). The layout now lives in `java/assets-tapswipe/`.
 - Word split, open items. Full list in `docs/plans/WORD_SPLIT.md`.
   - Words split with the setting off. Suspect: the phantom space after
     the session drops. Needs the `autoSpaces` and `lastReset` counts
@@ -36,10 +31,16 @@ drop a task. Date each Done entry.
 - Delete `MIGRATION.md` and `tapswipe-claude-v2.zip` from the main
   checkout if the user agrees. Both are leftovers from 2026-08-18.
 - Install `git-lfs` on the server, so a fresh clone gets the swipe
-  models.
+  models, and `java/assets/futo-swipe` stops showing as modified.
 
 ## Done
 
+- 2026-11-11. Cleaned the main checkout. Backed it up first to
+  `/Documents/code-claude/mobile/tapswipe-keyboard-backup-2026-11-11.zip`.
+  Discarded line-ending churn in the repository and in five
+  submodules. Undid the layouts submodule edits. Repointed the
+  voice-model submodule. Fast-forwarded `dev`. Set `local.properties`
+  to `/opt/android-sdk`.
 - 2026-11-11. Made the apostrophe layout a TapSwipe setting
   (`TapSwipeApostropheKeySetting`). Moved the file out of the layouts
   submodule into `java/assets-tapswipe/`. One-time migration for users
