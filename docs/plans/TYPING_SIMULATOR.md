@@ -432,3 +432,30 @@ Harness lessons from that day:
   is down. Every later touch then types nothing. Sessions now start
   with a fresh keyboard process, and letter taps never land on function
   keys.
+
+
+## Ranking, 2026-11-11
+
+Question: why does the decoder pick "Wang" for "what", "van" for "can",
+"woke" for "work"?
+
+Score breakdown for the user's "what" (two thumbs, `probe-word`):
+Wang total 4.58, shape -2.15; what 3.45, shape -5.91; want 2.74, shape
+-6.56. The dictionary part already favors "what" by about 2.6. Shape
+decides it.
+
+Key paths from the recording: left thumb W to A, right thumb B to H to
+G. For "what" the right thumb should run H to T. It started and ended
+one row low. "work": the left thumb stopped on E, short of R.
+
+Tap offsets by screen half: right-half taps land 0.36 (test 1) and 0.12
+(test 2) of a key low; left-half taps land near the center. The learned
+touch model has hundreds of samples per key, but its learned shift for
+H is about 0.05 key up. The learner skips every two-thumb word, and the
+user types mostly with two thumbs.
+
+Offline re-ranking over 117 replayed words (`rerank_experiment.py`):
+first choice right for 108, intended in the top 4 for 115. Amplifying
+the dictionary part fixes 1 and breaks 0 at best. Amplifying the
+language model breaks words quickly. Penalizing capitalized names fixes
+none and would hurt real names such as "Ava". Ranking is not the lever.

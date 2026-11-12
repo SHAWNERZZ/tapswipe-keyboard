@@ -14,13 +14,20 @@ drop a task. Date each Done entry.
 
 ## Next
 
-- **Proper nouns and near twins win over common words.** The user's two
-  tests: "Wang" for what and want (4 times), "van" for can, "woke" for
-  work, "Webb" for even, "put" for out. In every case the intended word
-  was the 2nd or 3rd candidate. These reproduce on the emulator. Neither
-  "Wang" nor "Webb" is a learned word. Look at ranking: capitalized names
-  against common words of the same shape, and the language model's
-  context weight.
+- **Ranking errors are shape errors, from the right thumb landing low.**
+  Investigated 2026-11-11 (see `docs/plans/TYPING_SIMULATOR.md`,
+  "Ranking"). "Wang" beats "what" on shape (-2.2 vs -5.9), while the
+  dictionary already favors "what". The user's right-thumb paths start
+  and end about a key-third low (B for H, G for T). Right-half taps land
+  0.2 to 0.3 key lower than left-half taps in both tests. Re-ranking the
+  top 4 fixes at most 1 of 117 words without breaking others; a name
+  penalty fixes none. Waiting on the user's choice of fix:
+  - let the learner use taps from two-thumb words (exact key identity),
+    so the right thumb's offsets are learned from real technique;
+  - check whether the learned shifts reach swipe decoding at full size
+    (the learned shift for H is about 0.05 key up, the measured landing
+    is 0.1 to 0.4 key down);
+  - check whether the fold's inner and outer screens share one model.
 - Single swipes of short words are the user's weakest case (77% in the
   second test).
 - Word split, open items. Full list in `docs/plans/WORD_SPLIT.md`.
