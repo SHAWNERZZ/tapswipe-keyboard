@@ -493,3 +493,32 @@ seed it. Not built yet; waiting on the user.
 
 Harness fix found on the way: a layout read mid-slide put every touch
 126 px low. `wait_for_layout` now waits for a stable position.
+
+
+### Calibration test, revised after the user's review
+
+The first offset experiment fitted from `common-100`, where many keys
+had 1 to 4 taps. The user pointed out that a test built for calibration,
+with each word typed several times, would measure habits instead of
+single attempts. Per-key data from both tests supports a split model:
+
+- The per-key pattern is stable across sessions. W lands a quarter key
+  right in both tests. L, N, O, Y land low in both. F lands high in both.
+- The whole keyboard shifts by session: +0.23 key low in test 1, +0.04
+  in test 2.
+
+So: learn the per-key pattern from a calibration test, and track only
+the whole-keyboard shift during normal typing.
+
+`calibration.txt` now holds 42 words, 4 times each (168 words, fixed
+order): every word the user's tests got wrong, plus coverage of every
+letter (15+ each, rare letters 4+), and of first and last letters.
+
+`sim.py calibrate <recording>` measures per-key offsets from taps and
+from swipes aligned to the known word (`simlib/align.py`): every
+assignment of letters to the two thumbs' streams is tried, and each
+stream's letters are split across its strokes by dynamic time warping.
+Only taps and swipe endpoints are kept; letters in the middle of a swipe
+are often never drawn. Swipe endpoints agree with taps where both exist
+(test 1, key O: taps +0.53, swipe starts +0.58, swipe ends +0.27). About
+a third of words do not align well enough and are left out.

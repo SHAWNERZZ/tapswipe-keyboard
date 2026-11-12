@@ -269,6 +269,36 @@ def cmd_probe_word(args) -> None:
     sess.close()
 
 
+def cmd_calibrate(args) -> None:
+    """Per-key landing offsets from a typing test, from taps and from swipes aligned to the known
+    word. Offsets are in key units: +dy is low, +dx is right."""
+    import statistics
+    from simlib import align
+    with open(args.recording) as f:
+        events = [json.loads(l) for l in f if l.strip()]
+    land, stats = align.collect(events)
+    print(stats)
+    def med(v):
+        return f"{statistics.median(v):+.2f}" if v else "  -  "
+    kinds = ["tap", "swipe-start", "swipe-end"]
+    print("key" + "".join(f" | {k:^19}" for k in kinds) + " | all: n     dx    dy")
+    allx, ally = [], []
+    for ch in "qwertyuiopasdfghjklzxcvbnm":
+        row = f" {ch} "
+        xs = [l[3] for l in land if l[1] == ch]
+        ys = [l[4] for l in land if l[1] == ch]
+        allx += xs; ally += ys
+        for k in kinds:
+            v = [l for l in land if l[1] == ch and l[2] == k]
+            row += f" | n{len(v):3} {med([l[3] for l in v])} {med([l[4] for l in v])}"
+        row += f" |    {len(xs):3} {med(xs)} {med(ys)}"
+        print(row)
+    print(f"whole keyboard: dx {med(allx)} dy {med(ally)} from {len(allx)} landings")
+    if args.out:
+        with open(args.out, "w") as f:
+            json.dump({"stats": stats, "landings": land}, f)
+
+
 def cmd_analyze(args) -> None:
     """Per-word analysis of a phone typing test: technique, first shown word, decoder view, fixes."""
     from simlib import analyze
@@ -353,6 +383,10 @@ def main() -> None:
     p.add_argument("index", type=int)
     p.add_argument("--times", type=int, default=3)
     p.set_defaults(fn=cmd_probe_word)
+    p = sub.add_parser("calibrate")
+    p.add_argument("recording")
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_calibrate)
     p = sub.add_parser("analyze")
     p.add_argument("recording")
     p.add_argument("--out")
