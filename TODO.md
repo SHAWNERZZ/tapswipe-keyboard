@@ -14,6 +14,8 @@ drop a task. Date each Done entry.
 
 ## Next
 
+- **Calibration offsets: not shown to help yet.** Held-out check scored
+  77 against 80. Rerun with adaptive geometry off on the emulator.
 - **Session offset layer** (proposed 2026-11-11, waiting on the user).
   Ranking errors ("Wang", "van", "cold") come from the right thumb
   landing low, and the amount changes between sessions. A causal
@@ -50,6 +52,9 @@ drop a task. Date each Done entry.
 
 ## Done
 
+- 2026-11-11. Soft time order across the two thumbs
+  (`TapSwipeTimingOrder`): two-thumb "form" no longer reads "from". The
+  language model no longer sees the word being typed as context.
 - 2026-11-11. Fixed, from the user's second typing test: a second-finger
   tap now joins its own decoder stream ("then" no longer reads "the").
   Results are judged against their own decode input, not the newest.

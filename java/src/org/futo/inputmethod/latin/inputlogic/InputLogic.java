@@ -1079,9 +1079,11 @@ public final class InputLogic {
         // TapSwipeTapPointer.
         final TapSwipeSession.Hand hand = org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer
                 .handFor(org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer.consume());
+        final long downMs = org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer.consumeDownTime();
         mTapSwipeSession.addTap(codePoint, pos[0], pos[1],
                 (float) (now - mTapSwipeSessionOriginMs), hand,
-                rawX, rawY);
+                rawX, rawY,
+                downMs > 0 ? (float) (downMs - mTapSwipeSessionOriginMs) : Float.NaN);
         org.futo.inputmethod.latin.tapswipe.TypingTestEvents.tapAdded(codePoint, mTapSwipeSession.getStrokes().size(),
                 mTapSwipeSession.getGeneration(), hand.name());
         publishGestureTrail();
@@ -1320,7 +1322,9 @@ public final class InputLogic {
                 midBatch ? mWordComposer.getInputPointers().getGestureSegments() : null,
                 midBatch ? SwipeDecoderDictionary.currentNormalizers() : null,
                 BatchInputArbiter.getBatchOriginTime(),
-                mTapSwipeSessionOriginMs);
+                mTapSwipeSessionOriginMs,
+                (x, y) -> SwipeDecoderDictionary.nearLetters(x, y),
+                SwipeDecoderDictionary.normalizedKeyWidth());
     }
 
     private void clearRememberedSuggestedWords() {

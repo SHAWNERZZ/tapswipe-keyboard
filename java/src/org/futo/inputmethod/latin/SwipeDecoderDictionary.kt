@@ -543,6 +543,33 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
          * problems. Phase 0 / S4 showed a single point is sufficient - dwell length has no effect,
          * since every segment is resampled to a fixed 64 points internally.
          */
+        /**
+         * Letters whose key centre is within about one key of a normalized point, nearest first
+         * included. Used by the soft order across streams to know which letters a stroke could have
+         * started or ended on.
+         */
+        @JvmStatic
+        fun nearLetters(x: Float, y: Float): Set<Char> {
+            val info = appliedLayoutInfo
+            val half = normalizedKeyHalfExtent() ?: return emptySet()
+            val kw = half[0] * 2f
+            val kh = half[1] * 2f
+            if (kw <= 0f || kh <= 0f) return emptySet()
+            var best = Float.MAX_VALUE
+            val d = FloatArray(info.letters.length) { i ->
+                if (i >= info.xs.size || i >= info.ys.size) Float.MAX_VALUE
+                else Math.hypot(((info.xs[i] - x) / kw).toDouble(), ((info.ys[i] - y) / kh).toDouble()).toFloat()
+                    .also { if (it < best) best = it }
+            }
+            val out = HashSet<Char>()
+            for (i in d.indices) if (d[i] <= maxOf(best + 0.01f, 1.0f)) out.add(info.letters[i])
+            return out
+        }
+
+        /** Letter key width in normalized space, or 0 when no layout is applied. */
+        @JvmStatic
+        fun normalizedKeyWidth(): Float = normalizedKeyHalfExtent()?.let { it[0] * 2f } ?: 0f
+
         @JvmStatic
         fun normalizedKeyPosition(codePoint: Int): FloatArray? {
             val info = appliedLayoutInfo
@@ -955,13 +982,29 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             ?.takeLast(10)
             ?: emptyList()
 
+    /**
+     * Context for re-decoding a TapSwipe word that is already composing.
+     *
+     * The text before the cursor includes the word being composed, so [contextWordsFrom] handed the
+     * language model the word itself (or its literal, such as "fromr") as the previous word. Measured
+     * 2026-11-11: 117 of 180 TapSwipe decodes in a typing test. Drop that last token when the cursor
+     * is inside a word.
+     */
+    private fun contextWordsBeforeComposing(ngramContext: NgramContext?): List<String> {
+        val line = ngramContext?.fullContext?.lineSequence()?.lastOrNull() ?: return emptyList()
+        val words = contextWordsFrom(ngramContext)
+        return org.futo.inputmethod.latin.tapswipe.TapSwipeContext.dropComposing(line, words)
+    }
+
     private fun resultsToSuggestions(
-        results: List<SwipeDecoder.Result>
+        results: List<SwipeDecoder.Result>,
+        penalties: List<Float> = emptyList()
     ): ArrayList<SuggestedWords.SuggestedWordInfo> {
         val list = ArrayList<SuggestedWords.SuggestedWordInfo>(results.size)
-        results.forEach {
+        results.forEachIndexed { i, it ->
+            val score = it.score - (penalties.getOrNull(i) ?: 0f)
             list.add(SuggestedWords.SuggestedWordInfo(
-                it.word, "", (it.score * 1000.0f + 10000.0f).toInt(),
+                it.word, "", (score * 1000.0f + 10000.0f).toInt(),
                 SuggestedWords.SuggestedWordInfo.KIND_CORRECTION, this, 0, 0
             ).apply {
                 mOriginatesFromSwipeModel = true
@@ -988,7 +1031,7 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         if (input.isEmpty) return null
 
         val decoder = getOrInitDecoder()
-        decoder.setContext(contextWordsFrom(ngramContext))
+        decoder.setContext(contextWordsBeforeComposing(ngramContext))
         appliedTrieWeights = trieWeights
 
         val isMultiSegment = input.segmentCount > 1
@@ -1014,14 +1057,24 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
 
         if (useHighBeam) appliedScoring.value = decoder.scoring
 
+        // Soft order across the two thumbs' streams. The decoder interleaves them by lexicon alone;
+        // timing breaks the tie it cannot see. See TapSwipeTimingOrder.
+        val (order, penalties) = if (useHighBeam && results.size > 1) {
+            org.futo.inputmethod.latin.tapswipe.TapSwipeTimingOrder.rerank(
+                results.map { it.word }, results.map { it.score }, input.timings)
+        } else {
+            results.indices.toList() to List(results.size) { 0f }
+        }
+
         // Typing test / simulator only: the score breakdown, to study ranking.
         if (useHighBeam) {
             org.futo.inputmethod.latin.tapswipe.TypingTestEvents.decodeDetail(
                 results.map { it.word }, results.map { it.score }, results.map { it.ctcScore },
-                results.map { it.lmScore }, contextWordsFrom(ngramContext), decoder.scoring.alpha,
+                results.map { it.lmScore }, contextWordsBeforeComposing(ngramContext), decoder.scoring.alpha,
                 decoder.scoring.beta, decoder.scoring.gamma, decoder.scoring.lambda,
-                input.left.size, input.right.size)
+                input.left.size, input.right.size, penalties, input.timings)
         }
+        val ranked = order.map { results[it] }
 
         // Only the high-beam pass asks for more than one candidate, and it is the one that runs at
         // the end of a stroke - which is exactly the decode a commit will be based on.
@@ -1035,7 +1088,7 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
                 results.joinToString { "${it.word}(${it.score})" })
         }
 
-        return resultsToSuggestions(results)
+        return resultsToSuggestions(ranked, penalties.let { p -> order.map { p[it] } })
     }
 
     /**

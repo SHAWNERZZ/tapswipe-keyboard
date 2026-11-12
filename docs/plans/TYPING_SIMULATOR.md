@@ -522,3 +522,44 @@ Only taps and swipe endpoints are kept; letters in the middle of a swipe
 are often never drawn. Swipe endpoints agree with taps where both exist
 (test 1, key O: taps +0.53, swipe starts +0.58, swipe ends +0.27). About
 a third of words do not align well enough and are left out.
+
+
+### First calibration run, 2026-11-11 evening
+
+The user typed the calibration test, then `common-100`, in one sitting.
+
+- Pooled with the earlier tests, 21 of 26 keys are measured to about
+  0.07 key or better. P, J, K, Z, X are thin; Q has nothing.
+- The session shift moved within the sitting: +0.01 key in the
+  calibration run, +0.10 in the `common-100` right after.
+- Held-out check: `common-100` corrected with offsets from the
+  calibration run scored 77, against 80 uncorrected (fixed "want",
+  "its"; broke 5). Fixed offsets do not help yet. A likely confound: the
+  emulator already applies the user's imported learned key model, so the
+  correction stacks on it. Next experiment: switch adaptive geometry off
+  on the emulator for both arms.
+
+## Order across thumbs, 2026-11-11
+
+Reported: "form" always read "from". The user taps F, swipes O to M, and
+taps R with the other thumb during the swipe. Since a second-finger tap
+joined its own stream, the decoder interleaved the streams freely and
+chose the more common word.
+
+`TapSwipeTimingOrder` re-ranks the decoder's top candidates by timing.
+Each letter gets a time window (a tap's touch-down; a swipe's start for
+its first letter; up to 150 ms before the lift for its last letter, since
+a swipe often reaches its last letter early). Neighboring letters that
+run backwards in time cost 0.06 points per ms beyond 50 ms. Each swipe's
+first and last letters must be near its start and end points, and a
+barely moving segment counts as a tap on a nearby key.
+
+Results: the two-thumb "form" attempts read "form" in every replay.
+Across both new tests (85 + 20 aligned words) the re-rank changed no
+other word. A first version broke "house"; the swipe-end window fixed
+it. Same-finger "form" (R tapped after the swipe ended) still reads
+"from": the decoder's order within one stream is strict.
+
+Also found: TapSwipe decodes passed the word being typed to the language
+model as the previous word (117 of 180 decodes). Fixed by
+`TapSwipeContext.dropComposing`.

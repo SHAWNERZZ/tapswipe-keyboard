@@ -25,7 +25,10 @@ object TapSwipeInputBuilder {
         liveSegments: List<InputPointers.GestureSegment>?,
         norm: TapSwipeNormalizers?,
         batchOriginMs: Long,
-        sessionOriginMs: Long
+        sessionOriginMs: Long,
+        /** Letters near a normalized point, and the key width there; null skips position checks. */
+        nearKeys: ((Float, Float) -> Set<Char>)? = null,
+        keyWidth: Float = 0f
     ): TapSwipeDecodeInput? {
         val left = ArrayList<SwipeDecoder.SwipeSeg>()
         val right = ArrayList<SwipeDecoder.SwipeSeg>()
@@ -73,11 +76,38 @@ object TapSwipeInputBuilder {
             right.clear()
         }
 
+        // Timing for the soft order across the two streams. Only for a decode of finished strokes:
+        // mid-swipe, the live stroke is not in the session and its letters are still moving.
+        val timings = if (liveSegments != null) emptyList() else session.strokes.map { s ->
+            val right = s.hand == TapSwipeSession.Hand.RIGHT
+            if (s.kind == TapSwipeSession.Kind.TAP) {
+                val lift = if (s.t.isNotEmpty()) s.t[0] else 0f
+                TapSwipeTimingOrder.Timing(true, s.codePoint, right,
+                    if (s.downT.isNaN()) lift else s.downT, lift)
+            } else {
+                val t0 = if (s.t.isNotEmpty()) s.t.first() else 0f
+                val t1 = if (s.t.isNotEmpty()) s.t.last() else 0f
+                var length = 0f
+                for (i in 1 until s.x.size) length += Math.hypot(
+                    (s.x[i] - s.x[i - 1]).toDouble(), (s.y[i] - s.y[i - 1]).toDouble()).toFloat()
+                val start = if (nearKeys != null && s.x.isNotEmpty()) nearKeys(s.x.first(), s.y.first()) else emptySet()
+                val end = if (nearKeys != null && s.x.isNotEmpty()) nearKeys(s.x.last(), s.y.last()) else emptySet()
+                if (keyWidth > 0f && length < keyWidth * 0.5f && start.isNotEmpty()) {
+                    // Barely moved: a second finger that landed during a gesture is folded in as a
+                    // segment. It is a tap on one of the keys under it.
+                    TapSwipeTimingOrder.Timing(true, 0, right, t0, t1, startKeys = start)
+                } else {
+                    TapSwipeTimingOrder.Timing(false, 0, right, t0, t1, startKeys = start, endKeys = end)
+                }
+            }
+        }
+
         return TapSwipeDecodeInput(
             left.toTypedArray(),
             right.toTypedArray(),
             hasSwipe,
-            session.generation
+            session.generation,
+            timings
         )
     }
 }

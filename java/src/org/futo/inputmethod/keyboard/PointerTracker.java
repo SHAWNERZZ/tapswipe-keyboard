@@ -442,6 +442,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             // synchronous listener call, so input that does not come from a touch never sees a
             // stale value. See TapSwipeTapPointer.
             org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer.lastPointerId = mPointerId;
+            org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer.lastDownTimeMs = mDownTime;
             try {
                 if (code == Constants.CODE_OUTPUT_TEXT) {
                     sListener.onTextInput(key.getOutputText());
@@ -455,6 +456,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                 }
             } finally {
                 org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer.lastPointerId = -1;
+                org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer.lastDownTimeMs = -1;
             }
         }
     }

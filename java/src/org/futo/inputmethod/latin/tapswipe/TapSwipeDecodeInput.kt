@@ -17,7 +17,9 @@ class TapSwipeDecodeInput(
     @JvmField val right: Array<SwipeDecoder.SwipeSeg>,
     /** True if any stroke was a real gesture; false means peck mode (no swipe decoding). */
     @JvmField val hasSwipe: Boolean,
-    @JvmField val generation: Int
+    @JvmField val generation: Int,
+    /** Stroke timing in session order, for the soft order across streams. Empty mid-swipe. */
+    @JvmField val timings: List<TapSwipeTimingOrder.Timing> = emptyList()
 ) {
     val isEmpty: Boolean get() = left.isEmpty() && right.isEmpty()
 

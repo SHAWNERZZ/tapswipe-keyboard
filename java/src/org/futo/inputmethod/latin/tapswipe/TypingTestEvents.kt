@@ -59,14 +59,20 @@ object TypingTestEvents {
     @JvmStatic
     fun decodeDetail(words: List<String>, scores: List<Float>, ctc: List<Float>, lm: List<Float>,
                      context: List<String>, alpha: Float, beta: Float, gamma: Float, lambda: Float,
-                     leftSegs: Int, rightSegs: Int) = ifActive {
+                     leftSegs: Int, rightSegs: Int, orderPenalty: List<Float> = emptyList(),
+                     timings: List<TapSwipeTimingOrder.Timing> = emptyList()) = ifActive {
         TypingTestRecorder.emit(TypingTestRecorder.event("decode_detail")
             .putStrings("words", words)
             .putFloats("score", scores.toFloatArray()).putFloats("ctc", ctc.toFloatArray())
             .putFloats("lm", lm.toFloatArray())
             .putStrings("context", context.takeLast(4))
             .put("alpha", alpha).put("beta", beta).put("gamma", gamma).put("lambda", lambda)
-            .put("left", leftSegs).put("right", rightSegs))
+            .put("left", leftSegs).put("right", rightSegs)
+            .putFloats("orderPenalty", orderPenalty.toFloatArray())
+            .putStrings("timings", timings.map {
+                (if (it.isTap) "tap:" + String(Character.toChars(it.codePoint)) else "swipe") +
+                    (if (it.right) "/R" else "/L") + " ${it.t0.toInt()}..${it.t1.toInt()}"
+            }))
     }
 
     /** A suggestion computation starting, with the stroke count of the TapSwipe input built for it. */

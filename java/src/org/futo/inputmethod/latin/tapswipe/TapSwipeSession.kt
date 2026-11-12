@@ -54,7 +54,13 @@ class TapSwipeSession {
          * correction. Such a stroke simply is not drawn.
          */
         val viewX: FloatArray = EMPTY_POINTS,
-        val viewY: FloatArray = EMPTY_POINTS
+        val viewY: FloatArray = EMPTY_POINTS,
+        /**
+         * For a tap, when the finger went down, on the same timeline as [t]. [t] holds the moment
+         * the keyboard registered the tap, which is the lift. Ordering across the two thumbs needs
+         * the touch, not the lift. NaN when unknown.
+         */
+        val downT: Float = Float.NaN
     ) {
         val isEmpty: Boolean get() = x.isEmpty()
         val hasViewPoints: Boolean get() = viewX.isNotEmpty() && viewX.size == viewY.size
@@ -436,7 +442,7 @@ class TapSwipeSession {
     @JvmOverloads
     fun addTap(
         codePoint: Int, x: Float, y: Float, t: Float, hand: Hand = Hand.LEFT,
-        viewX: Float = -1f, viewY: Float = -1f
+        viewX: Float = -1f, viewY: Float = -1f, downT: Float = Float.NaN
     ): Boolean {
         val hasView = viewX >= 0f && viewY >= 0f
         return addStroke(
@@ -445,7 +451,8 @@ class TapSwipeSession {
                 floatArrayOf(x), floatArrayOf(y), floatArrayOf(t),
                 codePoint,
                 if (hasView) floatArrayOf(viewX) else EMPTY_POINTS,
-                if (hasView) floatArrayOf(viewY) else EMPTY_POINTS
+                if (hasView) floatArrayOf(viewY) else EMPTY_POINTS,
+                downT
             )
         )
     }

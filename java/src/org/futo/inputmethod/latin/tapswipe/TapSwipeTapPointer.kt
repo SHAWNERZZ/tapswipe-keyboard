@@ -24,6 +24,19 @@ object TapSwipeTapPointer {
     @Volatile
     var lastPointerId: Int = -1
 
+    /** When the tap's finger went down, `SystemClock.uptimeMillis` clock. -1 when unknown. */
+    @JvmField
+    @Volatile
+    var lastDownTimeMs: Long = -1
+
+    /** Returns the down time of the code input being handled, once, then forgets it. */
+    @JvmStatic
+    fun consumeDownTime(): Long {
+        val t = lastDownTimeMs
+        lastDownTimeMs = -1
+        return t
+    }
+
     /** Returns the pointer number of the code input being handled, once, then forgets it. */
     @JvmStatic
     fun consume(): Int {
