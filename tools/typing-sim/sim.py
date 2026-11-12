@@ -231,7 +231,42 @@ def cmd_replay_words(args) -> None:
     os.makedirs(run_dir, exist_ok=True)
     with open(os.path.join(run_dir, "replay-words.json"), "w") as f:
         json.dump({"source": os.path.abspath(args.recording), "rows": rows}, f, indent=1)
+    with open(os.path.join(run_dir, "recording.jsonl"), "w") as f:
+        for e in dev.recording(run_id):
+            f.write(json.dumps(e) + "\n")
     print("saved", run_dir)
+
+
+def cmd_probe_word(args) -> None:
+    """Replays one prompt word's touches from a typing test several times, and prints the decoder's
+    score breakdown (total, shape, language model) for each high-beam decode."""
+    import time
+    from simlib import replay
+    with open(args.recording) as f:
+        events = [json.loads(l) for l in f if l.strip()]
+    prompt = replay.prompt_words(events)
+    win = next(w for w in replay.word_windows(events, len(prompt)) if w["index"] == args.index)
+    dev = Device(args.serial)
+    stamp = datetime.datetime.now().strftime("%H%M%S")
+    sess = Session(dev, f"probe-{args.index}-{stamp}", finger.FingerParams())
+    lines = replay.script(events, replay.Frame.of(sess.layout_event), win["t_from"] + 1, win["t_to"])
+    print(f"#{args.index} {prompt[args.index]!r}: {len(lines)} touch events")
+    for k in range(args.times):
+        sess.new_events()
+        sess.player.play(lines)
+        time.sleep(0.7)
+        out = sess.new_events()
+        details = [e for e in out if e.get("type") == "decode_detail"]
+        landed = " ".join(__import__("simlib.runner", fromlist=["x"]).landed_words(
+            sess.field_text, sess.last_field_text(out) or sess.field_text))
+        sess.field_text = sess.last_field_text(out) or sess.field_text
+        print(f"try {k + 1}: landed {landed!r}")
+        for d in details[-1:]:
+            print(f"   context {d['context']}  alpha={d['alpha']} beta={d['beta']} gamma={d['gamma']} "
+                  f"lambda={d['lambda']}  streams L{d['left']} R{d['right']}")
+            for w, sc, c, l in zip(d["words"], d["score"], d["ctc"], d["lm"]):
+                print(f"   {w:12} total {sc:8.2f}   shape {c:8.2f}   lm {l:8.2f}   rest {sc - c - l:8.2f}")
+    sess.close()
 
 
 def cmd_analyze(args) -> None:
@@ -313,6 +348,11 @@ def main() -> None:
     p = sub.add_parser("replay-words")
     p.add_argument("recording", help="a typing test recording from the phone")
     p.set_defaults(fn=cmd_replay_words)
+    p = sub.add_parser("probe-word")
+    p.add_argument("recording")
+    p.add_argument("index", type=int)
+    p.add_argument("--times", type=int, default=3)
+    p.set_defaults(fn=cmd_probe_word)
     p = sub.add_parser("analyze")
     p.add_argument("recording")
     p.add_argument("--out")

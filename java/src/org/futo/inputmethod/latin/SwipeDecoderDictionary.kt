@@ -1014,6 +1014,15 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
 
         if (useHighBeam) appliedScoring.value = decoder.scoring
 
+        // Typing test / simulator only: the score breakdown, to study ranking.
+        if (useHighBeam) {
+            org.futo.inputmethod.latin.tapswipe.TypingTestEvents.decodeDetail(
+                results.map { it.word }, results.map { it.score }, results.map { it.ctcScore },
+                results.map { it.lmScore }, contextWordsFrom(ngramContext), decoder.scoring.alpha,
+                decoder.scoring.beta, decoder.scoring.gamma, decoder.scoring.lambda,
+                input.left.size, input.right.size)
+        }
+
         // Only the high-beam pass asks for more than one candidate, and it is the one that runs at
         // the end of a stroke - which is exactly the decode a commit will be based on.
         if (useHighBeam && results.isNotEmpty()) {

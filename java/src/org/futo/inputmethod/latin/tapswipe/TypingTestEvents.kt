@@ -55,6 +55,20 @@ object TypingTestEvents {
             .put("resultStyle", words.mInputStyle).put("resultSeq", words.mSequenceNumber))
     }
 
+    /** The decoder's own score breakdown per candidate, for ranking analysis. */
+    @JvmStatic
+    fun decodeDetail(words: List<String>, scores: List<Float>, ctc: List<Float>, lm: List<Float>,
+                     context: List<String>, alpha: Float, beta: Float, gamma: Float, lambda: Float,
+                     leftSegs: Int, rightSegs: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("decode_detail")
+            .putStrings("words", words)
+            .putFloats("score", scores.toFloatArray()).putFloats("ctc", ctc.toFloatArray())
+            .putFloats("lm", lm.toFloatArray())
+            .putStrings("context", context.takeLast(4))
+            .put("alpha", alpha).put("beta", beta).put("gamma", gamma).put("lambda", lambda)
+            .put("left", leftSegs).put("right", rightSegs))
+    }
+
     /** A suggestion computation starting, with the stroke count of the TapSwipe input built for it. */
     @JvmStatic
     fun decodeRequest(style: Int, seq: Int, segments: Int, generation: Int) = ifActive {
