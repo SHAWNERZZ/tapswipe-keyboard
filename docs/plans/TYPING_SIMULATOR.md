@@ -604,3 +604,37 @@ searched; path fits are cached per stroke and letter run. Results are
 the same. Replaying the slowest words: re-rank at most 45 ms, whole
 decode at most 174 ms on the emulator. `decode_detail` now records
 `rerankMs`.
+
+
+### I'm read as "in", 2026-11-12
+
+Reported: a swipe from I through the apostrophe key to M read "in" nearly
+every time. Reproduced 6 of 6. The path matched "I'm" as well as or
+better than "in"; the language model rates contractions as nearly
+impossible (about -12 for "I'm" and "I'll", against +7 for "in") and
+often drops them from the beam.
+
+Fixes:
+- `TapSwipeApostrophe`: a swipe that passes through the apostrophe zone
+  with at least 0.8 key of path still to go, or a tap on it, is a
+  deliberate visit. Ending near the edge does not count.
+- When visited, decode again without language-model context (the
+  scoring a field's first word gets), with 8 candidates, and penalize
+  candidates without an apostrophe by 6 points.
+- Context words for TapSwipe decodes keep apostrophes inside words.
+  "He'll held" was split into "He", "ll", "held".
+
+Results: "I'm" at a field's start 3 of 3 (was 0), after "and" 2 of 2
+(was 0), mid-sentence 5 of 5 (was 0). Contraction list A/B: 77.2% to
+83.3%, fixing can't, we'll, don't, he'll, I'm. Its look-alikes "hell"
+and "shell" slipped in that list, with the apostrophe rule not firing;
+the artificial context (contractions back to back) changed the language
+model's view. Real recordings show no loss: long words 34 of 40 (phone
+35), common-100 80 of 91 (80 to 81 before).
+
+Crash found on the way: `TapSwipeInputBuilder` iterated the live
+gesture segments on the decoding thread while the touch thread added to
+them, and threw ConcurrentModificationException. It hit the user's
+current build too (once in replays, long words). Now copied without an
+iterator; on failure the mid-swipe preview skips the live stroke. Zero
+crashes in two full replays after the fix.

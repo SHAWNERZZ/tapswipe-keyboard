@@ -61,7 +61,8 @@ object TypingTestEvents {
                      context: List<String>, alpha: Float, beta: Float, gamma: Float, lambda: Float,
                      leftSegs: Int, rightSegs: Int, orderPenalty: List<Float> = emptyList(),
                      timings: List<TapSwipeTimingOrder.Timing> = emptyList(),
-                     rerankMs: Float = 0f) = ifActive {
+                     rerankMs: Float = 0f, apostrophe: Boolean = false, aposPos: FloatArray? = null,
+                     keyHalf: FloatArray? = null, lPos: FloatArray? = null) = ifActive {
         TypingTestRecorder.emit(TypingTestRecorder.event("decode_detail")
             .putStrings("words", words)
             .putFloats("score", scores.toFloatArray()).putFloats("ctc", ctc.toFloatArray())
@@ -70,6 +71,9 @@ object TypingTestEvents {
             .put("alpha", alpha).put("beta", beta).put("gamma", gamma).put("lambda", lambda)
             .put("left", leftSegs).put("right", rightSegs)
             .put("rerankMs", rerankMs)
+            .put("apostrophe", apostrophe)
+            .putFloats("aposPos", aposPos ?: FloatArray(0)).putFloats("keyHalf", keyHalf ?: FloatArray(0))
+            .putFloats("lPos", lPos ?: FloatArray(0))
             .putFloats("orderPenalty", orderPenalty.toFloatArray())
             .putStrings("timings", timings.map {
                 (if (it.isTap) "tap:" + String(Character.toChars(it.codePoint)) else "swipe") +

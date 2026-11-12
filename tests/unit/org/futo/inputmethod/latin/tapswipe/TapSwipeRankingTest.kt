@@ -188,3 +188,55 @@ class TapSwipeTimingSpeedTest {
         assertTrue("four long candidates took $ms ms", ms < 150.0)
     }
 }
+
+class TapSwipeApostropheTest {
+    // Unit keys: L centre at x 8.5, the thin apostrophe key just right of it at x 9.2, home row y 1.
+    private val apos = floatArrayOf(9.2f, 1f)
+    private fun line(vararg pts: Pair<Float, Float>, steps: Int = 10): Pair<FloatArray, FloatArray> {
+        val xs = ArrayList<Float>(); val ys = ArrayList<Float>()
+        for (k in 0 until pts.size - 1) for (s in 0 until steps) {
+            val f = s / steps.toFloat()
+            xs.add(pts[k].first + f * (pts[k + 1].first - pts[k].first))
+            ys.add(pts[k].second + f * (pts[k + 1].second - pts[k].second))
+        }
+        xs.add(pts.last().first); ys.add(pts.last().second)
+        return xs.toFloatArray() to ys.toFloatArray()
+    }
+
+    @Test
+    fun `I to apostrophe to M visits the apostrophe`() {
+        // I (7, 0) -> apostrophe (9.2, 1) -> M (7.5, 2)
+        assertTrue(TapSwipeApostrophe.visited(listOf(line(7f to 0f, 9.2f to 1f, 7.5f to 2f)), apos, 1f, 1f))
+    }
+
+    @Test
+    fun `a word ending on L that overshoots to the edge does not`() {
+        // W (1, 0) -> L (8.5, 1), overshooting to x 9.3 at the end.
+        assertTrue(!TapSwipeApostrophe.visited(listOf(line(1f to 0f, 8.5f to 1f, 9.3f to 1f)), apos, 1f, 1f))
+    }
+
+    @Test
+    fun `a path along the top row past P does not`() {
+        // Top row, right to left from P: far from the home-row apostrophe vertically.
+        assertTrue(!TapSwipeApostrophe.visited(listOf(line(9f to 0f, 6f to 0f)), apos, 1f, 1f))
+    }
+
+    @Test
+    fun `a tap on the apostrophe counts`() {
+        assertTrue(TapSwipeApostrophe.visited(listOf(floatArrayOf(9.25f) to floatArrayOf(1f)), apos, 1f, 1f))
+    }
+
+    @Test
+    fun `only words without an apostrophe are penalized`() {
+        assertEquals(listOf(TapSwipeApostrophe.PENALTY, 0f), TapSwipeApostrophe.penalties(listOf("in", "I'm"), true))
+        assertEquals(listOf(0f, 0f), TapSwipeApostrophe.penalties(listOf("in", "I'm"), false))
+    }
+}
+
+class TapSwipeContextWordsTest {
+    @Test
+    fun `contractions stay whole`() {
+        assertEquals(listOf("He'll", "held", "I'm"), TapSwipeContext.words("He'll held, I'm"))
+        assertEquals(listOf("don't", "go"), TapSwipeContext.words("'don't' go."))
+    }
+}

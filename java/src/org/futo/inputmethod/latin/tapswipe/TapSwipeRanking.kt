@@ -2,6 +2,16 @@ package org.futo.inputmethod.latin.tapswipe
 
 /** Language-model context for a word that is already composing. */
 object TapSwipeContext {
+    private val separators = Regex("[^\\p{L}\\p{N}']+")
+
+    /**
+     * Words in a line of text, keeping apostrophes inside words. Splitting at every non-letter turned
+     * "He'll held" into "He", "ll", "held" (2026-11-12), so the language model saw "ll" as a word.
+     */
+    @JvmStatic
+    fun words(line: String): List<String> =
+        line.split(separators).map { it.trim('\'') }.filter { it.isNotEmpty() }
+
     /**
      * Removes the word being composed from the context words. [line] is the text before the cursor;
      * if it does not end in whitespace, its last token is the composing word, not a previous word.
@@ -280,4 +290,62 @@ object TapSwipeTimingOrder {
         val order = words.indices.sortedByDescending { scores[it] - penalties[it] }
         return order to penalties
     }
+}
+
+/**
+ * Evidence from the apostrophe key that the decoder does not weigh.
+ *
+ * ## Why
+ *
+ * Reported 2026-11-12: a swipe from I through the apostrophe key to M read "in" nearly every time.
+ * The path matched "I'm" as well or better, but the dictionary part of the score and the language
+ * model both rate "I'm" far below "in" (language model about -12 after "and", against +7). The
+ * apostrophe key is thin and at the far right edge, so a path that goes through it and on to another
+ * key, or a tap on it, is deliberate.
+ *
+ * ## Rule
+ *
+ * The apostrophe counts as visited when a tap lands on it, or a swipe passes through its zone with at
+ * least [CONTINUE_KEYS] of path still to go. A path that only ends near the edge does not count: a
+ * word ending in L may overshoot. When visited, the caller asks the decoder for more candidates and
+ * subtracts [PENALTY] from every candidate without an apostrophe.
+ */
+object TapSwipeApostrophe {
+    const val PENALTY = 6f
+    const val CONTINUE_KEYS = 0.8f
+    /** The zone: within this many key widths left of the apostrophe's centre, or anywhere right of it. */
+    const val ZONE_LEFT_KEYS = 0.25f
+    /** And within this many key heights of its centre, vertically. */
+    const val ZONE_ROW_KEYS = 0.5f
+
+    /**
+     * @param segs strokes as point lists in normalized layout space (a tap is one point)
+     * @param apos the apostrophe key's centre, or null when the layout has none
+     */
+    @JvmStatic
+    fun visited(segs: List<Pair<FloatArray, FloatArray>>, apos: FloatArray?, keyW: Float, keyH: Float): Boolean {
+        if (apos == null || keyW <= 0f || keyH <= 0f) return false
+        fun inZone(x: Float, y: Float) =
+            x >= apos[0] - ZONE_LEFT_KEYS * keyW && Math.abs(y - apos[1]) <= ZONE_ROW_KEYS * keyH
+        for ((xs, ys) in segs) {
+            if (xs.isEmpty() || xs.size != ys.size) continue
+            if (xs.size == 1) {
+                if (inZone(xs[0], ys[0])) return true
+                continue
+            }
+            // Path length still to travel after each point.
+            val after = FloatArray(xs.size)
+            for (i in xs.size - 2 downTo 0) {
+                after[i] = after[i + 1] + Math.hypot(((xs[i + 1] - xs[i]) / keyW).toDouble(),
+                    ((ys[i + 1] - ys[i]) / keyH).toDouble()).toFloat()
+            }
+            for (i in xs.indices) if (inZone(xs[i], ys[i]) && after[i] >= CONTINUE_KEYS) return true
+        }
+        return false
+    }
+
+    /** Penalties for candidates without an apostrophe, when the apostrophe was visited. */
+    @JvmStatic
+    fun penalties(words: List<String>, visited: Boolean): List<Float> =
+        words.map { if (visited && !it.contains('\'')) PENALTY else 0f }
 }

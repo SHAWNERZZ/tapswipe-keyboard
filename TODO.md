@@ -52,6 +52,12 @@ drop a task. Date each Done entry.
 
 ## Done
 
+- 2026-11-12. "I'm" no longer reads "in": deliberate apostrophe visits
+  decode without the language model and penalize non-apostrophe words.
+  Context keeps contractions whole. Fixed a keyboard crash
+  (ConcurrentModificationException on live gesture segments).
+- 2026-11-12. Timing re-rank: letter times from the swipe path; search
+  pruned (long two-thumb words no longer lag).
 - 2026-11-11. Soft time order across the two thumbs
   (`TapSwipeTimingOrder`): two-thumb "form" no longer reads "from". The
   language model no longer sees the word being typed as context.

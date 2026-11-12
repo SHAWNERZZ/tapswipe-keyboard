@@ -1001,7 +1001,7 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
      */
     private fun contextWordsBeforeComposing(ngramContext: NgramContext?): List<String> {
         val line = ngramContext?.fullContext?.lineSequence()?.lastOrNull() ?: return emptyList()
-        val words = contextWordsFrom(ngramContext)
+        val words = org.futo.inputmethod.latin.tapswipe.TapSwipeContext.words(line).takeLast(10)
         return org.futo.inputmethod.latin.tapswipe.TapSwipeContext.dropComposing(line, words)
     }
 
@@ -1049,9 +1049,18 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             isMultiSegment -> BeamValues.midBeam
             else -> BeamValues.shortBeam
         }
-        val topK = if (useHighBeam) 4 else 1
+        // A path through the apostrophe key, or a tap on it, is deliberate. The decoder's dictionary
+        // and language model rate "I'm" far below "in", so ask for more candidates to keep the
+        // apostrophe reading in the list, and penalize readings without one. See TapSwipeApostrophe.
+        val apostropheVisited = useHighBeam && run {
+            val half = normalizedKeyHalfExtent()
+            half != null && org.futo.inputmethod.latin.tapswipe.TapSwipeApostrophe.visited(
+                (input.left.toList() + input.right.toList()).map { it.x to it.y },
+                normalizedKeyPosition('\''.code), half[0] * 2f, half[1] * 2f)
+        }
+        val topK = if (useHighBeam) (if (apostropheVisited) 8 else 4) else 1
 
-        val results = synchronized(BinaryDictionary.sTrieUsageLock) {
+        val firstResults = synchronized(BinaryDictionary.sTrieUsageLock) {
             if (appliedTries?.isEmpty() != false) {
                 Log.e("SwipeDecoderDictionary", "Applied tries are blank! $appliedTries")
                 return null
@@ -1064,17 +1073,38 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             )
         }
 
+        // The apostrophe was visited on purpose. The language model rates contractions as nearly
+        // impossible (about -12 for "I'm" and "I'll", against +7 for "in"), so it either buries them
+        // or drops them from the beam. Decode again without context, which is the scoring a field's
+        // first word already gets, and use that if it holds an apostrophe reading. Shape alone tells
+        // "I'll" from "I'm". Only when the apostrophe was visited, so it costs nothing elsewhere.
+        val results = if (apostropheVisited) {
+            decoder.setContext(emptyList())
+            val plain = synchronized(BinaryDictionary.sTrieUsageLock) {
+                if (appliedTries?.isEmpty() != false) null
+                else decoder.recognize(input.left, input.right, topK = topK, beamWidth = beamWidth,
+                    trieWeights = trieWeights)
+            }
+            if (plain != null && plain.any { it.word.contains('\'') }) plain else firstResults
+        } else firstResults
+
         if (useHighBeam) appliedScoring.value = decoder.scoring
 
         // Soft order across the two thumbs' streams. The decoder interleaves them by lexicon alone;
         // timing breaks the tie it cannot see. See TapSwipeTimingOrder.
         val rerankStart = System.nanoTime()
-        val (order, penalties) = if (useHighBeam && results.size > 1) {
+        val (timingOrder, timingPenalties) = if (useHighBeam && results.size > 1) {
             org.futo.inputmethod.latin.tapswipe.TapSwipeTimingOrder.rerank(
                 results.map { it.word }, results.map { it.score }, input.timings, timingGeometry())
         } else {
             results.indices.toList() to List(results.size) { 0f }
         }
+        val apostrophePenalties = org.futo.inputmethod.latin.tapswipe.TapSwipeApostrophe.penalties(
+            results.map { it.word }, apostropheVisited)
+        val penalties = timingPenalties.indices.map { timingPenalties[it] + apostrophePenalties[it] }
+        // Keep the decoder's usual four candidates after re-ranking, so nothing downstream changes.
+        val order = (if (apostropheVisited) results.indices.sortedByDescending { results[it].score - penalties[it] }
+            else timingOrder).take(4)
 
         // Typing test / simulator only: the score breakdown, to study ranking.
         if (useHighBeam) {
@@ -1083,7 +1113,9 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
                 results.map { it.lmScore }, contextWordsBeforeComposing(ngramContext), decoder.scoring.alpha,
                 decoder.scoring.beta, decoder.scoring.gamma, decoder.scoring.lambda,
                 input.left.size, input.right.size, penalties, input.timings,
-                (System.nanoTime() - rerankStart) / 1_000_000f)
+                (System.nanoTime() - rerankStart) / 1_000_000f,
+                apostropheVisited, normalizedKeyPosition('\''.code), normalizedKeyHalfExtent(),
+                normalizedKeyPosition('l'.code))
         }
         val ranked = order.map { results[it] }
 

@@ -43,16 +43,25 @@ object TapSwipeInputBuilder {
                 (batchOriginMs - sessionOriginMs).toFloat()
             } else 0f
 
-            for (seg in liveSegments) {
-                val n = seg.x.length
+            // The live segments belong to the touch thread, which keeps adding to them during the
+            // swipe, while this runs on the decoding thread. Iterating the live list threw
+            // ConcurrentModificationException and crashed the keyboard (seen 2026-11-12 on long
+            // words, which trigger many mid-swipe decodes). Copy it without an iterator (ArrayList's
+            // copy is a raw array copy), clamp to what the arrays hold, and if the read still fails,
+            // decode without the live stroke: this is only the mid-swipe preview, and the decode
+            // after the lift never uses live segments.
+            val snapshot = try { ArrayList(liveSegments) } catch (e: RuntimeException) { emptyList() }
+            for (seg in snapshot) {
+                if (seg == null) continue
+                val rawX = seg.x.primitiveArray
+                val rawY = seg.y.primitiveArray
+                val rawT = seg.t.primitiveArray
+                val n = minOf(seg.x.length, rawX.size, rawY.size, rawT.size)
                 if (n <= 0) continue
 
                 val xs = FloatArray(n)
                 val ys = FloatArray(n)
                 val ts = FloatArray(n)
-                val rawX = seg.x.primitiveArray
-                val rawY = seg.y.primitiveArray
-                val rawT = seg.t.primitiveArray
                 for (i in 0 until n) {
                     xs[i] = norm.x(rawX[i].toFloat())
                     ys[i] = norm.y(rawY[i].toFloat())
