@@ -438,15 +438,23 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         // Even if the key is disabled, it should respond if it is in the altCodeWhileTyping state.
         if (key.isEnabled() || altersCode) {
             sTypingTimeRecorder.onCodeInput(code, eventTime);
-            if (code == Constants.CODE_OUTPUT_TEXT) {
-                sListener.onTextInput(key.getOutputText());
-            } else if (code != Constants.CODE_UNSPECIFIED) {
-                if (mKeyboard.hasProximityCharsCorrection(code)) {
-                    sListener.onCodeInput(code, x, y, isKeyRepeat);
-                } else {
-                    sListener.onCodeInput(code,
-                            Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, isKeyRepeat);
+            // TapSwipe: lets a tap join its thumb's decoder stream. Set only for the duration of the
+            // synchronous listener call, so input that does not come from a touch never sees a
+            // stale value. See TapSwipeTapPointer.
+            org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer.lastPointerId = mPointerId;
+            try {
+                if (code == Constants.CODE_OUTPUT_TEXT) {
+                    sListener.onTextInput(key.getOutputText());
+                } else if (code != Constants.CODE_UNSPECIFIED) {
+                    if (mKeyboard.hasProximityCharsCorrection(code)) {
+                        sListener.onCodeInput(code, x, y, isKeyRepeat);
+                    } else {
+                        sListener.onCodeInput(code,
+                                Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, isKeyRepeat);
+                    }
                 }
+            } finally {
+                org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer.lastPointerId = -1;
             }
         }
     }

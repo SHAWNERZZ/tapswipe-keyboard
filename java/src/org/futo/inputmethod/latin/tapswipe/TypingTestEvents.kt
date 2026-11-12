@@ -21,9 +21,9 @@ object TypingTestEvents {
     }
 
     @JvmStatic
-    fun tapAdded(codePoint: Int, strokes: Int, generation: Int) = ifActive {
+    fun tapAdded(codePoint: Int, strokes: Int, generation: Int, hand: String) = ifActive {
         TypingTestRecorder.emit(TypingTestRecorder.event("stroke")
-            .put("kind", "tap").put("code", codePoint)
+            .put("kind", "tap").put("code", codePoint).put("hand", hand)
             .put("char", String(Character.toChars(codePoint)))
             .put("strokes", strokes).put("gen", generation))
     }
@@ -51,7 +51,15 @@ object TypingTestEvents {
         TypingTestRecorder.emit(TypingTestRecorder.event("decode")
             .put("text", if (n > 0) list[0] else null)
             .putStrings("candidates", list).putInts("scores", scores)
-            .put("covered", covered).put("strokes", strokes).put("gen", generation))
+            .put("covered", covered).put("strokes", strokes).put("gen", generation)
+            .put("resultStyle", words.mInputStyle).put("resultSeq", words.mSequenceNumber))
+    }
+
+    /** A suggestion computation starting, with the stroke count of the TapSwipe input built for it. */
+    @JvmStatic
+    fun decodeRequest(style: Int, seq: Int, segments: Int, generation: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("decode_request")
+            .put("style", style).put("seq", seq).put("segments", segments).put("gen", generation))
     }
 
     /** A separator ended a word. `verbatim` says which commit path it took. */

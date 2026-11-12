@@ -84,7 +84,11 @@ class TapSwipeSession {
     }
 
     private val strokesInternal = ArrayList<Stroke>()
-    val strokes: List<Stroke> get() = strokesInternal
+    /**
+     * A copy, taken under the lock. The decode input is built on a background thread while the main
+     * thread adds strokes, so handing out the live list allowed a concurrent modification.
+     */
+    val strokes: List<Stroke> get() = synchronized(strokesInternal) { ArrayList(strokesInternal) }
 
     /**
      * Bumped on every [reset]. Async decode results carry the generation they were computed for;
@@ -136,7 +140,7 @@ class TapSwipeSession {
     val hasComposed: Boolean get() = anchorSelStart != NO_ANCHOR
 
     /** Swipe mode iff any stroke was a real gesture; otherwise peck mode. */
-    val hasSwipe: Boolean get() = strokesInternal.any { it.kind == Kind.SWIPE }
+    val hasSwipe: Boolean get() = synchronized(strokesInternal) { strokesInternal.any { it.kind == Kind.SWIPE } }
 
     /** Number of taps recorded for this word. */
     val tapCount: Int get() = strokesInternal.count { it.kind == Kind.TAP }
@@ -318,7 +322,7 @@ class TapSwipeSession {
             resetListener?.invoke(reason, strokesInternal.size, generation)
             if (DEBUG) Log.d(TAG, "reset (${strokesInternal.size} strokes): $reason")
         }
-        strokesInternal.clear()
+        synchronized(strokesInternal) { strokesInternal.clear() }
         tapTimesMs.clear()
         latchedMode = null
         anchorSelStart = NO_ANCHOR
@@ -346,7 +350,7 @@ class TapSwipeSession {
             return
         }
         if (strokes.isEmpty()) return
-        strokesInternal.addAll(strokes)
+        synchronized(strokesInternal) { strokesInternal.addAll(strokes) }
         generation++
     }
 
@@ -420,7 +424,7 @@ class TapSwipeSession {
             Log.w(TAG, "refusing stroke; at MAX_STROKES=$MAX_STROKES")
             return false
         }
-        strokesInternal.add(stroke)
+        synchronized(strokesInternal) { strokesInternal.add(stroke) }
         return true
     }
 
@@ -513,7 +517,7 @@ class TapSwipeSession {
      */
     fun popLastStroke(): Boolean {
         if (strokesInternal.isEmpty()) return false
-        strokesInternal.removeAt(strokesInternal.size - 1)
+        synchronized(strokesInternal) { strokesInternal.removeAt(strokesInternal.size - 1) }
         if (strokesInternal.isEmpty()) {
             reset("last stroke popped")
             return true

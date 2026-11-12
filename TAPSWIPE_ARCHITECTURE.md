@@ -297,6 +297,28 @@ is dismissed like a belated update. Found by the typing simulator on
 2026-11-11: 11 of 25 swipe-then-tap words dropped their session before
 the fix, none after.
 
+**Taps join their thumb's stream.** A tap goes to the decoder stream of
+its pointer number, as a swipe does (`TapSwipeTapPointer`). Sequential
+taps are all pointer 0 and stay in one ordered left stream. A tap made
+by a second finger is pointer 1 and goes right, so the decoder can
+interleave it by the lexicon. Before 2026-11-11 every tap went left:
+"then" typed as tap T, swipe H to N, other thumb taps E, read as "the".
+The learner skips any word with a right-stream stroke, because time
+order is not letter order there.
+
+**A result is judged against its own input.** The word composer holds
+only the newest request's decode input. `InputLogic` now keeps each
+request's input by sequence number (`tapSwipeInputFor`), and the
+generation guard and the covered-stroke count read that. Before, a
+result applied after a newer request started was judged by the newer
+input, so a stale result could pass the guard.
+
+**No validation on the decode thread.** `buildTapSwipeDecodeInput`
+reads the session without validate-on-read. It runs on the background
+suggestion thread, and validating there raced a tap on the main thread
+and reset the session from the wrong thread. `TapSwipeSession.strokes`
+returns a copy, and changes to the stroke list are locked.
+
 **Recorder hooks.** `TypingTestRecorder` and `TypingTestEvents` observe
 touches, layout, strokes, decodes, commits, backspace tiers, selection
 reports, and session resets. They only record in a field that carries

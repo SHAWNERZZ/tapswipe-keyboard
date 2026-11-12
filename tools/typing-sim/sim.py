@@ -234,6 +234,18 @@ def cmd_replay_words(args) -> None:
     print("saved", run_dir)
 
 
+def cmd_analyze(args) -> None:
+    """Per-word analysis of a phone typing test: technique, first shown word, decoder view, fixes."""
+    from simlib import analyze
+    with open(args.recording) as f:
+        events = [json.loads(l) for l in f if l.strip()]
+    a = analyze.analyze(events)
+    print(analyze.report(a, events))
+    if args.out:
+        with open(args.out, "w") as f:
+            json.dump(a, f, indent=1)
+
+
 def cmd_stats(args) -> None:
     """Measures a recording, and prints finger model values for the emulator."""
     from simlib import calibrate
@@ -301,6 +313,10 @@ def main() -> None:
     p = sub.add_parser("replay-words")
     p.add_argument("recording", help="a typing test recording from the phone")
     p.set_defaults(fn=cmd_replay_words)
+    p = sub.add_parser("analyze")
+    p.add_argument("recording")
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_analyze)
     p = sub.add_parser("stats")
     p.add_argument("recording")
     p.add_argument("--out", help="write the finger model values here, for `run --params`")

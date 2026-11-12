@@ -1071,14 +1071,19 @@ public final class InputLogic {
         if (mTapSwipeSessionOriginMs < 0 || !mTapSwipeSession.isOpen()) {
             mTapSwipeSessionOriginMs = now;
         }
-        // Taps go to the left stream so that sequential taps and swipes form one ordered sequence.
-        // Order within a stream is what the beam search relies on; ordering *between* streams is
-        // resolved by the lexicon (Phase 0 / S2), so this is safe even when a swipe used the right.
+        // A tap joins the stream of its pointer, as a swipe does. Sequential taps and swipes all
+        // arrive as pointer 0, so they still form one ordered sequence in the left stream. A tap made
+        // by a second finger while the first is down (pointer 1) goes to the right stream, and the
+        // decoder interleaves the two by the lexicon. Before 2026-11-11 every tap went left, so a
+        // second-thumb tap landed after the swipe it belonged inside: "then" read as "the". See
+        // TapSwipeTapPointer.
+        final TapSwipeSession.Hand hand = org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer
+                .handFor(org.futo.inputmethod.latin.tapswipe.TapSwipeTapPointer.consume());
         mTapSwipeSession.addTap(codePoint, pos[0], pos[1],
-                (float) (now - mTapSwipeSessionOriginMs), TapSwipeSession.Hand.LEFT,
+                (float) (now - mTapSwipeSessionOriginMs), hand,
                 rawX, rawY);
         org.futo.inputmethod.latin.tapswipe.TypingTestEvents.tapAdded(codePoint, mTapSwipeSession.getStrokes().size(),
-                mTapSwipeSession.getGeneration());
+                mTapSwipeSession.getGeneration(), hand.name());
         publishGestureTrail();
     }
 
@@ -1302,7 +1307,13 @@ public final class InputLogic {
     private TapSwipeDecodeInput buildTapSwipeDecodeInput(final int inputStyle) {
         if (!isTapSwipeMode()) return null;
 
-        final TapSwipeSession session = tapSwipeSession();
+        // Read without validation. This runs on the background suggestion thread, and validate-on-
+        // read there raced the main thread: a tap that had updated the composer but not yet noted
+        // its write looked like an outside edit, and the session was reset from the wrong thread.
+        // The swipe's decode was then built from an empty session and the word was lost (seen as
+        // "te" for "then", 2026-11-11). Validation belongs to input handling on the main thread; a
+        // decode built from a session that later proves stale is dropped by the generation guard.
+        final TapSwipeSession session = mTapSwipeSession;
         final boolean midBatch = inputStyle == SuggestedWords.INPUT_STYLE_UPDATE_BATCH;
         return TapSwipeInputBuilder.build(
                 session,
@@ -4047,7 +4058,7 @@ public final class InputLogic {
                 }
                 return;
             }
-            final Object in = mWordComposer.getTapSwipeInput();
+            final Object in = tapSwipeInputFor(suggestedWords);
             if (in instanceof TapSwipeDecodeInput
                     && !mTapSwipeSession.isCurrent(((TapSwipeDecodeInput) in).generation)) {
                 TapSwipeSplitDebug.note("skipped: stale generation");
@@ -4088,7 +4099,7 @@ public final class InputLogic {
         // guard above and arrives describing fewer strokes than the session now holds.
         int decodeCoveredStrokes = -1;
         if (tapSwipeOn) {
-            final Object decodedFrom = mWordComposer.getTapSwipeInput();
+            final Object decodedFrom = tapSwipeInputFor(suggestedWords);
             if (decodedFrom instanceof TapSwipeDecodeInput) {
                 decodeCoveredStrokes = ((TapSwipeDecodeInput) decodedFrom).getSegmentCount();
             }
@@ -4385,12 +4396,50 @@ public final class InputLogic {
         return true;
     }
 
+    /**
+     * The TapSwipe decode input each suggestion request was built from, by sequence number.
+     *
+     * The word composer holds only the newest request's input. A result applied after a newer
+     * request has started was read against that newer input: its generation and its stroke count
+     * were the wrong ones. That let a stale result pass the generation guard, and filed readings
+     * under the wrong stroke count. Found 2026-11-11 while tracing the "then" report.
+     *
+     * Seam: evidence is the input a request was built from; the derived result is its decode. The
+     * invariant is that a result is judged against its own input. The window is from a request's
+     * start to its apply, during which a newer request replaces the composer's input. This map
+     * covers that window. Requests are built on a background thread and applied on the main thread.
+     */
+    private final java.util.concurrent.ConcurrentHashMap<Integer, TapSwipeDecodeInput>
+            mTapSwipeInputBySeq = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private void rememberTapSwipeInput(final int sequenceNumber, final TapSwipeDecodeInput input) {
+        if (input == null) return;
+        mTapSwipeInputBySeq.put(sequenceNumber, input);
+        // Keep only recent requests. Results arrive within a few hundred milliseconds.
+        if (mTapSwipeInputBySeq.size() > 64) {
+            for (Integer seq : mTapSwipeInputBySeq.keySet()) {
+                if (seq < sequenceNumber - 64) mTapSwipeInputBySeq.remove(seq);
+            }
+        }
+    }
+
+    /** The input a result was decoded from, or the composer's newest input if it is unknown. */
+    private Object tapSwipeInputFor(final SuggestedWords suggestedWords) {
+        final TapSwipeDecodeInput own = mTapSwipeInputBySeq.get(suggestedWords.mSequenceNumber);
+        return own != null ? own : mWordComposer.getTapSwipeInput();
+    }
+
     public void getSuggestedWords(final SettingsValues settingsValues,
             final Keyboard keyboard, final int keyboardShiftMode, final int inputStyle,
             final int sequenceNumber, final OnGetSuggestedWordsCallback callback) {
         mWordComposer.adviseCapitalizedModeBeforeFetchingSuggestions(
                 getActualCapsMode(settingsValues, keyboardShiftMode));
-        mWordComposer.setTapSwipeInput(buildTapSwipeDecodeInput(inputStyle));
+        final TapSwipeDecodeInput tapSwipeInput = buildTapSwipeDecodeInput(inputStyle);
+        mWordComposer.setTapSwipeInput(tapSwipeInput);
+        rememberTapSwipeInput(sequenceNumber, tapSwipeInput);
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.decodeRequest(inputStyle, sequenceNumber,
+                tapSwipeInput == null ? -1 : tapSwipeInput.getSegmentCount(),
+                tapSwipeInput == null ? -1 : tapSwipeInput.generation);
         mSuggest.getSuggestedWords(mWordComposer,
                 getNgramContextFromNthPreviousWordForSuggestion(
                         settingsValues.mSpacingAndPunctuations,

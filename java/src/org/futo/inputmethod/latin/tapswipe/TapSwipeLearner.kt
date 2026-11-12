@@ -265,7 +265,10 @@ object TapSwipeLearner {
 
         // Two thumbs at once: the decoder resolves their interleaving by lexicon, not by time, so
         // "time order equals letter order" - the premise the alignment rests on - does not hold.
-        if (TapSwipeStrokeAligner.overlapsInTime(inputs)) {
+        // A stroke in the right stream came from a second finger. The decoder interleaved it by
+        // lexicon, not by time, even when it did not overlap by the clock.
+        if (TapSwipeStrokeAligner.overlapsInTime(inputs) ||
+            strokes.any { it.hand == TapSwipeSession.Hand.RIGHT }) {
             Counters.concurrent++
             if (DEBUG) Log.d(TAG, "skipping '$word': concurrent strokes")
             return
@@ -396,7 +399,8 @@ object TapSwipeLearner {
             .filter { !it.isEmpty }
             .map { TapSwipeStrokeAligner.StrokeInput(it.kind, it.codePoint, it.x, it.y, it.t) }
         if (inputs.isEmpty()) return
-        if (TapSwipeStrokeAligner.overlapsInTime(inputs)) { Counters.concurrent++; return }
+        if (TapSwipeStrokeAligner.overlapsInTime(inputs) ||
+            strokes.any { it.hand == TapSwipeSession.Hand.RIGHT }) { Counters.concurrent++; return }
 
         val layoutKey = SwipeDecoderDictionary.currentTouchModelLayoutKey() ?: return
         val extent = SwipeDecoderDictionary.normalizedKeyHalfExtent() ?: return

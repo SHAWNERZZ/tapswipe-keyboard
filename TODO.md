@@ -14,21 +14,15 @@ drop a task. Date each Done entry.
 
 ## Next
 
-- **Two-thumb tap ordered after the swipe** (user report, 2026-11-11,
-  second typing test). "then" typed as tap T, swipe H to N, other thumb
-  taps E as the swipe lifts. The E tap is forced into the left stream
-  (`InputLogic`, `addTap` passes `Hand.LEFT`), after the swipe, so the
-  decoder reads T, H..N, E and picks "the". Backspace pops the E and
-  "then" returns. Reproduced on the emulator, 2 of 3 replays. Proposed
-  fix: give a tap its pointer number's stream, as swipes already get
-  (design rationale 1.3). Waiting on the user's go-ahead.
-- **Second decode of the same strokes overwrote a right answer.** In a
-  replay of that word, the tap's re-decode read "Then" and was written,
-  then 30 ms later another decode of the same three strokes read "The"
-  and replaced it. Likely the tap's typing update decoding through
-  another path. Diagnose: record which request each decode answers. The
-  recorder's `covered` value comes from shared state and reads -1 there.
-
+- **Proper nouns and near twins win over common words.** The user's two
+  tests: "Wang" for what and want (4 times), "van" for can, "woke" for
+  work, "Webb" for even, "put" for out. In every case the intended word
+  was the 2nd or 3rd candidate. These reproduce on the emulator. Neither
+  "Wang" nor "Webb" is a learned word. Look at ranking: capitalized names
+  against common words of the same shape, and the language model's
+  context weight.
+- Single swipes of short words are the user's weakest case (77% in the
+  second test).
 - Word split, open items. Full list in `docs/plans/WORD_SPLIT.md`.
   - Words split with the setting off. Likely fixed on 2026-11-11 (late
     selection report). Confirm on the phone with the debug panel counts.
@@ -58,6 +52,11 @@ drop a task. Date each Done entry.
 
 ## Done
 
+- 2026-11-11. Fixed, from the user's second typing test: a second-finger
+  tap now joins its own decoder stream ("then" no longer reads "the").
+  Results are judged against their own decode input, not the newest.
+  The decode thread no longer validates the session. The stroke list is
+  locked. Added `sim.py analyze` for per-word typing test reports.
 - 2026-11-11. Typing simulator built and working: recorder, typing
   test screen, emulator `tapswipe-sim`, touch player, host with
   scoring, report, `stats`, `compare`, `replay-recording`.

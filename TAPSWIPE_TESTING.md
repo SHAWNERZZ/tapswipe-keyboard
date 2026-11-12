@@ -145,6 +145,13 @@ logging under `TapSwipeTouchModel`.
 
 ### Real finger on real hardware
 
+Two-thumb taps (`TapSwipeTapPointer`):
+
+- [ ] Tap T, swipe H to N with one thumb, and tap E with the other as
+      the swipe ends. The word is "then", not "the".
+- [ ] One-thumb typing is unchanged: tap, then swipe, then tap, with
+      the same thumb.
+
 Apostrophe key (`TapSwipeApostropheKeySetting`):
 
 - [ ] After the update, a user whose language layout was

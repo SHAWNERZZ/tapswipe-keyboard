@@ -25,6 +25,25 @@ needs that.
 - Git needs `safe.directory` for this repository, because the files
   belong to the share user, not root. Set globally for this one path.
 
+## 2026-11-11. A tap joins the decoder stream of its pointer
+
+**Decision.** A tap goes to the stream of its pointer number: pointer 1
+right, anything else left. This matches the rule swipes already follow
+(design rationale 1.3).
+
+**Rejected.**
+
+- Keep every tap in the left stream, and move only taps that start
+  within some milliseconds of a swipe's lift. That adds a timing
+  threshold to tune, and Android already marks a second finger by its
+  pointer number.
+- Assign a stream by screen side. Sequential one-thumb typing would
+  split across streams and lose its fixed order.
+
+**Evidence.** The user's "then" (tap T, swipe H to N, other thumb taps
+E) read "the" in 7 of 8 replays before, "then" in 12 of 12 after.
+Long-words regression: 98.0% before, 98.9% after.
+
 ## 2026-11-11. Tail decodes are never skipped in TapSwipe mode
 
 **Decision.** In TapSwipe mode, a tail-batch suggestion job always runs,
