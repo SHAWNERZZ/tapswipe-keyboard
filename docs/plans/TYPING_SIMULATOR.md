@@ -459,3 +459,37 @@ first choice right for 108, intended in the top 4 for 115. Amplifying
 the dictionary part fixes 1 and breaks 0 at best. Amplifying the
 language model breaks words quickly. Penalizing capitalized names fixes
 none and would hurt real names such as "Ava". Ranking is not the lever.
+
+
+## Calibrated offsets, 2026-11-11
+
+Question from the user: would a typing test designed to learn offsets
+beat the dynamic learner?
+
+Experiment (`tools/typing-sim/offset_experiment.py`): move every touch
+by minus the nearest key's offset, as a keyboard that learned those
+offsets would see it, then replay word by word.
+
+| Offsets fitted on | Test 1 (89 words) | Test 2 (90 words) |
+|---|---|---|
+| none | 80 | 72 |
+| the other test, full strength | 77 | 70 |
+| the other test, half strength | 80 | 73 |
+| the same test, all of it (hindsight) | | 75 |
+| the same test, last 60 taps only (causal) | 76 | 75 |
+
+- Offsets from another session do not transfer. The user's right half
+  landed 0.36 key low in test 1 and 0.12 in test 2, on the same screen.
+- Offsets from the current session fix exactly the misranked words:
+  test 2 causal fixed "what" and "want" (were "Wang") and "can" (was
+  "van"), and broke none. Test 1 causal fixed 4 and showed 8 breaks, some
+  of which look like replay artifacts.
+
+Conclusion: a one-time calibration goes stale. The useful design is a
+short-term layer that learns from the last ~60 taps of exact identity,
+including taps in two-thumb words, on top of the long-term model. The
+calibration word list (`calibration.txt`) stays useful to measure and to
+seed it. Not built yet; waiting on the user.
+
+Harness fix found on the way: a layout read mid-slide put every touch
+126 px low. `wait_for_layout` now waits for a stable position.

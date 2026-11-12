@@ -144,10 +144,18 @@ class Device:
                 self.sh("input tap 540 200", check=False)
                 tapped = True
             layouts = [e for e in self.recording(run_id) if e.get("type") == "layout"]
-            for ev in reversed(layouts):
-                letters = any(97 <= k["code"] <= 122 or 65 <= k["code"] <= 90 for k in ev["keys"])
-                if letters and ev.get("viewW", 0) > 0:
-                    return ev
+            good = [ev for ev in layouts if ev.get("viewW", 0) > 0 and
+                    any(97 <= k["code"] <= 122 or 65 <= k["code"] <= 90 for k in ev["keys"])]
+            if good:
+                # The keyboard slides in, and a layout taken mid-slide put every touch 126 px low.
+                # Accept a position only if it is still the newest, unchanged, a moment later.
+                pos = (good[-1]["screenX"], good[-1]["screenY"])
+                time.sleep(0.8)
+                again = [ev for ev in self.recording(run_id) if ev.get("type") == "layout"
+                         and ev.get("viewW", 0) > 0]
+                if again and (again[-1]["screenX"], again[-1]["screenY"]) == pos:
+                    return again[-1]
+                continue
             time.sleep(0.5)
         raise RuntimeError("no keyboard layout in the recording; is the keyboard showing?")
 
