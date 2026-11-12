@@ -11,6 +11,7 @@ import argparse
 import datetime
 import glob
 import json
+import math
 import os
 import random
 import subprocess
@@ -270,33 +271,49 @@ def cmd_probe_word(args) -> None:
 
 
 def cmd_calibrate(args) -> None:
-    """Per-key landing offsets from a typing test, from taps and from swipes aligned to the known
-    word. Offsets are in key units: +dy is low, +dx is right."""
+    """Per-key landing offsets from one or more typing tests, from taps and from swipes aligned to
+    the known word. Offsets are in key units: +dy is low, +dx is right.
+
+    With several recordings, each session's whole-keyboard shift is measured and removed first, so a
+    low day does not distort the per-key pattern. The pattern is then pooled across sessions."""
     import statistics
     from simlib import align
-    with open(args.recording) as f:
-        events = [json.loads(l) for l in f if l.strip()]
-    land, stats = align.collect(events)
-    print(stats)
+
     def med(v):
         return f"{statistics.median(v):+.2f}" if v else "  -  "
-    kinds = ["tap", "swipe-start", "swipe-end"]
-    print("key" + "".join(f" | {k:^19}" for k in kinds) + " | all: n     dx    dy")
-    allx, ally = [], []
+
+    sessions = []
+    for path in args.recordings:
+        with open(path) as f:
+            events = [json.loads(l) for l in f if l.strip()]
+        land, stats = align.collect(events)
+        sx = statistics.median(l[3] for l in land) if land else 0.0
+        sy = statistics.median(l[4] for l in land) if land else 0.0
+        sessions.append((os.path.basename(path), land, sx, sy, stats))
+        print(f"{os.path.basename(path)}: {len(land)} landings from {stats['aligned']} of "
+              f"{stats['words']} words; session shift dx {sx:+.2f} dy {sy:+.2f} keys")
+
+    # Per key: offsets with each session's shift removed, pooled.
+    print()
+    print("Per-key pattern (session shift removed). se = standard error of the median, in keys.")
+    print("key    n     dx     dy    se")
+    pattern = {}
     for ch in "qwertyuiopasdfghjklzxcvbnm":
-        row = f" {ch} "
-        xs = [l[3] for l in land if l[1] == ch]
-        ys = [l[4] for l in land if l[1] == ch]
-        allx += xs; ally += ys
-        for k in kinds:
-            v = [l for l in land if l[1] == ch and l[2] == k]
-            row += f" | n{len(v):3} {med([l[3] for l in v])} {med([l[4] for l in v])}"
-        row += f" |    {len(xs):3} {med(xs)} {med(ys)}"
-        print(row)
-    print(f"whole keyboard: dx {med(allx)} dy {med(ally)} from {len(allx)} landings")
+        xs = [l[3] - sx for _, land, sx, sy, _ in sessions for l in land if l[1] == ch]
+        ys = [l[4] - sy for _, land, sx, sy, _ in sessions for l in land if l[1] == ch]
+        if not xs:
+            print(f" {ch}     0      -      -     -")
+            continue
+        spread = statistics.pstdev(xs + ys) if len(xs) > 1 else 0.5
+        se = 1.25 * spread / math.sqrt(len(xs))
+        pattern[ch] = {"n": len(xs), "dx": statistics.median(xs), "dy": statistics.median(ys), "se": se}
+        flag = "" if se <= 0.08 else "   needs more"
+        print(f" {ch}   {len(xs):3}  {med(xs)}  {med(ys)}  {se:.2f}{flag}")
     if args.out:
         with open(args.out, "w") as f:
-            json.dump({"stats": stats, "landings": land}, f)
+            json.dump({"sessions": [{"file": n, "shift": [sx, sy], "stats": st} for n, _, sx, sy, st in sessions],
+                       "pattern": pattern}, f, indent=1)
+        print("wrote", args.out)
 
 
 def cmd_analyze(args) -> None:
@@ -384,7 +401,7 @@ def main() -> None:
     p.add_argument("--times", type=int, default=3)
     p.set_defaults(fn=cmd_probe_word)
     p = sub.add_parser("calibrate")
-    p.add_argument("recording")
+    p.add_argument("recordings", nargs="+", help="one or more typing test recordings")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_calibrate)
     p = sub.add_parser("analyze")

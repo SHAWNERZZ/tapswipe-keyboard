@@ -514,7 +514,7 @@ the whole-keyboard shift during normal typing.
 order): every word the user's tests got wrong, plus coverage of every
 letter (15+ each, rare letters 4+), and of first and last letters.
 
-`sim.py calibrate <recording>` measures per-key offsets from taps and
+`sim.py calibrate <recording>...` measures per-key offsets. With several recordings it removes each session's whole-keyboard shift first, then pools the per-key pattern and reports a standard error per key, so repeated runs refine it. It from taps and
 from swipes aligned to the known word (`simlib/align.py`): every
 assignment of letters to the two thumbs' streams is tried, and each
 stream's letters are split across its strokes by dynamic time warping.
