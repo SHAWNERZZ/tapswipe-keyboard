@@ -229,6 +229,8 @@ object ZipThemes {
             override val context: Context
                 get() = androidContext
 
+            override val palette = lazy { dynamicTonalPalette(androidContext) }
+
             override fun getFileBytes(path: String): ByteArray? {
                 val entry = zipFile.getEntry(path)
                 if(entry == null) return null
@@ -301,6 +303,8 @@ object ZipThemes {
             val wrapper = object : ThemeDecodingContext {
                 override val context: Context
                     get() = i.first.context
+
+                override val palette = lazy { dynamicTonalPalette(context) }
 
                 override fun getFileBytes(path: String): ByteArray? =
                     if(path == i.second.thumbnailImage) i.first.getFileBytes(path) else null

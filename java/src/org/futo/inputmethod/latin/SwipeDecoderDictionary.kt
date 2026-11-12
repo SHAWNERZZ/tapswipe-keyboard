@@ -32,6 +32,10 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private const val ENCODER_ASSET = "futo-swipe/honorable_sturgeon/model_fp32.pte"
+// TapSwipe keeps FUTO's previous context model (2026-11-12). Upstream moved to chosen_planarian, but
+// the prebuilt swipe library has its scoring weights compiled in and knows only hungry_jellyfish. With
+// chosen_planarian it logs "Failed to find scoring" and decodes with no language model at all. The
+// futo-swipe submodule stays at 9393187 until FUTO ships a library that knows the new model.
 private const val ENGLISH_LM_ASSET = "futo-swipe/hungry_jellyfish/context_lm.pte"
 private const val ENGLISH_LM_VOCAB_ASSET = "futo-swipe/hungry_jellyfish/vocab.txt"
 private const val ENGLISH_DECODER_ASSET = "futo-swipe/magic_macaw/model_fp32.pte"
@@ -806,7 +810,7 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         throw UnsupportedOperationException("Use the non-dictionary method instead")
     }
 
-    val whitespaceRegex = Regex("\\W+")
+    val whitespaceRegex = Regex("[^\\w']+")
     fun getSuggestions(
         composedData: ComposedData,
         ngramContext: NgramContext?,
@@ -926,6 +930,7 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         }
 
         if(BuildConfig.DEBUG || System.currentTimeMillis() < debugLogUntil) {
+            Log.d("SwipeDecoderDictionary", "Beam width: ${beamWidth} (multiswipe=$isMultiSwipe useHighBeam=$useHighBeam)")
             Log.d("SwipeDecoderDictionary", "Timing: ${decoder.lastTiming()}")
             Log.d("SwipeDecoderDictionary", "Left = $left")
             Log.d("SwipeDecoderDictionary", "Right = $right")

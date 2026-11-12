@@ -638,3 +638,17 @@ them, and threw ConcurrentModificationException. It hit the user's
 current build too (once in replays, long words). Now copied without an
 iterator; on failure the mid-swipe preview skips the live stroke. Zero
 crashes in two full replays after the fix.
+
+
+### FUTO upstream merge and the new language model, 2026-11-12
+
+`apostrophe_check.py` swipes "I'm", "don't" and "we'll" after five
+lead-ins, 3 times each, then runs `lists/contractions.txt`. Use it with
+`replay-words` on the two real recordings to compare builds.
+
+The new context model `chosen_planarian` does not run with the current
+swipe library: no scoring entry, so the language model weight is 0 and
+every candidate's LM score is 0.0. Full table and decision in
+`docs/decisions.md`, "Merge FUTO upstream". The merged code with the old
+model scores the same as before the merge.
+

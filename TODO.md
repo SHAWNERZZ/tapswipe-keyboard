@@ -14,11 +14,9 @@ drop a task. Date each Done entry.
 
 ## Next
 
-- **FUTO 0.1.30 and upstream master** (found 2026-11-12, waiting on the
-  user). Our base is 0.1.30-rc1. Upstream is 31 commits ahead and
-  merges as a fast-forward of `master`. It has a new swipe language
-  model (`chosen_planarian`) and the same apostrophe context fix we
-  made. Test the new model on contractions before a merge.
+- **New swipe language model** `chosen_planarian`: wait for a FUTO
+  swipe library that has its scoring weights. See `docs/decisions.md`,
+  2026-11-12, "Merge FUTO upstream".
 - **Auto spacing exploration** (next large project). Options live in
   the "Auto spacing (work in progress)" sub-menu.
 
@@ -59,6 +57,10 @@ drop a task. Date each Done entry.
   models, and `java/assets/futo-swipe` stops showing as modified.
 
 ## Done
+
+- 2026-11-12. Merged FUTO upstream `7d61ab413` into `dev`. Kept the old
+  swipe language model, because the swipe library has no weights for the
+  new one. Kept our apostrophe work. Added `apostrophe_check.py`.
 
 - 2026-11-12. TapSwipe settings in sections. Auto spacing moved to a
   work-in-progress sub-menu. Exact tap positions removed (always on).

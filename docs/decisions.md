@@ -166,3 +166,43 @@ runs at each commit, with the same checks as the input model path.
 **Consequence.** Stock typing output does not change. The stock decode
 path now reports its first choice and margin to the learner.
 
+## 2026-11-12. Merge FUTO upstream, keep the old swipe language model
+
+**Decision.** `dev` merges FUTO upstream at `7d61ab413` (0.1.30 and 31
+later commits). The `java/assets/futo-swipe` submodule stays at
+`9393187`, and the decoder keeps the `hungry_jellyfish` context model.
+Our apostrophe work stays.
+
+**Why.** The prebuilt swipe library (`libs`, `be4362c`) has its scoring
+weights compiled in. It knows only `hungry_jellyfish`. With the new
+`chosen_planarian` model it logs "Failed to find scoring" and decodes
+with no language model at all. Upstream ships the same library, so
+upstream has the same fault. FUTO has published no newer library.
+
+Simulator results (emulator, the user's settings):
+
+| Build | I'm / don't / we'll | Contraction list | Long words | Common-100 |
+|---|---|---|---|---|
+| A. Before the merge | 14/15, 15/15, 15/15 | 79.8% | 34/40 | 81/91 |
+| B. Merge, new model as shipped | 15/15, 15/15, 15/15 | 80.7% | 31/40 | 79/91 |
+| C. As B, apostrophe re-decode off | I'm wrong in 8 of 11 | not run | 31/40 | 79/91 |
+| D. Merge, old model | not run | not run | 34/40 | 81/91 |
+| E. Merge, new model under the old name | 15/15, 15/15, 14/15 | 83.3% | 33/40 | 81/91 |
+| F. Merge as committed (old model) | 15/15, 15/15, 15/15 | 80.7% | 34/40 | 80/91 |
+
+**Rejected.**
+
+- Take the new model as upstream ships it (B). The language model does
+  not run. Words like "house" became "Jodie" and "right" became "Riki".
+- Ship the new model under the old model's name (E). It runs with
+  weights tuned for the other model. It scored about the same as the old
+  model. It would add a 6 MB binary to this repository.
+- Drop our apostrophe re-decode. Without it (C), the new model still
+  reads a swiped "I'm" as "in" in most tries.
+- Rebuild the swipe library from FUTO's source with the new weights.
+  The project rule forbids changing the library.
+
+**Revisit** when FUTO updates `libs/futo-swipe-release.aar`. Check its
+strings for `chosen_planarian`, then move the submodule to `f5ebe55c`
+and point `ENGLISH_LM_ASSET` at it.
+

@@ -17,3 +17,5 @@ java/src/org/futo/inputmethod/keyboard/internal/KeyboardTextsTable.java
 CLAUDE.local.md
 .claude/settings.local.json
 .claude/worktrees/
+
+atl/

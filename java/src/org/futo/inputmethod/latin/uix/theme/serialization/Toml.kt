@@ -23,8 +23,10 @@ import kotlinx.serialization.encoding.Encoder
 import org.futo.inputmethod.latin.uix.ExtraColors
 import org.futo.inputmethod.latin.uix.KeyboardColorScheme
 import org.futo.inputmethod.latin.uix.theme.AdvancedThemeOptions
+import org.futo.inputmethod.latin.uix.theme.GenericPalette
 import org.futo.inputmethod.latin.uix.theme.KeyIcon
 import org.futo.inputmethod.latin.uix.theme.ThemeDecodingContext
+import org.futo.inputmethod.latin.uix.theme.TonalPalette
 import org.futo.inputmethod.latin.uix.theme.decodeKeyedBitmaps
 import org.futo.inputmethod.latin.uix.theme.decodeOptionalFont
 import org.futo.inputmethod.latin.uix.theme.decodeOptionalImage
@@ -32,7 +34,7 @@ import org.futo.inputmethod.latin.uix.utils.createNinePatchDrawable
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-    // Why does TOML throw an exception for floats specified without decimal point?!
+// Why does TOML throw an exception for floats specified without decimal point?!
 object LenientFloatSerializer : KSerializer<Float> {
     override val descriptor = PrimitiveSerialDescriptor("LenientFloat", PrimitiveKind.FLOAT)
 
@@ -52,6 +54,7 @@ object LenientFloatSerializer : KSerializer<Float> {
 
 typealias LFloat = @Serializable(with = LenientFloatSerializer::class) Float
 
+@Suppress("PropertyName")
 @Serializable
 private data class SerializedTomlFile(
     val name: String = "Untitled theme",
@@ -239,13 +242,15 @@ private data class SerializedTomlFile(
             else -> throw IllegalArgumentException("Unknown named color $this")
     }.also { if(!it.startsWith("#")) throw IllegalArgumentException("Core colors must not be aliased") }
 
-    private fun String.toColor(): Color = when {
+    private fun String.toColor(palette: Lazy<TonalPalette>): Color = when {
+        this.startsWith("system_") -> palette.value.resolve(substring("system_".length)) ?: throw IllegalArgumentException("Unknown color $this")
         this.startsWith("#") -> Color(parseHexColorStringToARGBLong(this, AlphaOrder.RGBA))
-        else -> this.fromNamedColor().toColor()
+        else -> this.fromNamedColor().toColor(palette)
     }
 
 
     fun validate(): Boolean {
+        val genericPalette = lazyOf(GenericPalette)
         val colorPairs = listOf(
             "primary:onPrimary" to colors.primary to colors.on_primary,
             "secondary:onSecondary" to colors.secondary to colors.on_secondary,
@@ -262,8 +267,8 @@ private data class SerializedTomlFile(
             val bg = v.first.second
             val fg = v.second
 
-            val bgc = bg.toColor().compositeOver(colors.background.toColor()).compositeOver(Color.White)
-            val fgc = fg.toColor().compositeOver(bgc)
+            val bgc = bg.toColor(genericPalette).compositeOver(colors.background.toColor(genericPalette)).compositeOver(Color.White)
+            val fgc = fg.toColor(genericPalette).compositeOver(bgc)
 
             val contrast = abs(bgc.luminance() - fgc.luminance())
             if(contrast < 0.08) {
@@ -275,63 +280,64 @@ private data class SerializedTomlFile(
     }
 
     fun toKeyboardScheme(ctx: ThemeDecodingContext): KeyboardColorScheme {
+        val palette = ctx.palette
         val backgroundImage = options.background?.let { decodeOptionalImage(ctx, it.image) }
         return KeyboardColorScheme(
             base = ColorScheme(
-                primary                 = colors.primary.toColor(),
-                onPrimary               = colors.on_primary.toColor(),
-                primaryContainer        = colors.primary_container.toColor(),
-                onPrimaryContainer      = colors.on_primary_container.toColor(),
-                inversePrimary          = colors.inverse_primary.toColor(),
-                secondary               = colors.secondary.toColor(),
-                onSecondary             = colors.on_secondary.toColor(),
-                secondaryContainer      = colors.secondary_container.toColor(),
-                onSecondaryContainer    = colors.on_secondary_container.toColor(),
-                tertiary                = colors.tertiary.toColor(),
-                onTertiary              = colors.on_tertiary.toColor(),
-                tertiaryContainer       = colors.tertiary_container.toColor(),
-                onTertiaryContainer     = colors.on_tertiary_container.toColor(),
-                background              = colors.background.toColor(),
-                onBackground            = colors.on_background.toColor(),
-                surface                 = colors.surface.toColor(),
-                onSurface               = colors.on_surface.toColor(),
-                surfaceVariant          = colors.surface_variant.toColor(),
-                onSurfaceVariant        = colors.on_surface_variant.toColor(),
-                surfaceTint             = colors.surface_tint.toColor(),
-                inverseSurface          = colors.inverse_surface.toColor(),
-                inverseOnSurface        = colors.inverse_on_surface.toColor(),
-                error                   = colors.error.toColor(),
-                onError                 = colors.on_error.toColor(),
-                errorContainer          = colors.error_container.toColor(),
-                onErrorContainer        = colors.on_error_container.toColor(),
-                outline                 = colors.outline.toColor(),
-                outlineVariant          = colors.outline_variant.toColor(),
-                scrim                   = colors.scrim.toColor(),
-                surfaceBright           = colors.surface_bright.toColor(),
-                surfaceDim              = colors.surface_dim.toColor(),
-                surfaceContainer        = colors.surface_container.toColor(),
-                surfaceContainerHigh    = colors.surface_container_high.toColor(),
-                surfaceContainerHighest = colors.surface_container_highest.toColor(),
-                surfaceContainerLow     = colors.surface_container_low.toColor(),
-                surfaceContainerLowest  = colors.surface_container_lowest.toColor(),
+                primary                 = colors.primary.toColor(palette),
+                onPrimary               = colors.on_primary.toColor(palette),
+                primaryContainer        = colors.primary_container.toColor(palette),
+                onPrimaryContainer      = colors.on_primary_container.toColor(palette),
+                inversePrimary          = colors.inverse_primary.toColor(palette),
+                secondary               = colors.secondary.toColor(palette),
+                onSecondary             = colors.on_secondary.toColor(palette),
+                secondaryContainer      = colors.secondary_container.toColor(palette),
+                onSecondaryContainer    = colors.on_secondary_container.toColor(palette),
+                tertiary                = colors.tertiary.toColor(palette),
+                onTertiary              = colors.on_tertiary.toColor(palette),
+                tertiaryContainer       = colors.tertiary_container.toColor(palette),
+                onTertiaryContainer     = colors.on_tertiary_container.toColor(palette),
+                background              = colors.background.toColor(palette),
+                onBackground            = colors.on_background.toColor(palette),
+                surface                 = colors.surface.toColor(palette),
+                onSurface               = colors.on_surface.toColor(palette),
+                surfaceVariant          = colors.surface_variant.toColor(palette),
+                onSurfaceVariant        = colors.on_surface_variant.toColor(palette),
+                surfaceTint             = colors.surface_tint.toColor(palette),
+                inverseSurface          = colors.inverse_surface.toColor(palette),
+                inverseOnSurface        = colors.inverse_on_surface.toColor(palette),
+                error                   = colors.error.toColor(palette),
+                onError                 = colors.on_error.toColor(palette),
+                errorContainer          = colors.error_container.toColor(palette),
+                onErrorContainer        = colors.on_error_container.toColor(palette),
+                outline                 = colors.outline.toColor(palette),
+                outlineVariant          = colors.outline_variant.toColor(palette),
+                scrim                   = colors.scrim.toColor(palette),
+                surfaceBright           = colors.surface_bright.toColor(palette),
+                surfaceDim              = colors.surface_dim.toColor(palette),
+                surfaceContainer        = colors.surface_container.toColor(palette),
+                surfaceContainerHigh    = colors.surface_container_high.toColor(palette),
+                surfaceContainerHighest = colors.surface_container_highest.toColor(palette),
+                surfaceContainerLow     = colors.surface_container_low.toColor(palette),
+                surfaceContainerLowest  = colors.surface_container_lowest.toColor(palette),
             ),
             extended = ExtraColors(
-                keyboardSurface            = colors.keyboard_surface.toColor(),
-                keyboardSurfaceDim         = colors.keyboard_surface_dim.toColor(),
-                keyboardContainer          = colors.keyboard_container.toColor(),
-                keyboardContainerVariant   = colors.keyboard_container_variant.toColor(),
-                onKeyboardContainer        = colors.on_keyboard_container.toColor(),
-                keyboardPress              = colors.keyboard_press.toColor(),
-                primaryTransparent         = colors.primary.toColor().copy(alpha = 0.5f),
-                onSurfaceTransparent       = colors.on_surface.toColor().copy(alpha = 0.5f),
-                keyboardContainerPressed   = colors.keyboard_container_pressed.toColor(),
-                onKeyboardContainerPressed = colors.on_keyboard_container_pressed.toColor(),
+                keyboardSurface            = colors.keyboard_surface.toColor(palette),
+                keyboardSurfaceDim         = colors.keyboard_surface_dim.toColor(palette),
+                keyboardContainer          = colors.keyboard_container.toColor(palette),
+                keyboardContainerVariant   = colors.keyboard_container_variant.toColor(palette),
+                onKeyboardContainer        = colors.on_keyboard_container.toColor(palette),
+                keyboardPress              = colors.keyboard_press.toColor(palette),
+                primaryTransparent         = colors.primary.toColor(palette).copy(alpha = 0.5f),
+                onSurfaceTransparent       = colors.on_surface.toColor(palette).copy(alpha = 0.5f),
+                keyboardContainerPressed   = colors.keyboard_container_pressed.toColor(palette),
+                onKeyboardContainerPressed = colors.on_keyboard_container_pressed.toColor(palette),
 
                 hintColor          = null,
                 navigationBarColor = null,
 
                 keyboardBackgroundGradient = options.background?.let {
-                    SolidColor(colors.keyboard_surface.toColor().copy(alpha = 1.0f - it.opacity))
+                    SolidColor(colors.keyboard_surface.toColor(palette).copy(alpha = 1.0f - it.opacity))
                 },
                 advancedThemeOptions = AdvancedThemeOptions(
                     textSizeMultiplier = options.scale_text,
@@ -345,6 +351,7 @@ private data class SerializedTomlFile(
                     keyBorders = options.auto_borders,
                     backgroundShader = null,
 
+                    actionBarOpacity = options.background?.action_bar_opacity ?: 0.5f,
                     thumbnailImage = backgroundImage,
                     thumbnailScale = 1.0f,
                     backgroundImage = backgroundImage,
@@ -394,9 +401,9 @@ private data class SerializedTomlFile(
                         }
 
                         createNinePatchDrawable(bitmap, scale, ctx.context.resources,
-                            meta.foreground_tint.toColor().toArgb(),
-                            meta.background_tint.toColor().toArgb(),
-                            meta.outline_tint?.toColor()?.toArgb(), meta.outline_width,
+                            meta.foreground_tint.toColor(palette).toArgb(),
+                            meta.background_tint.toColor(palette).toArgb(),
+                            meta.outline_tint?.toColor(palette)?.toArgb(), meta.outline_width,
                             xRegions, yRegions, padding, gap)
                     },
                     keyIcons = decodeKeyedBitmaps(ctx, matchrules.icon, keyFn={it.selector}, valFn={it.asset}) { cfg, img ->

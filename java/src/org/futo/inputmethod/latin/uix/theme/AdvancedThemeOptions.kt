@@ -28,6 +28,7 @@ data class AdvancedThemeOptions(
     val thumbnailImage: ImageBitmap? = null,
     val thumbnailScale: Float = 1.0f,
     val keyRoundness: Float = 1.0f,
+    val actionBarOpacity: Float = 0.5f,
     val keyBorders: Boolean? = null,
     val keyBackgrounds: KeyedBitmaps<KeyBackground>? = null,
     val keyIcons: KeyedBitmaps<KeyIcon>? = null,

@@ -579,6 +579,15 @@
     <!-- Voice input settings menu -->
     <string name="voice_input_settings_title">Voice Input</string>
     <string name="voice_input_settings_builtin_disabled_notice">Built-in voice input is disabled!</string>
+
+    <string name="voice_input_settings_builtin_disabled_notice2">Using external engine: %s</string>
+    <string name="voice_input_settings_backend_system">External engine</string>
+    <string name="voice_input_settings_backend_system_internal">None (built-in)</string>
+    <string name="voice_input_settings_backend_system_external_warning">Note: the %s app will record your speech and may send it to online servers, it is not covered by our privacy policy.</string>
+    <string name="voice_input_settings_backend_system_confirm">Switch voice input engine to %s?</string>
+    <string name="voice_input_settings_backend_system_confirm_yes">Switch</string>
+    <string name="voice_input_settings_backend_system_confirm_no">Cancel</string>
+
     <string name="voice_input_settings_disable_builtin_voice_input">Disable built-in voice input</string>
     <string name="voice_input_settings_disable_builtin_voice_input_subtitle">Use voice input provided by external app</string>
     <string name="voice_input_settings_indication_sounds">Indication sounds</string>

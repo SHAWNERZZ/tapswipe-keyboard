@@ -33,11 +33,12 @@ git log --oneline tapswipe..dev     # written but not released
 gh release list --repo SHAWNERZZ/tapswipe-keyboard --limit 3
 ```
 
-As of 2026-11-11 (evening), the latest release is `tapswipe-v0.8.0`.
+As of 2026-11-12, the latest release is `tapswipe-v0.8.0`.
 `dev` holds unreleased work: the automatic word split (unfinished,
 `docs/plans/WORD_SPLIT.md`), the apostrophe key setting, the typing test
-and typing simulator (`docs/plans/TYPING_SIMULATOR.md`), and two fixes
-the simulator found. Read `TODO.md` for the task list and
+and typing simulator (`docs/plans/TYPING_SIMULATOR.md`), decoder fixes
+the simulator found, and a merge of FUTO upstream `7d61ab413`. The
+merge keeps the old swipe language model; see `docs/decisions.md`. Read `TODO.md` for the task list and
 `docs/decisions.md` for decisions.
 
 Release when the user asks. Do not release on your own.

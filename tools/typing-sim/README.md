@@ -109,6 +109,7 @@ Unit tests for the host: `python3 -m unittest discover -s tests`.
 | `stats <recording> [--out params.json]` | Measures tap scatter, tap hold, swipe speed, gaps, and word styles from a recording |
 | `compare <run dir> <run dir>` | Accuracy per style, and words whose result changed |
 | `replay-words <recording>` | Replays each word's first attempt from a phone typing test on its own, and compares first-try results. The fair comparison. |
+| `python3 apostrophe_check.py [label]` | Swipes contractions after several lead-ins and runs `lists/contractions.txt`. Compare builds on apostrophe handling. |
 | `replay-recording <recording>` | Replays the whole recording, corrections included. Drifts after the first different word, because the user's fixes reacted to the phone's text. |
 | `replay-word <run dir> <index>` | Types one attempt again, same seed |
 

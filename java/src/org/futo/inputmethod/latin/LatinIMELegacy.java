@@ -133,7 +133,7 @@ public class LatinIMELegacy implements KeyboardActionListener,
     private View mComposeInputView;
     private InsetsUpdater mInsetsUpdater;
 
-    private RichInputMethodManager mRichImm;
+    public RichInputMethodManager mRichImm;
     public final KeyboardSwitcher mKeyboardSwitcher;
     private EmojiAltPhysicalKeyDetector mEmojiAltPhysicalKeyDetector;
 
@@ -570,8 +570,12 @@ public class LatinIMELegacy implements KeyboardActionListener,
             final int layoutHeight = mInputMethodService.isFullscreenMode()
                     ? LayoutParams.WRAP_CONTENT : LayoutParams.MATCH_PARENT;
             final View inputArea = window.findViewById(android.R.id.inputArea);
-            ViewLayoutUtils.updateLayoutHeightOf(inputArea, layoutHeight);
-            ViewLayoutUtils.updateLayoutGravityOf(inputArea, Gravity.BOTTOM);
+
+            if(inputArea != null) {
+                ViewLayoutUtils.updateLayoutHeightOf(inputArea, layoutHeight);
+                ViewLayoutUtils.updateLayoutGravityOf(inputArea, Gravity.BOTTOM);
+            }
+
             ViewLayoutUtils.updateLayoutHeightOf(mComposeInputView, layoutHeight);
         }
     }
@@ -734,7 +738,7 @@ public class LatinIMELegacy implements KeyboardActionListener,
     // completely replace #onCodeInput.
     public void onEvent(@Nonnull final Event event) {
         if (Constants.CODE_SHORTCUT == event.mKeyCode) {
-            mRichImm.switchToShortcutIme(mInputMethodService);
+            getLatinIME().trySwitchToShortcutIMEorInternal();
         }
         /*final InputTransaction completeInputTransaction =
                 mInputLogic.onCodeInput(mSettings.getCurrent(), event,

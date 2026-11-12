@@ -327,8 +327,23 @@ object Subtypes {
         return prevName to nextName
     }
 
+    var hideLanguageOnSpaceBarForLocale: Locale? = null
+    fun updateLanguageOnSpaceBarVisibility(context: Context) {
+        val activeLocales = context.getSettingBlocking(SubtypesSetting).map {
+            getLocale(convertToSubtype(it))
+        }.distinct()
+
+        if(activeLocales.size == 1) {
+            hideLanguageOnSpaceBarForLocale = activeLocales[0]
+        } else {
+            hideLanguageOnSpaceBarForLocale = null
+        }
+    }
+
     @JvmStatic
     fun getLanguageOnSpaceBar(locale: Locale, availableWidth: Float = Float.POSITIVE_INFINITY): String {
+        if(locale == hideLanguageOnSpaceBarForLocale) return ""
+
         if(availableWidth <= 5.0f) {
             return locale.language.uppercase();
         }

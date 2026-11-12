@@ -4,12 +4,14 @@ import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
 import android.graphics.NinePatch
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.NinePatchDrawable
 import android.util.Log
 import androidx.compose.ui.unit.dp
@@ -105,7 +107,7 @@ class NinePatchBuilder {
         byteBuffer.putInt(0)
 
         //padding -- left right top bottom
-        Log.d("NinePatchBuilder", "Placing padding ${padding.left} ${padding.right} ${padding.top} ${padding.bottom}")
+        //Log.d("NinePatchBuilder", "Placing padding ${padding.left} ${padding.right} ${padding.top} ${padding.bottom}")
         byteBuffer.putInt(padding.left)
         byteBuffer.putInt(padding.right)
         byteBuffer.putInt(padding.top)
@@ -151,6 +153,52 @@ fun tintBitmap(bitmap: Bitmap, color: Int): Bitmap {
     return tintedBitmap
 }
 
+class NinePatchUniformCornerDrawable(val patch: NinePatchDrawable, val fixedW: Int, val fixedH: Int) : Drawable() {
+    private var uniformScale = 1f
+
+    override fun getIntrinsicWidth(): Int = patch.intrinsicWidth
+    override fun getIntrinsicHeight(): Int = patch.intrinsicHeight
+
+    override fun onBoundsChange(bounds: Rect) {
+        if (bounds.width() >= fixedW && bounds.height() >= fixedH) {
+            uniformScale = 1f
+            patch.bounds = bounds
+        } else {
+            val scaleX = bounds.width().toFloat() / fixedW
+            val scaleY = bounds.height().toFloat() / fixedH
+            uniformScale = minOf(scaleX, scaleY)
+
+            val drawW = (bounds.width() / uniformScale).toInt()
+            val drawH = (bounds.height() / uniformScale).toInt()
+
+            patch.setBounds(0, 0, drawW, drawH)
+        }
+    }
+
+    override fun draw(canvas: Canvas) {
+        if (uniformScale < 1f) {
+            canvas.save()
+            canvas.translate(bounds.left.toFloat(), bounds.top.toFloat())
+            canvas.scale(uniformScale, uniformScale)
+            patch.draw(canvas)
+            canvas.restore()
+        } else {
+            patch.draw(canvas)
+        }
+    }
+
+    override fun setAlpha(alpha: Int) {
+        patch.alpha = alpha
+    }
+
+    override fun setColorFilter(colorFilter: ColorFilter?) {
+        patch.colorFilter = colorFilter
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = patch.opacity
+}
+
 fun createNinePatchDrawable(
     bitmap: Bitmap, scale: Float,
     res: Resources,
@@ -181,14 +229,29 @@ fun createNinePatchDrawable(
     builder.setXPadding(padding.left, padding.right)
     builder.setYPadding(padding.top, padding.bottom)
 
-    return builder.build()?.let {
+    val baseWidth = content.width
+    val baseHeight = content.height
+    val stretchableWidth = xRegions.sumOf { it.second - it.first }
+    val stretchableHeight = yRegions.sumOf { it.second - it.first }
+    val fixedWidth = baseWidth - stretchableWidth
+    val fixedHeight = baseHeight - stretchableHeight
+
+    val needsFixedCorners = (fixedWidth > (baseWidth*3/4)) || (fixedHeight > (baseHeight*3/4))
+
+    return builder.build()?.let { patch ->
+        val bg = if(needsFixedCorners) {
+            NinePatchUniformCornerDrawable(patch, fixedWidth, fixedHeight)
+        } else {
+            patch
+        }
+
         KeyBackground(
             padding = builder.padding,
             gap = gap,
             foregroundColor = foregroundColor,
             outlineColor = outlineColor,
             outlineWidth = outlineWidth.dp,
-            background = it,
+            background = bg,
         )
     }
 }

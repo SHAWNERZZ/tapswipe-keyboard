@@ -16,7 +16,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-
 import org.futo.inputmethod.annotations.UsedForTesting
 import org.futo.inputmethod.engine.ExpandableSuggestionBarConfiguration
 import org.futo.inputmethod.engine.GlobalIMEMessage
@@ -29,8 +28,8 @@ import org.futo.inputmethod.event.InputTransaction
 import org.futo.inputmethod.keyboard.KeyboardSwitcher
 import org.futo.inputmethod.keyboard.PointerTracker
 import org.futo.inputmethod.latin.BuildConfig
+import org.futo.inputmethod.latin.Dictionary
 import org.futo.inputmethod.latin.DictionaryFacilitator
-import org.futo.inputmethod.latin.DictionaryFacilitatorImpl
 import org.futo.inputmethod.latin.DictionaryFacilitatorProvider
 import org.futo.inputmethod.latin.NgramContext
 import org.futo.inputmethod.latin.RichInputMethodManager
@@ -149,6 +148,9 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         importance: Int,
         forceValidWord: Boolean
     ) {
+        val isWordBlacklisted = SuggestionBlacklist.getCapitalVariants(word, settings.current.mLocale).any { !suggestionBlacklist.isWordOk(it) }
+        if(isWordBlacklisted) return
+
         dictionaryFacilitator.addToUserHistory(
             word, wasCapitalized,
             ngramContext, timestamp,
@@ -232,8 +234,6 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
                 }
             }
         }
-
-        blacklist.init()
     }
 
     override fun onDestroy() {
@@ -432,7 +432,22 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
             else -> suggestedWords
         }
 
-        val words = unfilteredWords?.let { blacklist.filterBlacklistedSuggestions(it) } ?: SuggestedWords.getEmptyInstance()
+        val words = unfilteredWords?.let { suggestionBlacklist.filterBlacklistedSuggestions(it) }
+            ?: SuggestedWords.getEmptyInstance()
+
+
+        // If any blacklisted learned words are here, we must unlearn them
+        val wordsToUnlearn = unfilteredWords.mSuggestedWordInfoList
+            .filter { it.mSourceDict?.mDictType == Dictionary.TYPE_USER_HISTORY }
+            .filterNot { suggestionBlacklist.isSuggestedWordOk(it) }
+        wordsToUnlearn.forEach {
+            removeFromHistory(
+                it.mWord,
+                NgramContext.EMPTY_PREV_WORDS_INFO,
+                -1,
+                Constants.NOT_A_CODE
+            )
+        }
 
         showSuggestionStrip(words)
         when(inputStyle) {
@@ -828,7 +843,6 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         helper.setNeutralSuggestionStrip(expandableCfg)
     }
 
-    val blacklist = SuggestionBlacklist(Settings.getInstance(), helper.context, helper.lifecycleScope)
     override fun showSuggestionStrip(words: SuggestedWords?) {
         inputLogic.setSuggestedWords(words)
 

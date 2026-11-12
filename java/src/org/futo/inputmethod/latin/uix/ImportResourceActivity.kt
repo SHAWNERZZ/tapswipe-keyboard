@@ -959,7 +959,7 @@ class ImportResourceActivity : ComponentActivity() {
         if(item is ItemBeingImported.CustomTheme && DevAutoAcceptThemeImport) {
             if(item.v.config == null) {
                 BugViewerState.pushBug(BugInfo(
-                    name = "your custom theme (invalid metadata json)",
+                    name = "your custom theme (invalid metadata)",
                     details = item.v.error ?: "Unknown error",
                 ))
                 BugViewerState.triggerOpen()
