@@ -586,3 +586,21 @@ simulator start-up artifact); "from" read "from" 5 times. On the user's
 recordings, the re-rank changed one word, a "from" the decoder read as
 "form", and broke none. The user's recorded two-thumb "form" attempts
 still read "form".
+
+
+### Lag on long two-thumb words, 2026-11-12
+
+The user's long-words test (44 of 50 right on the first try) showed long
+words taking up to 0.8 s to appear after the last lift. Decode compute
+for 8+ letter two-thumb words: median 41 ms, worst 63 ms before the
+timing rule; median 87 ms, worst 712 ms after. One-stream words were
+unchanged. Cause: the order search tried every split of the letters
+between the thumbs (4096 for 12 letters) and re-ran the path warping for
+each.
+
+Fix: a letter may only go to a thumb whose tap is that key or whose
+swipe passed within 1.2 keys of it, so only ambiguous letters are
+searched; path fits are cached per stroke and letter run. Results are
+the same. Replaying the slowest words: re-rank at most 45 ms, whole
+decode at most 174 ms on the emulator. `decode_detail` now records
+`rerankMs`.

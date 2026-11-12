@@ -1068,6 +1068,7 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
 
         // Soft order across the two thumbs' streams. The decoder interleaves them by lexicon alone;
         // timing breaks the tie it cannot see. See TapSwipeTimingOrder.
+        val rerankStart = System.nanoTime()
         val (order, penalties) = if (useHighBeam && results.size > 1) {
             org.futo.inputmethod.latin.tapswipe.TapSwipeTimingOrder.rerank(
                 results.map { it.word }, results.map { it.score }, input.timings, timingGeometry())
@@ -1081,7 +1082,8 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
                 results.map { it.word }, results.map { it.score }, results.map { it.ctcScore },
                 results.map { it.lmScore }, contextWordsBeforeComposing(ngramContext), decoder.scoring.alpha,
                 decoder.scoring.beta, decoder.scoring.gamma, decoder.scoring.lambda,
-                input.left.size, input.right.size, penalties, input.timings)
+                input.left.size, input.right.size, penalties, input.timings,
+                (System.nanoTime() - rerankStart) / 1_000_000f)
         }
         val ranked = order.map { results[it] }
 

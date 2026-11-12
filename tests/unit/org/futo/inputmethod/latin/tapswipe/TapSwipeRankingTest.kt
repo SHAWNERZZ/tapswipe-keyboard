@@ -154,3 +154,37 @@ class TapSwipePathTimingTest {
         assertTrue(TapSwipeTimingOrder.inversionMs("form", strokes, geo)!! > 50f)
     }
 }
+
+class TapSwipeTimingSpeedTest {
+    @Test
+    fun `a long two-thumb word is ranked quickly`() {
+        val pos = HashMap<Char, FloatArray>().apply {
+            "qwertyuiop".forEachIndexed { i, c -> put(c, floatArrayOf(i.toFloat(), 0f)) }
+            "asdfghjkl".forEachIndexed { i, c -> put(c, floatArrayOf(i + 0.5f, 1f)) }
+            "zxcvbnm".forEachIndexed { i, c -> put(c, floatArrayOf(i + 1.5f, 2f)) }
+        }
+        val geo = TapSwipeTimingOrder.Geometry({ pos[it] }, 1f, 1f)
+        fun swipe(keys: String, t0: Float, t1: Float, right: Boolean): Timing {
+            val pts = keys.map { pos[it]!! }
+            val n = ((t1 - t0) / 8f).toInt() + 1
+            val legs = pts.size - 1
+            val xs = FloatArray(n); val ys = FloatArray(n); val ts = FloatArray(n)
+            for (i in 0 until n) {
+                val u = i.toFloat() / (n - 1) * legs
+                val leg = minOf(u.toInt(), legs - 1)
+                val f = u - leg
+                xs[i] = pts[leg][0] + f * (pts[leg + 1][0] - pts[leg][0])
+                ys[i] = pts[leg][1] + f * (pts[leg + 1][1] - pts[leg][1])
+                ts[i] = t0 + i * 8f
+            }
+            return Timing(false, 0, right, t0, t1, xs = xs, ys = ys, ts = ts)
+        }
+        // "refrigerator" in five strokes across both thumbs, as the user types long words.
+        val strokes = listOf(swipe("ref", 0f, 300f, false), swipe("rig", 250f, 600f, true),
+            swipe("era", 620f, 900f, false), swipe("to", 880f, 1100f, true), Timing(true, 'r'.code, false, 1150f, 1220f))
+        val t0 = System.nanoTime()
+        for (k in 0 until 4) TapSwipeTimingOrder.inversionMs(listOf("refrigerator", "refrigerators", "refrigeration", "regenerator")[k], strokes, geo)
+        val ms = (System.nanoTime() - t0) / 1_000_000.0
+        assertTrue("four long candidates took $ms ms", ms < 150.0)
+    }
+}

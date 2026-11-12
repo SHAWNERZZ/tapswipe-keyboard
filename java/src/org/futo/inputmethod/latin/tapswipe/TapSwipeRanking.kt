@@ -91,17 +91,32 @@ object TapSwipeTimingOrder {
         }
         val left = strokes.filter { !it.right }
         val right = strokes.filter { it.right }
+        // Which thumb could each letter belong to? A thumb qualifies when one of its taps is that
+        // key, or one of its swipes passed within reach of it. For most letters only one thumb does,
+        // so only the genuinely ambiguous letters are searched. Before this, every split of the
+        // letters was tried: 4096 for a 12-letter word, and long two-thumb words lagged by up to
+        // 0.7 s (2026-11-12).
+        val canL = BooleanArray(letters.size) { right.isEmpty() || couldHold(left, letters[it], geo) }
+        val canR = BooleanArray(letters.size) { right.isNotEmpty() && couldHold(right, letters[it], geo) }
+        if (letters.indices.any { !canL[it] && !canR[it] }) return null
+        val open = letters.indices.filter { canL[it] && canR[it] }
+        if (open.size > MAX_OPEN) return null
+        var fixedMask = 0
+        for (i in letters.indices) if (canR[i] && !canL[i]) fixedMask = fixedMask or (1 shl i)
+        val cache = HashMap<String, List<FloatArray>?>()
         var best: Float? = null
-        val masks = if (right.isEmpty()) 1 else 1 shl letters.size
-        for (mask in 0 until masks) {
+        val combos = 1 shl open.size
+        for (c in 0 until combos) {
+            var mask = fixedMask
+            open.forEachIndexed { b, i -> if (c and (1 shl b) != 0) mask = mask or (1 shl i) }
             val lIdx = letters.indices.filter { mask and (1 shl it) == 0 }
             val rIdx = letters.indices.filter { mask and (1 shl it) != 0 }
             if ((left.isEmpty() && lIdx.isNotEmpty()) || (right.isEmpty() && rIdx.isNotEmpty())) continue
             if (left.isNotEmpty() && lIdx.isEmpty()) continue
             if (right.isNotEmpty() && rIdx.isEmpty()) continue
-            val lWins = splits(left, lIdx.map { letters[it] }, geo)
+            val lWins = splits(left, lIdx.map { letters[it] }, geo, cache, "L")
             if (lWins.isEmpty()) continue
-            val rWins = splits(right, rIdx.map { letters[it] }, geo)
+            val rWins = splits(right, rIdx.map { letters[it] }, geo, cache, "R")
             if (rWins.isEmpty()) continue
             for (lw in lWins) for (rw in rWins) {
                 val windows = arrayOfNulls<FloatArray>(letters.size)
@@ -120,7 +135,31 @@ object TapSwipeTimingOrder {
     }
 
     /** Every way to split a stream's letters across its strokes, as per-letter [start, end] windows. */
-    private fun splits(strokes: List<Timing>, letters: List<Char>, geo: Geometry?): List<List<FloatArray>> {
+    /** Most ambiguous letters searched; past this the word is left to the decoder. */
+    private const val MAX_OPEN = 10
+
+    /** How close, in keys, a swipe's path must pass for a letter to be on that stroke. */
+    private const val REACH_KEYS = 1.2f
+
+    private fun couldHold(strokes: List<Timing>, c: Char, geo: Geometry?): Boolean = strokes.any { st ->
+        if (st.isTap) {
+            if (st.codePoint > 0) Character.toLowerCase(st.codePoint).toChar() == c
+            else st.startKeys.isEmpty() || c in st.startKeys
+        } else {
+            val xs = st.xs
+            val ys = st.ys
+            val center = geo?.center?.invoke(c)
+            if (xs == null || ys == null || center == null) true
+            else xs.indices.any { i ->
+                val dx = (xs[i] - center[0]) / geo.keyW
+                val dy = (ys[i] - center[1]) / geo.keyH
+                dx * dx + dy * dy <= REACH_KEYS * REACH_KEYS
+            }
+        }
+    }
+
+    private fun splits(strokes: List<Timing>, letters: List<Char>, geo: Geometry?,
+                       cache: HashMap<String, List<FloatArray>?>, side: String): List<List<FloatArray>> {
         val out = ArrayList<List<FloatArray>>()
         fun go(s: Int, l: Int, acc: List<FloatArray>) {
             if (out.size >= 256) return
@@ -141,7 +180,9 @@ object TapSwipeTimingOrder {
             if (l < letters.size && st.startKeys.isNotEmpty() && letters[l] !in st.startKeys) return
             for (k in 1..(letters.size - l)) {
                 if (st.endKeys.isNotEmpty() && letters[l + k - 1] !in st.endKeys) continue
-                val fitted = pathWindows(st, letters.subList(l, l + k), geo)
+                val key = "$side$s:" + String(letters.subList(l, l + k).toCharArray())
+                val fitted = if (cache.containsKey(key)) cache[key] else
+                    pathWindows(st, letters.subList(l, l + k), geo).also { cache[key] = it }
                 if (fitted === MISFIT) continue
                 val run = fitted ?: (0 until k).map { j ->
                     when {

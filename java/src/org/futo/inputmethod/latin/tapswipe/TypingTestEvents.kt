@@ -60,7 +60,8 @@ object TypingTestEvents {
     fun decodeDetail(words: List<String>, scores: List<Float>, ctc: List<Float>, lm: List<Float>,
                      context: List<String>, alpha: Float, beta: Float, gamma: Float, lambda: Float,
                      leftSegs: Int, rightSegs: Int, orderPenalty: List<Float> = emptyList(),
-                     timings: List<TapSwipeTimingOrder.Timing> = emptyList()) = ifActive {
+                     timings: List<TapSwipeTimingOrder.Timing> = emptyList(),
+                     rerankMs: Float = 0f) = ifActive {
         TypingTestRecorder.emit(TypingTestRecorder.event("decode_detail")
             .putStrings("words", words)
             .putFloats("score", scores.toFloatArray()).putFloats("ctc", ctc.toFloatArray())
@@ -68,6 +69,7 @@ object TypingTestEvents {
             .putStrings("context", context.takeLast(4))
             .put("alpha", alpha).put("beta", beta).put("gamma", gamma).put("lambda", lambda)
             .put("left", leftSegs).put("right", rightSegs)
+            .put("rerankMs", rerankMs)
             .putFloats("orderPenalty", orderPenalty.toFloatArray())
             .putStrings("timings", timings.map {
                 (if (it.isTap) "tap:" + String(Character.toChars(it.codePoint)) else "swipe") +
