@@ -14,6 +14,21 @@ drop a task. Date each Done entry.
 
 ## Next
 
+- **Two-thumb tap ordered after the swipe** (user report, 2026-11-11,
+  second typing test). "then" typed as tap T, swipe H to N, other thumb
+  taps E as the swipe lifts. The E tap is forced into the left stream
+  (`InputLogic`, `addTap` passes `Hand.LEFT`), after the swipe, so the
+  decoder reads T, H..N, E and picks "the". Backspace pops the E and
+  "then" returns. Reproduced on the emulator, 2 of 3 replays. Proposed
+  fix: give a tap its pointer number's stream, as swipes already get
+  (design rationale 1.3). Waiting on the user's go-ahead.
+- **Second decode of the same strokes overwrote a right answer.** In a
+  replay of that word, the tap's re-decode read "Then" and was written,
+  then 30 ms later another decode of the same three strokes read "The"
+  and replaced it. Likely the tap's typing update decoding through
+  another path. Diagnose: record which request each decode answers. The
+  recorder's `covered` value comes from shared state and reads -1 there.
+
 - Word split, open items. Full list in `docs/plans/WORD_SPLIT.md`.
   - Words split with the setting off. Likely fixed on 2026-11-11 (late
     selection report). Confirm on the phone with the debug panel counts.
