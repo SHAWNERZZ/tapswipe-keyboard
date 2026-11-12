@@ -266,25 +266,6 @@ val TapSwipePeckCadenceSetting = SettingsKey(intPreferencesKey("tapswipe_peck_ca
 val TapSwipeLegacyTapRunSetting = SettingsKey(intPreferencesKey("tapswipe_legacy_tap_run"), 5)
 
 /**
- * When on, a tap contributes the position it was actually touched rather than the centre of the key
- * it resolved to.
- *
- * The decoder is shape-driven, so where within a key you land is real evidence: reaching short of
- * "o" on the way to "p" is different from hitting it dead centre, and collapsing both to the centre
- * throws that away. It matters most where taps and swipes fuse into one word, since the swipe
- * contributes true positions and the taps previously did not - the tap stream was quantised to a
- * grid while the swipe stream was continuous.
- *
- * Safe with respect to coordinate frames: `onCodeInput` coordinates have already been through
- * `MainKeyboardView.getKeyX/getKeyY`, which subtract the view padding, and `verticalCorrection` is
- * 0dp - so they land in the same keyboard frame as `getKeyXY`'s key centres and normalize
- * identically. Falls back to the key centre whenever the coordinates are absent, which
- * `PointerTracker` does for any key without proximity correction.
- */
-val TapSwipeRealTapPositionSetting =
-    SettingsKey(booleanPreferencesKey("tapswipe_real_tap_position"), true)
-
-/**
  * Adaptive key geometry: feed the decoder key positions shifted toward where this user actually
  * swipes, instead of the layout's nominal centres.
  *
@@ -935,6 +916,14 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
 
         // basically update it at end of swiping
         if(useHighBeam) appliedScoring.value = decoder.scoring
+
+        // The learner checks that a committed word was the decoder's clear first choice. The TapSwipe
+        // path reports that; the stock path now does too, so learned geometry works without the
+        // input model.
+        if (useHighBeam && results.isNotEmpty()) {
+            val margin = if (results.size > 1) results[0].score - results[1].score else Float.MAX_VALUE
+            noteDecodeOutcome(results[0].word, margin)
+        }
 
         if(BuildConfig.DEBUG || System.currentTimeMillis() < debugLogUntil) {
             Log.d("SwipeDecoderDictionary", "Timing: ${decoder.lastTiming()}")

@@ -134,3 +134,35 @@ into one commit, unchanged, before any other edit.
   hidden, and one careless commit would have mixed the two.
 - Finish the feature first, then commit. The work would stay outside
   git for longer, with no record of what it was before new edits.
+
+## 2026-11-12. Remove the exact tap positions setting
+
+**Decision.** A tap always gives the decoder its real touch point. The
+setting is gone.
+
+**Rejected.**
+
+- Keep the toggle. It was on by default, and nothing showed a reason to
+  turn it off. Only the TapSwipe session read it, so with the input
+  model off the keyboard already behaved as stock FUTO either way.
+
+## 2026-11-12. Learn key geometry without the input model
+
+**Decision.** With the input model off, `InputLogic` records taps and
+gestures into a separate session used only for learning. The learner
+runs at each commit, with the same checks as the input model path.
+
+**Rejected.**
+
+- Feed the learner from the stock `WordComposer`. It keeps only key
+  codes and coordinates for taps, and nothing about a gesture's points
+  in our normalized frame. The learner would need a second input format.
+- Turn on the TapSwipe word session in stock mode. That session also
+  drives decoding and finalizers, so stock typing would change.
+- Learn only from gestures in stock mode, and ignore taps. Mixed words
+  are rare in stock typing, and the learner already skips pure-tap
+  words. Recording taps costs little and keeps both paths alike.
+
+**Consequence.** Stock typing output does not change. The stock decode
+path now reports its first choice and margin to the learner.
+

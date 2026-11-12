@@ -8,7 +8,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
 import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
-import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
 import org.futo.inputmethod.latin.settings.SettingsValues
 import org.futo.inputmethod.latin.uix.DataStoreHelper
 import kotlin.math.max
@@ -305,7 +304,7 @@ object TapSwipeLearner {
         // When exact tap positions are off, a tap records the key *centre* - so its offset is
         // identically zero. Those are not observations, they are the absence of one, and folding
         // them in would drag every mean toward zero while inflating confidence.
-        val keepTaps = DataStoreHelper.getSetting(TapSwipeRealTapPositionSetting)
+        val keepTaps = true  // exact tap positions are always on since 2026-11-12
         val attributions = if (keepTaps) aligned else aligned.filter { !it.fromTap }
 
         if (attributions.isEmpty()) {
@@ -408,7 +407,7 @@ object TapSwipeLearner {
         val aligned = TapSwipeStrokeAligner.align(word, inputs) { cp ->
             SwipeDecoderDictionary.normalizedKeyPosition(cp)
         }
-        val keepTaps = DataStoreHelper.getSetting(TapSwipeRealTapPositionSetting)
+        val keepTaps = true  // exact tap positions are always on since 2026-11-12
         val attributions = if (keepTaps) aligned else aligned.filter { !it.fromTap }
 
         if (attributions.isEmpty()) { Counters.notAligned++; return }

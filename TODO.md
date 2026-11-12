@@ -14,6 +14,14 @@ drop a task. Date each Done entry.
 
 ## Next
 
+- **FUTO 0.1.30 and upstream master** (found 2026-11-12, waiting on the
+  user). Our base is 0.1.30-rc1. Upstream is 31 commits ahead and
+  merges as a fast-forward of `master`. It has a new swipe language
+  model (`chosen_planarian`) and the same apostrophe context fix we
+  made. Test the new model on contractions before a merge.
+- **Auto spacing exploration** (next large project). Options live in
+  the "Auto spacing (work in progress)" sub-menu.
+
 - **Calibration offsets: not shown to help yet.** Held-out check scored
   77 against 80. Rerun with adaptive geometry off on the emulator.
 - **Session offset layer** (proposed 2026-11-11, waiting on the user).
@@ -51,6 +59,11 @@ drop a task. Date each Done entry.
   models, and `java/assets/futo-swipe` stops showing as modified.
 
 ## Done
+
+- 2026-11-12. TapSwipe settings in sections. Auto spacing moved to a
+  work-in-progress sub-menu. Exact tap positions removed (always on).
+  Learned key geometry now learns with the input model off. Checked on
+  the emulator: 23 of 25 swiped words gave samples, stock mode.
 
 - 2026-11-12. "I'm" no longer reads "in": deliberate apostrophe visits
   decode without the language model and penalize non-apostrophe words.

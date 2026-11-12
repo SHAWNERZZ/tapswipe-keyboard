@@ -107,6 +107,7 @@ val SettingsMenus = listOf(
     LongPressMenu,
     SwipeMenu,
     TapSwipeMenu,
+    org.futo.inputmethod.latin.uix.settings.pages.TapSwipeAutoSpacingMenu,
     PredictiveTextMenu,
     BlacklistScreenLite,
     VoiceInputMenu,

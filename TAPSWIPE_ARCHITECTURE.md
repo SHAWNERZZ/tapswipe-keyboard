@@ -403,6 +403,22 @@ Home file:
 `java/src/org/futo/inputmethod/latin/tapswipe/TapSwipeTouchModel.kt`.
 Off by default, behind `TapSwipeAdaptiveGeometrySetting`.
 
+The model learns with or without the TapSwipe input model (since
+2026-11-12).
+
+- Input model on: the word session supplies the strokes.
+  `InputLogic.maybeLearnTapSwipeGeometry` runs at the finalizer.
+- Input model off: `InputLogic` records each tap and gesture into a
+  separate session (`mStockGeometrySession`). The decoder never reads
+  it. `InputLogic.commitChosenWord` hands it to the learner and clears
+  it. A backspace, a composing reset, or a new field also clears it.
+- Both paths need the decoder's confident first choice to equal the
+  committed word. Both decode paths call
+  `SwipeDecoderDictionary.noteDecodeOutcome` after the high-beam pass.
+- A tap always gives its real touch point. The "Exact tap positions"
+  setting was removed on 2026-11-12. It was on by default and was read
+  only inside the TapSwipe session.
+
 - The model stores decay-weighted running moments per key, not an EMA.
   Sums allow one multiply to decay a whole accumulator, and allow
   weighted samples.
@@ -455,7 +471,15 @@ Screen file:
 Keys are declared in
 `java/src/org/futo/inputmethod/latin/SwipeDecoderDictionary.kt`.
 
-DataStore keys, verified on 2026-08-18.
+The screen has sections: Input model, Swiping, Key geometry, Layout
+and gestures, Appearance, Tools. Auto spacing options live in a sub-menu
+under Input model (`TapSwipeAutoSpacingMenu`, path
+`tapswipeAutoSpacing`), marked work in progress. Master Mode and word
+trails grey out with a note while the input model is off.
+
+DataStore keys, verified on 2026-08-18. The exact tap position key
+(`tapswipe_real_tap_position`) was removed on 2026-11-12. A stored value
+is ignored.
 
 | Setting                      | Symbol                             | Key                          | Default |
 |------------------------------|------------------------------------|------------------------------|---------|
@@ -463,7 +487,6 @@ DataStore keys, verified on 2026-08-18.
 | Master Mode                  | `TapSwipeMasterModeSetting`        | `tapswipe_master_mode`       | off     |
 | Legacy tap run               | `TapSwipeLegacyTapRunSetting`      | `tapswipe_legacy_tap_run`    | 5       |
 | Adaptive key geometry        | `TapSwipeAdaptiveGeometrySetting`  | `tapswipe_adaptive_geometry` | off     |
-| Exact tap positions          | `TapSwipeRealTapPositionSetting`   | `tapswipe_real_tap_position` | on      |
 | What a backspace tap removes | `TapSwipeBackspaceTapSetting`      | `tapswipe_backspace_tap`     | last gesture |
 | Swipe up deletes a word      | `TapSwipeBackspaceSwipeUpSetting`  | `tapswipe_backspace_swipe_up`| off     |
 | Show the word's gestures     | `TapSwipeWordTrailsSetting`        | `tapswipe_word_trails`       | off     |

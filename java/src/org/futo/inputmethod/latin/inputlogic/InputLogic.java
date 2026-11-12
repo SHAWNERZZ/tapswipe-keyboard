@@ -891,6 +891,74 @@ public final class InputLogic {
      * Wrapped because it runs on the commit path: learning is a nice-to-have, and nothing about it
      * is worth failing a keystroke over.
      */
+    /**
+     * Learned key geometry without the TapSwipe input model (2026-11-12).
+     *
+     * The learner needs a word's strokes and the word that was committed. The input model collects
+     * strokes in its word session; stock typing collects none. So while the input model is off and
+     * learned geometry is on, this records each tap's real position and each gesture's points into a
+     * separate session used only for learning, never for decoding. Every commit goes through
+     * {@link #commitChosenWord}, which hands the learner the word and clears the session. A backspace,
+     * a cursor move or a new field clears it too, since the strokes would no longer match the word.
+     *
+     * Nothing here changes what stock typing produces. With learned geometry off, none of it runs.
+     */
+    private final TapSwipeSession mStockGeometrySession = new TapSwipeSession();
+    private long mStockGeometryOriginMs = -1;
+
+    private boolean isStockGeometryLearning() {
+        return !isTapSwipeMode() && TapSwipeLearner.isEnabled() && isTapSwipeLearningAllowed();
+    }
+
+    private long stockGeometryOrigin() {
+        if (!mStockGeometrySession.isOpen() || mStockGeometryOriginMs < 0) {
+            mStockGeometryOriginMs = SystemClock.uptimeMillis();
+        }
+        return mStockGeometryOriginMs;
+    }
+
+    private void recordStockGeometryTap(final int codePoint, final int rawX, final int rawY) {
+        if (!isStockGeometryLearning()) return;
+        try {
+            float[] pos = SwipeDecoderDictionary.normalizedTapPosition(rawX, rawY);
+            if (pos == null) pos = SwipeDecoderDictionary.normalizedKeyPosition(codePoint);
+            if (pos == null) return;
+            final long origin = stockGeometryOrigin();
+            mStockGeometrySession.addTap(codePoint, pos[0], pos[1],
+                    (float) (SystemClock.uptimeMillis() - origin), TapSwipeSession.Hand.LEFT,
+                    rawX, rawY);
+        } catch (Throwable t) {
+            Log.e(TAG, "stock geometry tap record failed", t);
+        }
+    }
+
+    private void recordStockGeometrySwipe(final InputPointers batchPointers) {
+        if (!isStockGeometryLearning()) return;
+        try {
+            final TapSwipeNormalizers norm = SwipeDecoderDictionary.currentNormalizers();
+            if (norm == null) return;
+            final long origin = stockGeometryOrigin();
+            mStockGeometrySession.addSwipeSegments(batchPointers.getGestureSegments(),
+                    BatchInputArbiter.getBatchOriginTime(), origin, norm.getX(), norm.getY());
+        } catch (Throwable t) {
+            Log.e(TAG, "stock geometry swipe record failed", t);
+        }
+    }
+
+    private void learnStockGeometry(final SettingsValues settingsValues, final String word) {
+        if (isTapSwipeMode()) return;
+        try {
+            if (isStockGeometryLearning() && mStockGeometrySession.isOpen() && word != null) {
+                TapSwipeLearner.onWordFinalized(
+                        mImeHelper.getContext(), mStockGeometrySession, word, settingsValues);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "stock geometry learning failed", t);
+        } finally {
+            mStockGeometrySession.reset("committed");
+        }
+    }
+
     private void maybeLearnTapSwipeGeometry(final SettingsValues settingsValues) {
         if (!TapSwipeLearner.isEnabled()) return;
         if (!isTapSwipeLearningAllowed()) return;
@@ -1050,11 +1118,9 @@ public final class InputLogic {
         // reads shape, so an off-centre tap is evidence rather than noise - and it puts the tap
         // stream in the same continuous space as the swipe stream they fuse with, instead of
         // quantising taps to key centres while swipes stay continuous.
-        float[] pos = null;
-        if (DataStoreHelper.getSetting(
-                SwipeDecoderDictionaryKt.getTapSwipeRealTapPositionSetting())) {
-            pos = SwipeDecoderDictionary.normalizedTapPosition(rawX, rawY);
-        }
+        // Always the real position since 2026-11-12: the "Use exact tap positions" setting is gone.
+        // Key centres were strictly less information, and the learner needs the real positions.
+        float[] pos = SwipeDecoderDictionary.normalizedTapPosition(rawX, rawY);
         // Fall back to the key centre: PointerTracker reports NOT_A_COORDINATE for any key without
         // proximity correction, and the layout may not be applied yet.
         if (pos == null) pos = SwipeDecoderDictionary.normalizedKeyPosition(codePoint);
@@ -1429,6 +1495,7 @@ public final class InputLogic {
         mWordBeingCorrectedByCursor = null;
         numCursorUpdatesSinceInputStarted = 0;
         mTapSwipeGraceRecord = null;
+        mStockGeometrySession.reset("new field");
         mConnection.finishComposingText(); // On screen rotation in case we were composing, finish composition before resetting
         mConnection.onStartInput();
         if (!mWordComposer.getTypedWord().isEmpty()) {
@@ -2061,6 +2128,8 @@ public final class InputLogic {
         // dispatched, so that decode sees the whole word rather than just this gesture.
         if (isTapSwipeMode()) {
             absorbBatchIntoTapSwipeSession(batchPointers);
+        } else {
+            recordStockGeometrySwipe(batchPointers);
         }
         mInputLogicHandler.updateTailBatchInput(batchPointers, mAutoCommitSequenceNumber);
         ++mAutoCommitSequenceNumber;
@@ -2456,6 +2525,9 @@ public final class InputLogic {
             }
             setComposingTextInternal(getTextWithUnderline(mWordComposer.getTypedWord()), 1);
 
+            if (!isTapSwipeMode() && settingsValues.isWordCodePoint(codePoint)) {
+                recordStockGeometryTap(codePoint, event.mX, event.mY);
+            }
             if (isTapSwipeMode() && settingsValues.isWordCodePoint(codePoint)) {
                 // Before absorbing: cadence must be measured for every tap, including code points
                 // the layout cannot place (which absorbTap skips).
@@ -2760,6 +2832,8 @@ public final class InputLogic {
             final int currentKeyboardScriptId) {
         mSpaceState = SpaceState.NONE;
         mDeleteCount++;
+        // An edited word no longer matches the strokes recorded for it.
+        mStockGeometrySession.reset("backspace");
         org.futo.inputmethod.latin.tapswipe.TypingTestEvents.backspace(mWordComposer.getTypedWord(), mTapSwipeSession.getStrokes().size(),
                 mTapSwipeSession.isOpen(), event.isKeyRepeat());
 
@@ -3883,6 +3957,7 @@ public final class InputLogic {
      * @param alsoResetLastComposedWord whether to also reset the last composed word.
      */
     private void resetComposingState(final boolean alsoResetLastComposedWord) {
+        mStockGeometrySession.reset("composing reset");
         mWordComposer.reset(alsoResetLastComposedWord);
         if (alsoResetLastComposedWord) {
             mLastComposedWord = LastComposedWord.NOT_A_COMPOSED_WORD;
@@ -4307,6 +4382,7 @@ public final class InputLogic {
         // point whether it was tapped, swiped, autocorrected or picked, so a swiped word counts for
         // its whole length instead of the single gesture that produced it.
         org.futo.inputmethod.latin.tapswipe.TypingTestEvents.commit(chosenWord, commitType, separatorString);
+        learnStockGeometry(settingsValues, chosenWord);
         WpmTracker.onCharsProduced(
                 chosenWord.length() + (separatorString != null ? separatorString.length() : 0));
         refreshSpacebarSpeed();

@@ -1,5 +1,8 @@
 package org.futo.inputmethod.latin.uix.settings.pages
 
+import androidx.annotation.StringRes
+import org.futo.inputmethod.latin.uix.SettingsKey
+import org.futo.inputmethod.latin.uix.settings.SettingToggleDataStore
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -17,7 +20,7 @@ import org.futo.inputmethod.latin.TapSwipeMasterModeSetting
 import org.futo.inputmethod.latin.TapSwipeModeSetting
 import org.futo.inputmethod.latin.TapSwipeAdaptiveGeometrySetting
 import org.futo.inputmethod.latin.TapSwipeAutoSplitSetting
-import org.futo.inputmethod.latin.TapSwipeRealTapPositionSetting
+import org.futo.inputmethod.latin.TapSwipeWordTrailsSetting
 import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import org.futo.inputmethod.latin.TapSwipeApostropheKeySetting
 import org.futo.inputmethod.latin.TapSwipeWpmSetting
@@ -28,6 +31,7 @@ import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.settings.userSettingDecorationOnly
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
+import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.userSettingNavigationItem
 import org.futo.inputmethod.latin.uix.settings.userSettingToggleDataStore
 import org.futo.inputmethod.latin.uix.theme.Typography
@@ -36,45 +40,146 @@ import kotlin.math.roundToInt
 private val tapSwipeEnabled: @Composable () -> Boolean = { useDataStoreValue(TapSwipeModeSetting) }
 
 private val adaptiveGeometryEnabled: @Composable () -> Boolean = {
-    useDataStoreValue(TapSwipeModeSetting) && useDataStoreValue(TapSwipeAdaptiveGeometrySetting)
+    useDataStoreValue(TapSwipeAdaptiveGeometrySetting)
 }
 
 private val masterModeEnabled: @Composable () -> Boolean = {
     useDataStoreValue(TapSwipeModeSetting) && useDataStoreValue(TapSwipeMasterModeSetting)
 }
 
+private fun section(@androidx.annotation.StringRes title: Int) = userSettingDecorationOnly {
+    ScreenTitle(stringResource(title))
+}
+
 /**
- * Settings for the TapSwipe input model. This whole screen is an addition by this fork.
+ * Settings for the TapSwipe input model and this fork's other additions.
  *
- * Layout notes:
- * - The master toggle is the only thing visible while TapSwipe is off. Everything below is
- *   meaningless in that state, and a wall of dimmed controls is worse than none.
- * - Toggles carry icons. `SettingItem` reserves a 48dp icon column whether or not one is given, so
- *   an icon-less toggle looks arbitrarily indented beside a slider, which draws full width.
- *   Filling the slot makes the indent read as deliberate instead of accidental.
- * - Each control sits directly under what it depends on - Master Mode, then its legacy-typing
- *   threshold - so the relationship is visible without reading the descriptions.
+ * Organized into sections a first-time user can read top to bottom (2026-11-12):
+ * - Input model: the TapSwipe switch and what only it uses. Auto spacing sits in its own sub-menu,
+ *   marked as work in progress.
+ * - Swiping, Key geometry, Layout: work with or without the input model, so they are always shown.
+ *   Swipe sensitivity and the Nintype gestures used to hide while the input model was off, although
+ *   neither depends on it.
+ * - Appearance: display-only options. Master Mode and the word's gestures need the input model, so
+ *   they show disabled, with the reason, instead of disappearing.
+ * - Tools: the typing test.
+ *
+ * Removed: "Use exact tap positions". It only ever applied inside the input model, where key centres
+ * are strictly less information, and the learner needs the real positions. It is now always on.
+ *
+ * Toggles carry icons. `SettingItem` reserves a 48dp icon column whether or not one is given, so an
+ * icon-less toggle looks arbitrarily indented beside a slider, which draws full width.
  */
 val TapSwipeMenu = UserSettingsMenu(
     title = R.string.tapswipe_settings_title,
     navPath = "tapswipe", registerNavPath = true,
     settings = listOf(
-        // The master switch. Always visible; everything else hangs off it.
+        // ---- Input model ----
+        section(R.string.tapswipe_section_input_model),
         userSettingToggleDataStore(
             title = R.string.tapswipe_settings_enable,
             subtitle = R.string.tapswipe_settings_enable_subtitle,
             setting = TapSwipeModeSetting,
             icon = { Icon(painterResource(R.drawable.swipe_icon), contentDescription = null) }
         ),
+        UserSetting(
+            name = R.string.tapswipe_settings_peck_cadence,
+            subtitle = R.string.tapswipe_settings_peck_cadence_subtitle,
+            visibilityCheck = tapSwipeEnabled
+        ) {
+            SettingSlider(
+                title = stringResource(R.string.tapswipe_settings_peck_cadence),
+                subtitle = stringResource(R.string.tapswipe_settings_peck_cadence_subtitle),
+                setting = TapSwipePeckCadenceSetting,
+                range = 100.0f..600.0f,
+                transform = { it.roundToInt() },
+                indicator = { "$it ms" },
+                steps = 9
+            )
+        },
+        userSettingNavigationItem(
+            title = R.string.tapswipe_settings_auto_spacing,
+            subtitle = R.string.tapswipe_settings_auto_spacing_subtitle,
+            style = NavigationItemStyle.HomeSecondary,
+            navigateTo = "tapswipeAutoSpacing",
+            icon = R.drawable.scissors
+        ).copy(visibilityCheck = tapSwipeEnabled),
+
+        // ---- Swiping ----
+        section(R.string.tapswipe_section_swiping),
+        UserSetting(
+            name = R.string.tapswipe_settings_sensitivity,
+            subtitle = R.string.tapswipe_settings_sensitivity_subtitle
+        ) {
+            SettingSlider(
+                title = stringResource(R.string.tapswipe_settings_sensitivity),
+                subtitle = stringResource(R.string.tapswipe_settings_sensitivity_subtitle),
+                setting = SwipeSensitivitySetting,
+                range = 0.5f..4.0f,
+                transform = { (it * 20.0f).roundToInt() / 20.0f },
+                indicator = { "%.2fx".format(it) }
+            )
+        },
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_nintype_gestures,
+            subtitle = R.string.tapswipe_settings_nintype_gestures_subtitle,
+            setting = TapSwipeNintypeGesturesSetting,
+            icon = { Icon(painterResource(R.drawable.direction_arrows), contentDescription = null) }
+        ),
+
+        // ---- Key geometry ----
+        // Learning sits directly above the page that shows what it learned, so the toggle and its
+        // evidence read as one thing rather than two unrelated rows.
+        section(R.string.tapswipe_section_key_geometry),
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_adaptive_geometry,
+            subtitle = R.string.tapswipe_settings_adaptive_geometry_subtitle,
+            setting = TapSwipeAdaptiveGeometrySetting,
+            icon = { Icon(painterResource(R.drawable.move), contentDescription = null) }
+        ),
+        userSettingNavigationItem(
+            title = R.string.tapswipe_settings_learned_geometry,
+            style = NavigationItemStyle.HomeSecondary,
+            navigateTo = "tapswipeGeometry",
+            icon = R.drawable.activity
+        ).copy(visibilityCheck = adaptiveGeometryEnabled),
+
+        // ---- Layout ----
+        section(R.string.tapswipe_section_layout),
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_apostrophe_key,
+            subtitle = R.string.tapswipe_settings_apostrophe_key_subtitle,
+            setting = TapSwipeApostropheKeySetting,
+            icon = { Icon(painterResource(R.drawable.direction_arrows), contentDescription = null) }
+        ),
+        // Its own screen. Backspace carries four gestures, and a flat list cannot show which of
+        // them a given setting belongs to. These live in PointerTracker and work with or without
+        // the input model.
+        userSettingNavigationItem(
+            title = R.string.tapswipe_settings_backspace,
+            subtitle = R.string.tapswipe_settings_backspace_subtitle,
+            style = NavigationItemStyle.HomeSecondary,
+            navigateTo = "backspaceGestures",
+            icon = R.drawable.delete
+        ),
+        // Its own screen rather than a toggle: the feature is the assignment, and there is no way to
+        // show eight of those in a settings row.
+        userSettingNavigationItem(
+            title = R.string.tapswipe_settings_enter_flicks,
+            subtitle = R.string.tapswipe_settings_enter_flicks_subtitle,
+            style = NavigationItemStyle.HomeSecondary,
+            navigateTo = "enterKeyFlicks",
+            icon = R.drawable.direction_arrows
+        ),
 
         // ---- Appearance ----
-        userSettingToggleDataStore(
+        section(R.string.tapswipe_section_appearance),
+        inputModelToggle(
             title = R.string.tapswipe_settings_master_mode,
             subtitle = R.string.tapswipe_settings_master_mode_subtitle,
             setting = TapSwipeMasterModeSetting,
             icon = { Icon(painterResource(R.drawable.blur), contentDescription = null) }
-        ).copy(visibilityCheck = tapSwipeEnabled),
-
+        ),
         // Directly beneath Master Mode: it only does anything while the letters are hidden.
         UserSetting(
             name = R.string.tapswipe_settings_legacy_run,
@@ -91,86 +196,12 @@ val TapSwipeMenu = UserSettingsMenu(
                 steps = 14
             )
         },
-
-        // Learning sits directly above the page that shows what it learned, so the toggle and its
-        // evidence read as one thing rather than two unrelated rows.
-        userSettingToggleDataStore(
-            title = R.string.tapswipe_settings_adaptive_geometry,
-            subtitle = R.string.tapswipe_settings_adaptive_geometry_subtitle,
-            setting = TapSwipeAdaptiveGeometrySetting,
-            icon = { Icon(painterResource(R.drawable.move), contentDescription = null) }
-        ).copy(visibilityCheck = tapSwipeEnabled),
-
-        userSettingNavigationItem(
-            title = R.string.tapswipe_settings_learned_geometry,
-            style = NavigationItemStyle.HomeSecondary,
-            navigateTo = "tapswipeGeometry",
-            icon = R.drawable.activity
-        ).copy(visibilityCheck = adaptiveGeometryEnabled),
-
-        // Tuning, but a toggle rather than a slider, so it sits with the other toggles.
-        userSettingToggleDataStore(
-            title = R.string.tapswipe_settings_real_tap_position,
-            subtitle = R.string.tapswipe_settings_real_tap_position_subtitle,
-            setting = TapSwipeRealTapPositionSetting,
-            icon = { Icon(painterResource(R.drawable.circle), contentDescription = null) }
-        ).copy(visibilityCheck = tapSwipeEnabled),
-
-        // Sits with the input-interpretation toggles rather than under Tuning: it changes what a
-        // word is, which is the same kind of decision as where a tap is taken to have landed.
-        userSettingToggleDataStore(
-            title = R.string.tapswipe_settings_auto_split,
-            subtitle = R.string.tapswipe_settings_auto_split_subtitle,
-            setting = TapSwipeAutoSplitSetting,
-            icon = { Icon(painterResource(R.drawable.scissors), contentDescription = null) }
-        ).copy(visibilityCheck = tapSwipeEnabled),
-
-        userSettingToggleDataStore(
-            title = R.string.tapswipe_settings_nintype_gestures,
-            subtitle = R.string.tapswipe_settings_nintype_gestures_subtitle,
-            setting = TapSwipeNintypeGesturesSetting,
-            icon = { Icon(painterResource(R.drawable.direction_arrows), contentDescription = null) }
-        ).copy(visibilityCheck = tapSwipeEnabled),
-
-        // A layout change, not an input-model change, so it is not gated on tapSwipeEnabled.
-        userSettingToggleDataStore(
-            title = R.string.tapswipe_settings_apostrophe_key,
-            subtitle = R.string.tapswipe_settings_apostrophe_key_subtitle,
-            setting = TapSwipeApostropheKeySetting,
-            icon = { Icon(painterResource(R.drawable.direction_arrows), contentDescription = null) }
+        inputModelToggle(
+            title = R.string.tapswipe_settings_word_trails,
+            subtitle = R.string.tapswipe_settings_word_trails_subtitle,
+            setting = TapSwipeWordTrailsSetting,
+            icon = { Icon(painterResource(R.drawable.swipe_icon), contentDescription = null) }
         ),
-
-        // Its own screen. Backspace carries four gestures now, and a flat list cannot show which
-        // of them a given setting belongs to. Not gated on tapSwipeEnabled: these live in
-        // PointerTracker and work the same whether or not the input model is on.
-        userSettingNavigationItem(
-            title = R.string.tapswipe_settings_backspace,
-            subtitle = R.string.tapswipe_settings_backspace_subtitle,
-            style = NavigationItemStyle.HomeSecondary,
-            navigateTo = "backspaceGestures",
-            icon = R.drawable.delete
-        ),
-
-        // Its own screen rather than a toggle: the feature is the assignment, and there is no way to
-        // show eight of those in a settings row.
-        userSettingNavigationItem(
-            title = R.string.tapswipe_settings_enter_flicks,
-            subtitle = R.string.tapswipe_settings_enter_flicks_subtitle,
-            style = NavigationItemStyle.HomeSecondary,
-            navigateTo = "enterKeyFlicks",
-            icon = R.drawable.direction_arrows
-        ),
-
-        // Records real typing with the intended words, for the typing simulator. Not gated on
-        // tapSwipeEnabled: a recording of stock typing is a useful baseline too.
-        userSettingNavigationItem(
-            title = R.string.tapswipe_settings_typing_test,
-            subtitle = R.string.tapswipe_settings_typing_test_subtitle,
-            style = NavigationItemStyle.HomeSecondary,
-            navigateTo = "tapswipeTypingTest",
-            icon = R.drawable.activity
-        ),
-
         userSettingToggleDataStore(
             title = R.string.tapswipe_settings_wpm,
             subtitle = R.string.tapswipe_settings_wpm_subtitle,
@@ -178,37 +209,15 @@ val TapSwipeMenu = UserSettingsMenu(
             icon = { Icon(painterResource(R.drawable.activity), contentDescription = null) }
         ),
 
-        // ---- Tuning ----
-        UserSetting(
-            name = R.string.tapswipe_settings_peck_cadence,
-            subtitle = R.string.tapswipe_settings_peck_cadence_subtitle,
-            visibilityCheck = tapSwipeEnabled
-        ) {
-            SettingSlider(
-                title = stringResource(R.string.tapswipe_settings_peck_cadence),
-                subtitle = stringResource(R.string.tapswipe_settings_peck_cadence_subtitle),
-                setting = TapSwipePeckCadenceSetting,
-                range = 100.0f..600.0f,
-                transform = { it.roundToInt() },
-                indicator = { "$it ms" },
-                steps = 9
-            )
-        },
-
-        UserSetting(
-            name = R.string.tapswipe_settings_sensitivity,
-            subtitle = R.string.tapswipe_settings_sensitivity_subtitle,
-            visibilityCheck = tapSwipeEnabled
-        ) {
-            SettingSlider(
-                title = stringResource(R.string.tapswipe_settings_sensitivity),
-                subtitle = stringResource(R.string.tapswipe_settings_sensitivity_subtitle),
-                setting = SwipeSensitivitySetting,
-                range = 0.5f..4.0f,
-                transform = { (it * 20.0f).roundToInt() / 20.0f },
-                indicator = { "%.2fx".format(it) }
-            )
-        },
+        // ---- Tools ----
+        section(R.string.tapswipe_section_tools),
+        userSettingNavigationItem(
+            title = R.string.tapswipe_settings_typing_test,
+            subtitle = R.string.tapswipe_settings_typing_test_subtitle,
+            style = NavigationItemStyle.HomeSecondary,
+            navigateTo = "tapswipeTypingTest",
+            icon = R.drawable.activity
+        ),
 
         // ---- Footnotes ----
         userSettingDecorationOnly {
@@ -219,16 +228,63 @@ val TapSwipeMenu = UserSettingsMenu(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
             )
             Text(
-                stringResource(R.string.tapswipe_settings_apostrophe_layout_note),
-                style = Typography.Small,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
-            )
-            Text(
                 stringResource(R.string.tapswipe_settings_about),
                 style = Typography.Small,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
             )
             Spacer(Modifier.height(24.dp))
-        }.copy(visibilityCheck = tapSwipeEnabled)
+        }
     )
+)
+
+/**
+ * Automatic spacing: a sub-menu of the input model, marked as work in progress. The word split is
+ * the only option so far; this is where the auto-spacing exploration will add more.
+ */
+val TapSwipeAutoSpacingMenu = UserSettingsMenu(
+    title = R.string.tapswipe_settings_auto_spacing,
+    navPath = "tapswipeAutoSpacing", registerNavPath = true,
+    settings = listOf(
+        userSettingDecorationOnly {
+            Text(
+                stringResource(R.string.tapswipe_settings_auto_spacing_wip),
+                style = Typography.Small,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+            )
+        },
+        // Sits with the input-interpretation toggles rather than under tuning: it changes what a
+        // word is, which is the same kind of decision as where a tap is taken to have landed.
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_auto_split,
+            subtitle = R.string.tapswipe_settings_auto_split_subtitle,
+            setting = TapSwipeAutoSplitSetting,
+            icon = { Icon(painterResource(R.drawable.scissors), contentDescription = null) }
+        ),
+    )
+)
+
+/**
+ * A toggle that only works while the TapSwipe input model is on. With the input model off, the
+ * toggle is greyed out and its subtitle says why, whatever its stored value. FUTO's own disabled
+ * subtitle shows only while the value is off, so a setting left on would give no reason.
+ */
+private fun inputModelToggle(
+    @StringRes title: Int,
+    @StringRes subtitle: Int,
+    setting: SettingsKey<Boolean>,
+    icon: @Composable () -> Unit
+): UserSetting = UserSetting(
+    name = title,
+    subtitle = subtitle,
+    component = {
+        val off = !useDataStoreValue(TapSwipeModeSetting)
+        SettingToggleDataStore(
+            title = stringResource(title),
+            setting = setting,
+            subtitle = stringResource(
+                if (off) R.string.tapswipe_settings_needs_input_model else subtitle),
+            disabled = off,
+            icon = icon
+        )
+    }
 )
