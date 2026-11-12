@@ -46,7 +46,22 @@ object TapSwipeTimingOrder {
         val startKeys: Set<Char> = emptySet(),
         /** Keys near a swipe's end. Empty means any key. */
         val endKeys: Set<Char> = emptySet(),
+        /** A swipe's points (normalized layout space) and their session times; null for a tap. */
+        val xs: FloatArray? = null,
+        val ys: FloatArray? = null,
+        val ts: FloatArray? = null,
     )
+
+    /** Key centres in the same normalized space as stroke points, and the key size there. */
+    class Geometry(val center: (Char) -> FloatArray?, val keyW: Float, val keyH: Float)
+
+    /** Mean distance in keys past which a swipe's path does not fit a run of letters. */
+    const val MAX_FIT_KEYS = 1.2f
+
+    private val MISFIT: List<FloatArray> = emptyList()
+
+    /** A tap's moment is its touch. Holding it longer does not move it later. */
+    const val TAP_SPAN_MS = 0f
 
     /** Overlap allowed before an order counts as reversed: thumbs moving together. */
     const val TOLERANCE_MS = 50f
@@ -69,7 +84,7 @@ object TapSwipeTimingOrder {
      * attribution fits (a tapped key the word does not contain) or the word is too long to search.
      */
     @JvmStatic
-    fun inversionMs(word: String, strokes: List<Timing>): Float? {
+    fun inversionMs(word: String, strokes: List<Timing>, geo: Geometry? = null): Float? {
         val letters = word.lowercase().toList()
         if (letters.isEmpty() || letters.size > MAX_LETTERS || strokes.isEmpty() || strokes.size > MAX_STROKES) {
             return null
@@ -84,9 +99,9 @@ object TapSwipeTimingOrder {
             if ((left.isEmpty() && lIdx.isNotEmpty()) || (right.isEmpty() && rIdx.isNotEmpty())) continue
             if (left.isNotEmpty() && lIdx.isEmpty()) continue
             if (right.isNotEmpty() && rIdx.isEmpty()) continue
-            val lWins = splits(left, lIdx.map { letters[it] })
+            val lWins = splits(left, lIdx.map { letters[it] }, geo)
             if (lWins.isEmpty()) continue
-            val rWins = splits(right, rIdx.map { letters[it] })
+            val rWins = splits(right, rIdx.map { letters[it] }, geo)
             if (rWins.isEmpty()) continue
             for (lw in lWins) for (rw in rWins) {
                 val windows = arrayOfNulls<FloatArray>(letters.size)
@@ -105,7 +120,7 @@ object TapSwipeTimingOrder {
     }
 
     /** Every way to split a stream's letters across its strokes, as per-letter [start, end] windows. */
-    private fun splits(strokes: List<Timing>, letters: List<Char>): List<List<FloatArray>> {
+    private fun splits(strokes: List<Timing>, letters: List<Char>, geo: Geometry?): List<List<FloatArray>> {
         val out = ArrayList<List<FloatArray>>()
         fun go(s: Int, l: Int, acc: List<FloatArray>) {
             if (out.size >= 256) return
@@ -118,7 +133,7 @@ object TapSwipeTimingOrder {
                 val matches = l < letters.size && (
                     (st.codePoint > 0 && letters[l] == Character.toLowerCase(st.codePoint).toChar()) ||
                     (st.codePoint <= 0 && (st.startKeys.isEmpty() || letters[l] in st.startKeys)))
-                if (matches) go(s + 1, l + 1, acc + floatArrayOf(st.t0, st.t1))
+                if (matches) go(s + 1, l + 1, acc + floatArrayOf(st.t0, minOf(st.t1, st.t0 + TAP_SPAN_MS)))
                 return
             }
             // A swipe's first letter is near where it started, its last near where it ended. Without
@@ -126,7 +141,9 @@ object TapSwipeTimingOrder {
             if (l < letters.size && st.startKeys.isNotEmpty() && letters[l] !in st.startKeys) return
             for (k in 1..(letters.size - l)) {
                 if (st.endKeys.isNotEmpty() && letters[l + k - 1] !in st.endKeys) continue
-                val run = (0 until k).map { j ->
+                val fitted = pathWindows(st, letters.subList(l, l + k), geo)
+                if (fitted === MISFIT) continue
+                val run = fitted ?: (0 until k).map { j ->
                     when {
                         k == 1 -> floatArrayOf(st.t0, st.t1)
                         j == 0 -> floatArrayOf(st.t0, st.t0)
@@ -143,17 +160,80 @@ object TapSwipeTimingOrder {
     }
 
     /**
+     * Per-letter windows for a swipe's run of letters, read from its timed path: the touch for the
+     * first letter; the moment the path passed closest to each middle letter; the arrival near the
+     * last letter, through the lift. Null when the path or the key positions are unknown.
+     *
+     * Reported 2026-11-11 by the user: "from" is one thumb dragging F to O to M while the other taps R
+     * on the way to O. Only the path's own timing says the R came before the O.
+     */
+    private fun pathWindows(st: Timing, run: List<Char>, geo: Geometry?): List<FloatArray>? {
+        val xs = st.xs ?: return null
+        val ys = st.ys ?: return null
+        val ts = st.ts ?: return null
+        if (geo == null || run.size < 2 || xs.size < 2 || xs.size != ys.size || xs.size != ts.size) return null
+        val centers = run.map { geo.center(it) ?: return null }
+        val n = xs.size
+        val m = run.size
+        if (m > n) return null
+        fun dist(i: Int, j: Int): Float {
+            val dx = (xs[i] - centers[j][0]) / geo.keyW
+            val dy = (ys[i] - centers[j][1]) / geo.keyH
+            return kotlin.math.sqrt(dx * dx + dy * dy)
+        }
+        // Monotonic warping of points onto letters: point 0 to the first letter, the last to the last.
+        val inf = Float.MAX_VALUE
+        val cost = Array(n) { FloatArray(m) { inf } }
+        val back = Array(n) { IntArray(m) { -1 } }
+        cost[0][0] = dist(0, 0)
+        for (i in 1 until n) for (j in 0 until m) {
+            val stay = cost[i - 1][j]
+            val move = if (j > 0) cost[i - 1][j - 1] else inf
+            val (best, from) = if (stay <= move) stay to j else move to (j - 1)
+            if (best < inf) {
+                cost[i][j] = best + dist(i, j)
+                back[i][j] = from
+            }
+        }
+        if (cost[n - 1][m - 1] == inf) return null
+        // The path must actually pass these letters. A run the path never went near is not a
+        // reading of this stroke, so the attribution is impossible, not merely late.
+        if (cost[n - 1][m - 1] / n > MAX_FIT_KEYS) return MISFIT
+        val lo = IntArray(m) { n }
+        val hi = IntArray(m) { -1 }
+        var j = m - 1
+        for (i in n - 1 downTo 0) {
+            if (i < lo[j]) lo[j] = i
+            if (i > hi[j]) hi[j] = i
+            if (i > 0) j = back[i][j]
+        }
+        return (0 until m).map { k ->
+            when (k) {
+                0 -> floatArrayOf(st.t0, st.t0)
+                else -> {
+                    // The moment the path came closest to this letter's key. For the last letter the
+                    // finger may dwell there until the lift.
+                    var near = lo[k]
+                    for (i in lo[k]..hi[k]) if (dist(i, k) < dist(near, k)) near = i
+                    floatArrayOf(ts[near], if (k == m - 1) st.t1 else ts[near])
+                }
+            }
+        }
+    }
+
+    /**
      * Re-ranks decoder results by score minus the timing penalty. Unchanged when no stroke is in the
      * right stream, or when no candidate can be attributed.
      *
      * @return the indexes of [words] in their new order, and the penalty applied to each
      */
     @JvmStatic
-    fun rerank(words: List<String>, scores: List<Float>, strokes: List<Timing>): Pair<List<Int>, List<Float>> {
+    fun rerank(words: List<String>, scores: List<Float>, strokes: List<Timing>,
+               geo: Geometry? = null): Pair<List<Int>, List<Float>> {
         val penalties = MutableList(words.size) { 0f }
         if (strokes.none { it.right } || words.size < 2) return words.indices.toList() to penalties
         for (i in words.indices) {
-            val inv = inversionMs(words[i], strokes) ?: continue
+            val inv = inversionMs(words[i], strokes, geo) ?: continue
             penalties[i] = inv * PENALTY_PER_MS
         }
         val order = words.indices.sortedByDescending { scores[it] - penalties[it] }

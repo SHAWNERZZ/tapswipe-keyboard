@@ -563,3 +563,26 @@ it. Same-finger "form" (R tapped after the swipe ended) still reads
 Also found: TapSwipe decodes passed the word being typed to the language
 model as the previous word (117 of 180 decodes). Fixed by
 `TapSwipeContext.dropComposing`.
+
+
+### Letter times from the swipe path, 2026-11-12
+
+The user described their two techniques. "form": one thumb touches F,
+the other touches O; the F thumb slides to R and lifts while the O thumb
+slides to M. "from": one thumb drags F to O to M; the other taps R on the
+way to O. The first version could not tell these apart: it treated a
+swipe's middle letters as "any time during the swipe", and its last
+letter as up to 150 ms before the lift.
+
+Now each letter's moment comes from the timed path: the touch for a
+swipe's first letter and for a tap; the moment the path came closest to
+the key for middle letters; closest approach through the lift for the
+last letter. An attribution whose letters the path never came near
+(mean distance over 1.2 keys) is impossible, not late.
+
+Simulated techniques, 5 each with natural scatter: "form" read "form" 4
+times (the fifth landed nothing as the session's first word, a known
+simulator start-up artifact); "from" read "from" 5 times. On the user's
+recordings, the re-rank changed one word, a "from" the decoder read as
+"form", and broke none. The user's recorded two-thumb "form" attempts
+still read "form".

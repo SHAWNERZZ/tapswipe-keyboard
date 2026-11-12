@@ -566,6 +566,15 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             return out
         }
 
+        /** Key centres and size for the soft order across streams, or null before a layout applies. */
+        @JvmStatic
+        fun timingGeometry(): org.futo.inputmethod.latin.tapswipe.TapSwipeTimingOrder.Geometry? {
+            val half = normalizedKeyHalfExtent() ?: return null
+            if (half[0] <= 0f || half[1] <= 0f) return null
+            return org.futo.inputmethod.latin.tapswipe.TapSwipeTimingOrder.Geometry(
+                { c -> normalizedKeyPosition(c.code) }, half[0] * 2f, half[1] * 2f)
+        }
+
         /** Letter key width in normalized space, or 0 when no layout is applied. */
         @JvmStatic
         fun normalizedKeyWidth(): Float = normalizedKeyHalfExtent()?.let { it[0] * 2f } ?: 0f
@@ -1061,7 +1070,7 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         // timing breaks the tie it cannot see. See TapSwipeTimingOrder.
         val (order, penalties) = if (useHighBeam && results.size > 1) {
             org.futo.inputmethod.latin.tapswipe.TapSwipeTimingOrder.rerank(
-                results.map { it.word }, results.map { it.score }, input.timings)
+                results.map { it.word }, results.map { it.score }, input.timings, timingGeometry())
         } else {
             results.indices.toList() to List(results.size) { 0f }
         }

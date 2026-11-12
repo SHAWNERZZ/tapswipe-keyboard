@@ -104,3 +104,53 @@ class TapSwipeTimingOverlapTest {
         assertEquals(0f, TapSwipeTimingOrder.inversionMs("house", strokes)!!, 0.01f)
     }
 }
+
+/** The user's two techniques, 2026-11-12, on a grid of 1-unit keys. */
+class TapSwipePathTimingTest {
+    private val pos = HashMap<Char, FloatArray>().apply {
+        "qwertyuiop".forEachIndexed { i, c -> put(c, floatArrayOf(i.toFloat(), 0f)) }
+        "asdfghjkl".forEachIndexed { i, c -> put(c, floatArrayOf(i + 0.5f, 1f)) }
+        "zxcvbnm".forEachIndexed { i, c -> put(c, floatArrayOf(i + 1.5f, 2f)) }
+    }
+    private val geo = TapSwipeTimingOrder.Geometry({ pos[it] }, 1f, 1f)
+
+    /** A swipe through the given keys, at even speed, from t0 to t1, sampled every 10 ms. */
+    private fun swipe(keys: String, t0: Float, t1: Float, right: Boolean): Timing {
+        val pts = keys.map { pos[it]!! }
+        val n = ((t1 - t0) / 10f).toInt() + 1
+        val xs = FloatArray(n); val ys = FloatArray(n); val ts = FloatArray(n)
+        val legs = pts.size - 1
+        for (i in 0 until n) {
+            val u = i.toFloat() / (n - 1) * legs
+            val leg = minOf(u.toInt(), legs - 1)
+            val f = u - leg
+            xs[i] = pts[leg][0] + f * (pts[leg + 1][0] - pts[leg][0])
+            ys[i] = pts[leg][1] + f * (pts[leg + 1][1] - pts[leg][1])
+            ts[i] = t0 + i * 10f
+        }
+        // As the app does: letters within about one key of where the swipe started and ended.
+        fun near(x: Float, y: Float) = pos.filter { (_, p) ->
+            kotlin.math.hypot((p[0] - x).toDouble(), (p[1] - y).toDouble()) <= 1.0 }.keys
+        return Timing(false, 0, right, t0, t1, startKeys = near(xs.first(), ys.first()),
+            endKeys = near(xs.last(), ys.last()), xs = xs, ys = ys, ts = ts)
+    }
+
+    @Test
+    fun `form - F thumb slides to R and lifts after the other thumb touched O`() {
+        // Left: F to R, 0..300 ms. Right: touches O at 120 ms, slides to M by 450 ms.
+        val strokes = listOf(swipe("fr", 0f, 300f, false), swipe("om", 120f, 450f, true))
+        assertEquals(0f, TapSwipeTimingOrder.inversionMs("form", strokes, geo)!!, 0.01f)
+        assertTrue(TapSwipeTimingOrder.inversionMs("from", strokes, geo)!! > 50f)
+    }
+
+    @Test
+    fun `from - one thumb drags F to O to M, the other taps R on the way to O`() {
+        // Right: F to O to M, 0..600 ms, passing O at 300. Left: taps R at 150 ms.
+        val strokes = listOf(
+            Timing(true, 'r'.code, false, 150f, 230f),
+            swipe("fom", 0f, 600f, true),
+        )
+        assertEquals(0f, TapSwipeTimingOrder.inversionMs("from", strokes, geo)!!, 0.01f)
+        assertTrue(TapSwipeTimingOrder.inversionMs("form", strokes, geo)!! > 50f)
+    }
+}

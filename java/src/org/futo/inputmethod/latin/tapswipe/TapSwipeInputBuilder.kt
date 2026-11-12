@@ -97,7 +97,8 @@ object TapSwipeInputBuilder {
                     // segment. It is a tap on one of the keys under it.
                     TapSwipeTimingOrder.Timing(true, 0, right, t0, t1, startKeys = start)
                 } else {
-                    TapSwipeTimingOrder.Timing(false, 0, right, t0, t1, startKeys = start, endKeys = end)
+                    TapSwipeTimingOrder.Timing(false, 0, right, t0, t1, startKeys = start, endKeys = end,
+                        xs = s.x, ys = s.y, ts = s.t)
                 }
             }
         }
