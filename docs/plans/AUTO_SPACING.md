@@ -206,7 +206,149 @@ In the "Auto spacing (work in progress)" sub-menu. All off by default.
 5. Punctuation rules.
 6. Phone test, then tune delays from a new recording.
 
-## Open questions for the user
+## The user's answers, 2026-11-12
+
+1. A word made only of taps gets no auto space. The exception is a short
+   tapped word next to a swiped word: the split below decides that case.
+2. Short words (one to three letters) are often tapped. Anything longer
+   should hold a swipe. So a tap run at either end of a word is the
+   place to look for a second word.
+3. Normal spacing does not change. No new space after punctuation. The
+   work is only to put spaces between words.
+4. Yes to a countdown: a progress bar on the space bar that shrinks.
+
+## Redesign: decide once, at the pause
+
+This replaces layers 1 and 3 above. Layer 2 (rejoin) waits until the
+redesign has been measured.
+
+### What changes
+
+Today the split judge runs after every stroke, while the word is still
+being typed, and commits the head word at once. Most defects in
+`WORD_SPLIT.md` came from that: a decode that described fewer strokes
+than the session held, readings that outlived their word, a split that
+raced a typing query, and the `WAIT` state for a boundary that moved.
+
+The redesign makes one decision, at the moment the word is over:
+
+- The 300 ms pause timer fires (only for a word that holds a swipe), or
+- the user presses a finalizer (space, punctuation, Enter).
+
+At that moment every stroke is known and every finger is up. Nothing has
+been committed yet. The judge picks the best reading of the whole
+stroke list, then the keyboard writes one, two or three words.
+
+### The readings
+
+For a word with tap runs at its ends, build these readings. `T` is a
+tapped letter, `S` is a swipe, and `L` is the tap run length limit (3).
+
+| Reading | Example strokes | Text |
+|---|---|---|
+| One word | `S T` | decode of all strokes: `cats` |
+| Trailing taps are a word | `S T` | decode of `S` alone, then the taps as typed: `hello I` |
+| Leading taps are a word | `T S` | the taps as typed, then decode of `S` alone: `I think` |
+| Both ends | `T S T` | `a` + decode of `S` + `I` (rare, allowed) |
+
+- A tap run may give only part of itself to the next word. For `S T T T`
+  try every cut: `this` + `is` and `to` + `sis` are both readings. This
+  is the `to sis` lesson from `WORD_SPLIT.md`.
+- A tapped side must be a short standalone word. The dictionary holds
+  every single letter, so one-letter words come from a short list (`a`,
+  `I`, and the user's own). Two and three letters need a dictionary
+  word of real frequency. Kinetica found the same and uses a list.
+- The swiped side is decoded without the split-off taps. A tap must
+  never re-read the swipe (the `ava` + `i` = `acai` lesson). The
+  decodes can start at the last lift, while the timer runs, so they are
+  ready when it fires.
+
+### The score
+
+Each reading gets a score from the evidence the decoder already uses:
+
+- **Shape fit.** The decoder's score for each swiped part.
+- **Language fit.** How likely the words are in this context. The swipe
+  decoder's context model scores each candidate given the words before
+  it. For a split reading, the second word is scored with the first word
+  added to the context. The n-gram dictionaries give a second opinion.
+- **Typing evidence.** The pause between the swipe and the tap run. A
+  long pause leans toward two words. Used only to break a near tie.
+
+Pick the best reading. On a near tie, keep one word and offer the split
+reading in the suggestion strip. A wrong join is cheaper to fix than a
+wrong split, and it matches today's behavior.
+
+### Then the space
+
+- One word with a swipe: commit, write the space, show the countdown on
+  the next word as usual.
+- A split: commit each word with a space between. After the last word,
+  the normal rule applies: a space if it holds a swipe. If the last word
+  is a tapped short word (`hello I`), the space follows too, because the
+  timer fired on the whole stroke list.
+- The space written by the timer is marked as the keyboard's own.
+  Backspace right after it removes the space and reopens the word with
+  all its strokes, as one undo step.
+
+### The seam
+
+- **Evidence:** the stroke list and the finger state.
+- **Derived result:** the readings, the verdict, the committed text.
+- **Invariant:** the verdict describes exactly the stroke list of the
+  session generation it was computed for.
+- **The window:** a new touch-down after the readings start. The
+  touch-down cancels the timer and bumps the generation, so any reading
+  in flight is dropped. No text is committed before the verdict, so
+  there is nothing to undo.
+
+## Test plan
+
+Four layers, smallest first. Each later layer needs the one before it to
+pass.
+
+### 1. JVM tests of the judge
+
+A table of cases, each with strokes as text, a small fixed lexicon, and
+the expected words. The judge is a pure function, so these run in
+seconds with no device.
+
+| Group | Cases |
+|---|---|
+| Must join | `cat`+s, `work`+ed, `are`+a = area, `go`+es, `the`+y |
+| Must split, trailing | `hello`+I, `this`+is, `want`+to, `think`+so |
+| Must split, leading | I+`think`, a+`lot`, to+`go`, in+`the` |
+| Ambiguous, join and offer | `away`/a way, `into`/in to, `maybe`/may be |
+| Partial tap runs | `thi`+s,i,s = this is |
+| Never re-read | `ava`+i must not become `acai` |
+
+### 2. Simulator: a split corpus
+
+A new list of short phrases, each typed as one stroke list with no space
+key: a swiped word with tapped short words before or after it. Each
+phrase is typed two ways: as one fast burst (inside-word gaps of about
+50 ms, from the user's data) and with a pause between words.
+
+- **Split recall:** of phrases that are two words, how many come out
+  right.
+- **Join precision:** of single words with a tapped ending, how many stay
+  one word.
+- Run with the setting off and on, and compare with `sim.py compare`.
+
+### 3. Real recordings must not change
+
+Replay the user's recordings with `sim.py replay-words`. Every word in
+them is one word. With the setting on, the first-try count must not
+drop. Any split there is a false split, and each one gets a JVM case.
+
+### 4. A new phone test
+
+Add a typing-test list of short phrases. The user types them with no
+space between the words. The recorder already captures every stroke.
+Replay the recording on each new build. This is the real calibration
+data the score thresholds need.
+
+## Open questions for the user (answered above)
 
 1. Should a word made only of taps get an auto space? Kinetica keeps
    this off by default, because tapped words end early often.
