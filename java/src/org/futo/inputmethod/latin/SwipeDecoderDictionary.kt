@@ -332,7 +332,7 @@ val TapSwipeAutoSpaceSetting =
 
 /** The pause, in milliseconds, after which [TapSwipeAutoSpaceSetting] presses space. */
 val TapSwipeAutoSpaceDelaySetting =
-    SettingsKey(intPreferencesKey("tapswipe_auto_space_delay_ms"), 300)
+    SettingsKey(intPreferencesKey("tapswipe_auto_space_delay_ms"), 250)
 
 /** What one tap of the backspace key removes. See [TapSwipeBackspaceTapSetting]. */
 object BackspaceTap {

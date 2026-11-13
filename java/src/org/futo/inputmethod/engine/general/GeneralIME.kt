@@ -731,6 +731,7 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     }
 
     override fun onMoveDeletePointer(steps: Int) {
+        inputLogic.holdAutoSpace()
         setNeutralSuggestionStrip()
         if (inputLogic.mConnection.hasCursorPosition()) {
             // Authoritative on its own, not just an addition on top of mBackspaceMode: this slide
@@ -764,11 +765,13 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     }
 
     override fun onBackspaceSwipeUp() {
+        inputLogic.holdAutoSpace()
         setNeutralSuggestionStrip()
         inputLogic.deleteWordBeforeCursor()
     }
 
     override fun onUpWithDeletePointerActive() {
+        inputLogic.holdAutoSpace()
         if (inputLogic.mConnection.hasSelection()) {
             val selection: CharSequence? = inputLogic.mConnection.getSelectedText(0)
 

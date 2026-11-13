@@ -1305,6 +1305,7 @@ public final class InputLogic {
      */
     public boolean isTapSwipeAutoSpaceWanted(final SettingsValues settingsValues) {
         if (!isTapSwipeMode()) return false;
+        if (mAutoSpaceHeld) return false;
         if (!DataStoreHelper.getSetting(SwipeDecoderDictionaryKt.getTapSwipeAutoSpaceSetting())) return false;
         if (settingsValues == null || !settingsValues.shouldInsertSpacesAutomatically()) return false;
         return mTapSwipeSession.isOpen() && mTapSwipeSession.getHasSwipe();
@@ -1319,6 +1320,18 @@ public final class InputLogic {
     /** Identifies the word for the auto space timer: the session generation and stroke count. */
     public long tapSwipeAutoSpaceStamp() {
         return ((long) mTapSwipeSession.getGeneration() << 20) | mTapSwipeSession.getStrokes().size();
+    }
+
+    /**
+     * True after a backspace, until the next tap or swipe, or a space the user presses. A backspace
+     * means the user is fixing something, and a space that follows by itself would get in the way.
+     */
+    private boolean mAutoSpaceHeld = false;
+
+    /** Holds the auto space timer off. See {@link #mAutoSpaceHeld}. */
+    public void holdAutoSpace() {
+        mAutoSpaceHeld = true;
+        org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.cancel();
     }
 
     /** When the auto space timer last wrote a space, or 0. See onCodeInput. */
@@ -2171,6 +2184,7 @@ public final class InputLogic {
 
     public void onStartBatchInput(final SettingsValues settingsValues,
             final KeyboardSwitcher keyboardSwitcher) {
+        mAutoSpaceHeld = false;
         mAutoSpaceWrittenAt = 0;
         mWordBeingCorrectedByCursor = null;
         mInputLogicHandler.onStartBatchInput();
@@ -2568,6 +2582,7 @@ public final class InputLogic {
      */
     private void handleNonSeparatorEvent(final Event event, final SettingsValues settingsValues,
             final InputTransaction inputTransaction) {
+        mAutoSpaceHeld = false;
         final int codePoint = event.mCodePoint;
         // TODO: refactor this method to stop flipping isComposingWord around all the time, and
         // make it shorter (possibly cut into several pieces). Also factor
@@ -2721,6 +2736,7 @@ public final class InputLogic {
      * @param inputTransaction The transaction in progress.
      */
     private void handleSeparatorEvent(final Event event, final InputTransaction inputTransaction) {
+        mAutoSpaceHeld = false;
         final int codePoint = event.mCodePoint;
         final SettingsValues settingsValues = inputTransaction.mSettingsValues;
         final boolean wasComposingWord = mWordComposer.isComposingWord();
@@ -2970,6 +2986,7 @@ public final class InputLogic {
             final int currentKeyboardScriptId) {
         mSpaceState = SpaceState.NONE;
         mDeleteCount++;
+        holdAutoSpace();
         // An edited word no longer matches the strokes recorded for it.
         mStockGeometrySession.reset("backspace");
         org.futo.inputmethod.latin.tapswipe.TypingTestEvents.backspace(mWordComposer.getTypedWord(), mTapSwipeSession.getStrokes().size(),

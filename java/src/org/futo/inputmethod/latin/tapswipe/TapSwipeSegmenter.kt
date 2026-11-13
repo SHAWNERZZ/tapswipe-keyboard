@@ -50,10 +50,12 @@ object TapSwipeSegmenter {
     /**
      * In a split, the swiped part must score above this. Below it the decoder found no good word
      * for the swipe on its own, and splitting only trades one bad word for another plus a stray
-     * letter: `a` + `eponymy` (-67) for `appointment` (-110). Correct splits in the split test read
-     * their swipe at 4.6 or more. Set 2026-11-13.
+     * letter: `a` + `eponymy` (-67) for `appointment` (-110). Raised from 0 after the user's phone
+     * test of 2026-11-13: the wrong splits `a bout` (for about) and `be via` (for because) read their
+     * swipe at 1.6 and 3.2, the right ones at 15.2 and 15.5. Correct splits in the split test read
+     * their swipe at 4.6 or more.
      */
-    @JvmField var MIN_SPLIT_SWIPE_SCORE = 0f
+    @JvmField var MIN_SPLIT_SWIPE_SCORE = 4f
 
     /**
      * A split must win by more than this, or the single word stays. Set from the split test on

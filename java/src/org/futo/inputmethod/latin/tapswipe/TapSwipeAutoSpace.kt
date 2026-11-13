@@ -50,10 +50,16 @@ object TapSwipeAutoSpace {
     @Volatile
     var host: Host? = null
 
-    /** Called when the countdown starts, stops, or fires, so the space bar can redraw. */
+    /**
+     * Bumped when the countdown starts, stops, or fires. The countdown bar at the top of the
+     * keyboard watches it, then reads [remainingFraction] on every frame while a countdown runs.
+     */
     @JvmStatic
-    @Volatile
-    var onChange: Runnable? = null
+    val countdownVersion = androidx.compose.runtime.mutableIntStateOf(0)
+
+    private fun changed() {
+        countdownVersion.intValue++
+    }
 
     private val handler = Handler(Looper.getMainLooper())
     private var touchSeq = 0
@@ -85,7 +91,7 @@ object TapSwipeAutoSpace {
         handler.removeCallbacks(fire)
         handler.postAtTime(fire, fireAtMs)
         TypingTestEvents.autoSpace("armed", delayMs.toInt())
-        onChange?.run()
+        changed()
     }
 
     @JvmStatic
@@ -94,7 +100,7 @@ object TapSwipeAutoSpace {
         handler.removeCallbacks(fire)
         fireAtMs = 0L
         TypingTestEvents.autoSpace("cancelled", 0)
-        onChange?.run()
+        changed()
     }
 
     /** How much of the countdown is left, from 1 down to 0. 0 when no countdown runs. */
@@ -124,7 +130,7 @@ object TapSwipeAutoSpace {
         val ok = same && h!!.autoSpaceReady()
         TypingTestEvents.autoSpace(if (ok) "fired" else if (same) "not_ready" else "stale", waits)
         waits = 0
-        onChange?.run()
+        changed()
         if (ok) h!!.autoSpaceFire()
     }
 

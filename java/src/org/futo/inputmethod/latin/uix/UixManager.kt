@@ -60,6 +60,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -702,6 +705,7 @@ class UixManager(private val latinIME: LatinIME) {
 
         val actionBarShown = useDataStore(ActionBarDisplayedSetting)
 
+        Box {
         Column {
             // Don't show suggested words when it's not meant to be shown
             val suggestedWordsOrNull = if(shouldShowSuggestionStrip.value) {
@@ -748,6 +752,31 @@ class UixManager(private val latinIME: LatinIME) {
                     loading = latinIME.imeManager.isImeLoading()
                 )
             }
+        }
+        // Drawn over the top edge, so it takes no height: the keyboard does not move when it shows.
+        AutoSpaceCountdownBar(Modifier.align(Alignment.TopCenter))
+        }
+    }
+
+    /**
+     * The auto space countdown: a bar along the top edge of the keyboard that shrinks toward its
+     * middle as the pause runs out. At the top, near the text, so it shows in peripheral vision.
+     * See [org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace].
+     */
+    @Composable
+    private fun AutoSpaceCountdownBar(modifier: Modifier) {
+        val version = org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.countdownVersion.intValue
+        var fraction by remember { mutableFloatStateOf(0f) }
+        LaunchedEffect(version) {
+            while (true) {
+                fraction = org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.remainingFraction()
+                if (fraction <= 0f) break
+                withFrameMillis { }
+            }
+        }
+        if (fraction > 0f) {
+            Box(modifier.fillMaxWidth(fraction).height(3.dp)
+                .background(MaterialTheme.colorScheme.primary))
         }
     }
 
