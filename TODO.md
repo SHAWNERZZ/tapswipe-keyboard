@@ -17,8 +17,9 @@ drop a task. Date each Done entry.
 - **New swipe language model** `chosen_planarian`: wait for a FUTO
   swipe library that has its scoring weights. See `docs/decisions.md`,
   2026-11-12, "Merge FUTO upstream".
-- **Auto spacing exploration** (next large project). Options live in
-  the "Auto spacing (work in progress)" sub-menu.
+- **Auto spacing** (next large project). Proposal in
+  `docs/plans/AUTO_SPACING.md`, waiting on the user's answers to its
+  open questions.
 
 - **Calibration offsets: not shown to help yet.** Held-out check scored
   77 against 80. Rerun with adaptive geometry off on the emulator.

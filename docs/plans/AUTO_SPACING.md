@@ -1,0 +1,216 @@
+# Auto spacing
+
+Exploration, 2026-11-12. A proposal only. Nothing here is built.
+Supersedes nothing yet: `WORD_SPLIT.md` stays the plan for the split
+judge, and becomes one layer of this design.
+
+## The goal
+
+The user should not need the space bar between words. The keyboard
+decides where a word ends, writes the space, and makes a wrong decision
+cheap to undo.
+
+## What the other keyboards do
+
+Read from source on 2026-11-12: Kinetica 2.1.3, LeanType v4.3.2-beta7,
+and the user's LeanType fork (June 2026).
+
+**Neither keyboard finds word boundaries from language in English.**
+Both use time. LeanType's only text splitter is for Thai.
+
+### Kinetica
+
+- A word is a buffer of strokes, taps and swipes mixed.
+- After the last lift, with every finger up, a timer starts. Defaults:
+  300 ms after a swiped word, 300 ms after a tapped word, at least 300 ms
+  after a one-letter word.
+- Any touch-down cancels the timer. A stroke that starts in time joins
+  the word. No scoring is involved.
+- When the timer fires, it re-checks every condition against the editor
+  as it is then. It commits the word and writes a real space, marked as
+  the keyboard's own.
+- A tapped word gets a space only if it is a dictionary word, or a
+  one-letter word on a short list (a, I, ...). Off by default. The code
+  records that 1 in 5 such spaces came too early.
+- **Retract.** A letter tapped within 600 ms after a tapped word's space
+  removes the space, if the joined text is still a dictionary prefix.
+  The earlier word reopens as taps at key centres. A space after a
+  swiped word is never retracted.
+- The keyboard's own space is removed before `. , ! ? ; : ) ] }`. A
+  space the user typed is never removed.
+- No space in email, URL and password fields.
+- Backspace after an auto space deletes it and reopens the word.
+- A band on the suggestion bar shows the time left.
+
+### LeanType (public)
+
+- Uses the AOSP space states, the same machine FUTO has: a space can be
+  owed (`PHANTOM`) and written only when the next character needs it.
+- Owed space after a gesture, after a picked suggestion, before a
+  gesture, and (optional) after punctuation and emoji.
+- Data tables say which characters take a space before, after, or
+  neither. Quote parity decides whether `"` opens or closes.
+- One guard function checks field type, per-app quirks, and URL or email
+  text before any space is written.
+- One backspace reverts the word and its space together.
+
+### LeanType (the user's fork)
+
+- Nintype-style two-thumb typing. Three spacing modes: normal, manual
+  (space bar only), and auto space after a delay (500 ms when chosen).
+- Each tap or swipe restarts the timer. A tap adds 250 ms more.
+- Fragments of one word are joined by merging their touch paths into
+  one gesture. The fork found that joining decoded strings gave wrong
+  words. TapSwipe already decodes all strokes together.
+- Toolbar keys "Join next" and "Force next space" fix single cases.
+- The gesture-end owed space was turned off while the timer runs. The
+  two mechanisms raced and wrote "tech " before a fast tap of "y".
+
+## The user's own pauses
+
+Measured from three typing tests (2026-11-11 and 2026-11-12), 209 words.
+A typing test shows one word at a time, so the pause after the space
+includes reading the next word. Normal writing will be faster.
+
+| Pause | Median | 90th pct | 99th pct |
+|---|---|---|---|
+| Between strokes inside a word, taps only | 50 ms | 150 ms | 392 ms |
+| Between strokes inside a word, with a swipe | 42 ms | 150 ms | 2423 ms |
+| Last lift of a word to the space touch | 246 ms | 872 ms | 1690 ms |
+
+A pure timer splits a word wherever a pause inside it is longer than the
+delay:
+
+| Delay | Pauses inside words that are longer |
+|---|---|
+| 300 ms | 4.6% |
+| 400 ms | 2.9% |
+| 600 ms | 2.1% |
+| 800 ms | 0.8% |
+
+No delay separates the two groups cleanly. Inside-word pauses run long
+when the user hesitates over a long word, which is when a wrong split
+hurts most. So a timer alone is not enough. The design needs a cheap,
+reliable rejoin.
+
+Measure: `python3 tools/typing-sim/pause_stats.py <recordings...>`.
+
+## Proposed design
+
+Three layers. Each one is useful alone, and each later layer fixes the
+errors of the one before.
+
+### Layer 1. A pause ends the word
+
+- Arm a timer when all of these are true: every finger is up, the decode
+  for the current session generation has been applied, and the field
+  allows auto spaces.
+- Start counting at the last lift. Kinetica found this better than
+  counting from when the decode lands.
+- Delays: one for words with a swipe, a longer one for tap-only words,
+  and a floor for one-letter words.
+- **A touch-down cancels the timer.** A lift does not. A second thumb
+  that is still down holds the word open.
+- When the timer fires, check again: same session generation, no finger
+  down, editor still composing our word. Then run the normal finalizer
+  path (commit, learn, reset the session). Write a real space, and mark
+  it as the keyboard's own.
+- Keep the committed word's strokes in the grace record, as a space
+  finalizer already does.
+- Show the time left on the space bar.
+
+### Layer 2. The next stroke can rejoin
+
+This is where TapSwipe can do better than both keyboards. Kinetica
+reloads a word as taps at key centres, and never rejoins after a swipe.
+TapSwipe still holds the real strokes in the grace record.
+
+- A stroke that starts within a short window after the keyboard's own
+  space, with nothing typed since, is a rejoin candidate.
+- Decode the old word's strokes plus the new stroke together. This is
+  the same decode a word gets today.
+- Rejoin when the joined reading is a word (or a live dictionary prefix
+  while strokes may follow) and fits better than the two words apart.
+  Otherwise the new stroke starts the next word.
+- A rejoin removes the space and restores the session from the grace
+  record, then adds the new stroke. `TapSwipeSession.restoreStrokes`
+  exists for this.
+- The losing reading goes in the suggestion strip, so one tap undoes the
+  choice either way.
+
+The judge here is the `WORD_SPLIT.md` judge run backwards: there it asks
+"are these strokes two words", here it asks "are these two words one".
+Both use dictionary lookups and n-gram probability. Build one function
+for both.
+
+### Layer 3. Split before the pause
+
+For fast typing with no pause, the existing split judge
+(`TapSwipeWordSplit`, the "Split tapped words" setting) commits a word
+early when the dictionary is confident. Leave it as is until layers 1
+and 2 work. Then re-measure whether it still earns its place.
+
+### Spaces and punctuation
+
+FUTO already has the AOSP space states. Reuse them.
+
+- Remove the keyboard's own space before `. , ! ? ; : ) ] }`. Never
+  remove a space the user typed.
+- After `. , ! ? ; : ) ] }`, owe a space (`PHANTOM`), so the next word
+  gets one. Kinetica lacks this; LeanType has it as an option.
+- Apostrophes and hyphens stay inside a word. Our apostrophe key already
+  works this way.
+- No auto space in password, email and URL fields, or when the text
+  before the cursor looks like a URL or email.
+- A cursor move by the user cancels any owed space and any armed timer.
+
+### Undo
+
+- Backspace right after the keyboard's own space removes the space and
+  reopens the word with its strokes. The next backspace works on the
+  word as it does today.
+- The suggestion strip after an auto space keeps the word's alternatives
+  for a moment, then turns to next-word predictions. The user's fork
+  found this useful.
+
+## The seam (recurring bug class)
+
+- **Evidence:** the strokes, and which fingers are down.
+- **Derived result:** the armed timer, then the committed word and space.
+- **Invariant:** a timer may only commit the session generation it was
+  armed for, with no finger down at the moment it fires.
+- **The window:** a touch-down on the touch thread while the timer's
+  runnable is already queued on the main thread. The down event must
+  bump a counter that the runnable checks before it commits. The
+  user's fork turned off the gesture-end owed space for the same reason:
+  two mechanisms deciding one boundary will race.
+
+## Settings
+
+In the "Auto spacing (work in progress)" sub-menu. All off by default.
+
+- Auto space after a pause (on or off)
+- Delay after a swiped word (start at 300 ms)
+- Delay after a tapped word (start at 400 ms)
+- Rejoin window (start at 600 ms)
+- Space after punctuation
+- Split tapped words (exists today)
+
+## Build order
+
+1. Simulator support for pauses between words with no space tap.
+2. Layer 1 with the space-bar countdown. JVM tests for the arm and fire
+   rules as pure functions with a named refusal reason.
+3. Undo by backspace.
+4. Layer 2, sharing one judge with `WORD_SPLIT.md`.
+5. Punctuation rules.
+6. Phone test, then tune delays from a new recording.
+
+## Open questions for the user
+
+1. Should a word made only of taps get an auto space? Kinetica keeps
+   this off by default, because tapped words end early often.
+2. Should one-letter words (a, I) get an auto space, and after what
+   delay?
+3. Should the keyboard add a space after `.` and `,`?
+4. Countdown on the space bar: wanted, or a distraction?
