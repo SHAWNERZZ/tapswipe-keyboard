@@ -13,7 +13,7 @@ import sys
 import time
 
 sys.path.insert(0, ".")
-from simlib import finger  # noqa: E402
+from simlib import emulator, finger  # noqa: E402
 from simlib.device import Device  # noqa: E402
 from simlib.runner import Session  # noqa: E402
 
@@ -21,12 +21,18 @@ LABEL = sys.argv[1] if len(sys.argv) > 1 else "check"
 LEAD_INS = ["", "and", "so", "yes today", "i think"]
 TARGETS = ["i'm", "don't", "we'll"]
 
+emulator.ensure()
 dev = Device()
 tally = {}
+first = True
 for target in TARGETS:
     for lead in LEAD_INS:
         for k in range(3):
-            sess = Session(dev, f"apos-{datetime.datetime.now():%H%M%S%f}"[:20], finger.FingerParams())
+            # A new field per try (the lead-in must start an empty field), but the same warm keyboard
+            # process: an app restart leaks emulator memory and reloads the dictionaries.
+            sess = Session(dev, f"apos-{datetime.datetime.now():%H%M%S%f}"[:20], finger.FingerParams(),
+                           fresh=first)
+            first = False
             rng = random.Random(100 * k + len(lead))
             strokes, t = [], 0.0
             for w in lead.split():
@@ -38,8 +44,7 @@ for target in TARGETS:
             strokes += [s, finger.space_tap(rng, sess.layout, sess.params, s.points[-1][0] + 250)]
             sess.new_events()
             sess.player.play(finger.to_script(strokes))
-            time.sleep(1.0)
-            out = sess.new_events()
+            out = sess.settle(commits=len(lead.split()) + 1)
             after = (sess.last_field_text(out) or "").strip()
             got = after.split()[-1] if after.split() else ""
             ok = got.lower() == target

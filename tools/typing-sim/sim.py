@@ -18,6 +18,7 @@ import subprocess
 import sys
 
 from simlib import finger
+from simlib import emulator
 from simlib.device import Device, SDK
 from simlib.report import write as write_report
 from simlib.runner import Session
@@ -419,8 +420,25 @@ def main() -> None:
     p = sub.add_parser("replay-recording")
     p.add_argument("recording", help="a .jsonl recording: a phone typing test, or a run's recording.jsonl")
     p.set_defaults(fn=cmd_replay_recording)
+    p = sub.add_parser("emulator", help="start, stop, restart, or show the emulator and its memory")
+    p.add_argument("action", choices=["start", "stop", "restart", "status"])
+    p.set_defaults(fn=cmd_emulator)
     args = ap.parse_args()
+    # Every command that drives the phone first makes sure the emulator runs, answers, and is under
+    # the memory limit. The emulator leaks host memory; see simlib/emulator.py.
+    if args.cmd in ("setup", "run", "replay-word", "replay-words", "probe-word", "calibrate",
+                    "replay-recording"):
+        emulator.ensure()
     args.fn(args)
+
+
+def cmd_emulator(args) -> None:
+    if args.action in ("stop", "restart"):
+        emulator.stop()
+    if args.action in ("start", "restart"):
+        emulator.ensure()
+    rss = emulator.rss_mb()
+    print("emulator: not running" if rss is None else f"emulator: running, {rss} MB")
 
 
 if __name__ == "__main__":

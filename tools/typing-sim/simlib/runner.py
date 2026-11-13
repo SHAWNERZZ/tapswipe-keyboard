@@ -32,15 +32,21 @@ def landed_words(before: str, after: str) -> list[str]:
 class Session:
     """One target field and its recording."""
 
-    def __init__(self, dev: Device, run_id: str, params: finger.FingerParams):
+    def __init__(self, dev: Device, run_id: str, params: finger.FingerParams, fresh: bool = True):
+        """fresh=True restarts the keyboard process first: the clean state a long run wants.
+
+        A run that ended mid-gesture (for example when a tap opened the emoji panel) left the keyboard
+        believing a finger was still down, and every later touch became a second finger that typed
+        nothing. But each app start leaks 100 to 150 MB in the emulator (see simlib/emulator.py) and
+        costs a cold load of the dictionaries, so scripts that open many fields pass fresh=False and
+        restart only when something went wrong.
+        """
         self.dev = dev
         self.run_id = run_id
         self.params = params
-        # A clean keyboard process for every session. A run that ended mid-gesture (for example when
-        # a tap opened the emoji panel) left the keyboard believing a finger was still down, and
-        # every later touch became a second finger that typed nothing.
-        dev.stop_app()
-        dev.set_ime()  # force-stop, or Android itself, may have switched keyboards
+        if fresh:
+            dev.stop_app()
+            dev.set_ime()  # force-stop, or Android itself, may have switched keyboards
         dev.start_target(run_id)
         self.layout_event = dev.wait_for_layout(run_id)
         self.layout = finger.Layout.from_layout_event(self.layout_event)
@@ -48,7 +54,7 @@ class Session:
             params.swipe_speed = params.swipe_speed_keyw * self.layout.key_w
         # The first touches after the keyboard appears were sometimes lost or misread. Let the
         # keyboard, the decoder, and the language model finish loading first.
-        time.sleep(4.0)  # cold keyboard process: dictionaries and models still loading
+        time.sleep(4.0 if fresh else 1.0)
         _, self.offset = dev.recording_since(run_id, 0)
         self.field_text = ""
         self.player = dev.player()
@@ -71,6 +77,35 @@ class Session:
 
     def close(self) -> None:
         self.player.close()
+
+    def reopen(self) -> None:
+        """A new, empty field in the same keyboard process and the same recording file."""
+        self.dev.start_target(self.run_id)
+        self.layout_event = self.dev.wait_for_layout(self.run_id)
+        self.layout = finger.Layout.from_layout_event(self.layout_event)
+        time.sleep(1.0)
+        self.new_events()
+        self.field_text = ""
+
+    def settle(self, commits: int = 1, quiet_s: float = 0.3, timeout: float = 3.0) -> list[dict]:
+        """Events until the keyboard has committed at least `commits` times and then gone quiet.
+
+        Replaces a fixed sleep. Most words settle in a fraction of the old wait, and a slow decode
+        gets the time it needs.
+        """
+        events: list[dict] = []
+        end = time.time() + timeout
+        last_new = time.time()
+        while time.time() < end:
+            new = self.new_events()
+            if new:
+                events += new
+                last_new = time.time()
+            done = sum(1 for e in events if e.get("type") == "commit") >= commits
+            if done and time.time() - last_new >= quiet_s:
+                break
+            time.sleep(0.05)
+        return events
 
     def new_events(self) -> list[dict]:
         out, self.offset = self.dev.recording_since(self.run_id, self.offset)
