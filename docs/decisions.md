@@ -206,3 +206,38 @@ Simulator results (emulator, the user's settings):
 strings for `chosen_planarian`, then move the submodule to `f5ebe55c`
 and point `ENGLISH_LM_ASSET` at it.
 
+## 2026-11-13. Decide word splits once, when the word ends
+
+**Decision.** The word segmenter (`TapSwipeSegmenter`) judges the whole
+stroke list after each full decode, and the finalizer acts on its
+verdict. The eager split, which committed a word after any stroke, is
+retired. Every reading is scored in one unit: the decoder's score for
+swiped parts, and the context model's score for tapped words.
+
+**Rejected.**
+
+- Keep the eager split and extend it to leading taps. It committed text
+  mid-word, which caused most of the defects in `WORD_SPLIT.md`, and it
+  could not see a word that starts and ends with taps.
+- Dictionary frequencies and word-pair counts. FUTO's main dictionaries
+  hold few pairs, so `we have` could not beat `weave`. The swipe
+  decoder's context model already scores words in context.
+- A pure timer with no segmenter. The user's cases (`I want a`) arrive
+  as one fast stroke list with no pause.
+
+## 2026-11-13. Space after a pause, for words with a swipe only
+
+**Decision.** A timer presses space 300 ms after the last lift, for a
+word that holds a swipe. A touch-down cancels it. A space pressed within
+1.5 s after it does nothing.
+
+**Rejected.**
+
+- An auto space after tap-only words. The user decided against it.
+  Kinetica, which has it, records that 1 in 5 such spaces came early.
+- Counting the pause from when the decode lands. Kinetica measured that
+  counting from the lift works better; the fire step waits for the
+  decode instead.
+- Letting a habitual space press add a second space. Two quick spaces
+  also trigger the double-space period.
+

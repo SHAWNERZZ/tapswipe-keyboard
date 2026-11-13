@@ -491,6 +491,8 @@ is ignored.
 | Swipe up deletes a word      | `TapSwipeBackspaceSwipeUpSetting`  | `tapswipe_backspace_swipe_up`| off     |
 | Show the word's gestures     | `TapSwipeWordTrailsSetting`        | `tapswipe_word_trails`       | off     |
 | Split tapped words           | `TapSwipeAutoSplitSetting`         | `tapswipe_auto_split`        | off     |
+| Space after a pause          | `TapSwipeAutoSpaceSetting`         | `tapswipe_auto_space`        | off     |
+| Pause before the space       | `TapSwipeAutoSpaceDelaySetting`    | `tapswipe_auto_space_delay_ms` | 300   |
 | Nintype gestures, comma pull | `TapSwipeNintypeGesturesSetting`   | `tapswipe_nintype_gestures`  | off     |
 | Apostrophe key (QWERTY)      | `TapSwipeApostropheKeySetting`     | `tapswipe_apostrophe_key`    | off     |
 | Enter key swipes             | `TapSwipeEnterFlicksSetting`       | `tapswipe_enter_flicks`      | off     |

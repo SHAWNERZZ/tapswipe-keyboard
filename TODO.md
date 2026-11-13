@@ -17,9 +17,10 @@ drop a task. Date each Done entry.
 - **New swipe language model** `chosen_planarian`: wait for a FUTO
   swipe library that has its scoring weights. See `docs/decisions.md`,
   2026-11-12, "Merge FUTO upstream".
-- **Auto spacing** (next large project). Proposal in
-  `docs/plans/AUTO_SPACING.md`, waiting on the user's answers to its
-  open questions.
+- **Auto spacing, next steps** (`docs/plans/AUTO_SPACING.md`, "Known
+  gaps"): tapped words after an auto space (waiting on the user), the
+  rejoin layer for pauses inside a word, the losing reading in the
+  suggestion strip. Phone test of the dev APK first.
 
 - **Calibration offsets: not shown to help yet.** Held-out check scored
   77 against 80. Rerun with adaptive geometry off on the emulator.
@@ -58,6 +59,12 @@ drop a task. Date each Done entry.
   models, and `java/assets/futo-swipe` stops showing as modified.
 
 ## Done
+
+- 2026-11-13. Auto spacing: word segmenter (decides at word end, scores
+  every reading with the decoder and context model) and the space after
+  a pause, with a countdown bar. Simulator: emulator memory guard, warm
+  sessions, event waits (split test 15 min to 4 min). Results in
+  `docs/plans/AUTO_SPACING.md`, "Built".
 
 - 2026-11-12. Merged FUTO upstream `7d61ab413` into `dev`. Kept the old
   swipe language model, because the swipe library has no weights for the

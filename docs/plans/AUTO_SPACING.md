@@ -382,6 +382,59 @@ space between the words. The recorder already captures every stroke.
 Replay the recording on each new build. This is the real calibration
 data the score thresholds need.
 
+## Built, 2026-11-13
+
+Commits `4919d2046` (segmenter) and `9ecd54450` (timer). Both settings are
+in the Auto spacing sub-menu and off by default.
+
+### What was built
+
+- `TapSwipeSegmenter` (pure, JVM tested). Tries every cut of the tap runs
+  at both ends into zero, one or two words of up to 3 letters. A swiped
+  part gets the decoder's score, decoded with the tapped words before it
+  as context. A tapped word gets the context model's score for it
+  (`predictNext`, top 400), plus the decoder's length bonus. A common
+  short word not in the top 400 gets a floor score. Costs: 2 per extra
+  word, 5 for a one-letter word in front of a swipe, and a split must win
+  by 2. The swiped part of a split must score above 0.
+- It runs on the decode thread after each full decode. The verdict is
+  stored with its generation and stroke count. The finalizer commits all
+  but the last word, and waits up to 250 ms if the space came first.
+- The eager split (after every stroke) is retired, behind
+  `EAGER_SPLIT = false` in `InputLogic`.
+- `TapSwipeAutoSpace`: the pause timer. Touch-down cancels; the last
+  lift arms it; it fires through the normal space path. A space pressed
+  within 1.5 s after an auto space does nothing. A bar on the space key
+  shrinks as the pause runs out.
+
+### Results (emulator, the user's settings)
+
+| Check | Before | Now |
+|---|---|---|
+| Split test, space key, fast / paused (34) | 19 / 18 | 34 / 34 |
+| Split test, timer only, fast / paused (37) | n/a | 37 / 35 |
+| Long words recording, timer off / on | 34 | 34 / 33 |
+| Common-100 recording, timer off / on | 80 to 81 | 80 / 80 |
+
+Each tuned number came from these runs. The reasoning is in the comments
+on `TIE`, `LEAD_LETTER_COST` and `MIN_SPLIT_SWIPE_SCORE`.
+
+### Known gaps
+
+- **Tapped words after an auto space.** With a pause after the swipe,
+  `this is a` gives `this isa`: the timer ends `this`, then `is`, a
+  pause, and `a` are taps only. Tap-only words get no auto space, and
+  the segmenter needs a swipe. Waiting on the user's decision.
+- **A pause inside a word.** The timer fired inside `celebration` once
+  in 40 long words (`celebre Aaron`). The rejoin layer (layer 2 above)
+  is the planned fix.
+- **`about` typed as tap `a` + swipe `bout`** reads as `a bit`. Real
+  ambiguity; context sometimes settles it.
+- The simulator's finger model misreads `hello` and `there` even as
+  single swipes. Those phrases were swapped in the test list.
+- Not yet: the losing reading in the suggestion strip, and one undo for
+  a whole split.
+
 ## Open questions for the user (answered above)
 
 1. Should a word made only of taps get an auto space? Kinetica keeps
