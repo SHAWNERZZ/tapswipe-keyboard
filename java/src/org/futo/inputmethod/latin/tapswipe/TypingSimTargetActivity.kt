@@ -61,6 +61,17 @@ class TypingSimTargetActivity : Activity() {
         field.requestFocus()
     }
 
+    /**
+     * The simulator sets the field's text here, to give the next typed words a context. Started with
+     * FLAG_ACTIVITY_SINGLE_TOP, so the activity, its recording, and the keyboard stay as they are.
+     */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        val text = intent.getStringExtra("text") ?: return
+        field.setText(text)
+        field.setSelection(field.length())
+    }
+
     /** The keyboard can only be asked for once the window has focus. Earlier requests are dropped. */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)

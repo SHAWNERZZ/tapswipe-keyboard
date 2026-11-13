@@ -19,8 +19,18 @@ class TapSwipeDecodeInput(
     @JvmField val hasSwipe: Boolean,
     @JvmField val generation: Int,
     /** Stroke timing in session order, for the soft order across streams. Empty mid-swipe. */
-    @JvmField val timings: List<TapSwipeTimingOrder.Timing> = emptyList()
+    @JvmField val timings: List<TapSwipeTimingOrder.Timing> = emptyList(),
+    /** The finished strokes in session order, for the word segmenter. Empty mid-swipe. */
+    @JvmField val strokes: List<StrokeSnapshot> = emptyList()
 ) {
+    /** One finished stroke: what the segmenter needs to decode part of the word on its own. */
+    class StrokeSnapshot(
+        @JvmField val isSwipe: Boolean,
+        @JvmField val codePoint: Int,
+        @JvmField val seg: SwipeDecoder.SwipeSeg,
+        @JvmField val right: Boolean
+    )
+
     val isEmpty: Boolean get() = left.isEmpty() && right.isEmpty()
 
     val segmentCount: Int get() = left.size + right.size

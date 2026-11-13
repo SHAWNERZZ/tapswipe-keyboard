@@ -159,6 +159,35 @@ object TypingTestEvents {
     }
 
     @JvmStatic
+    /** The word segmenter's verdict for one stroke list, with every reading it scored. */
+    fun segment(best: String, readings: String, generation: Int, strokes: Int, ms: Float) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("segment")
+            .put("best", best).put("readings", readings).put("gen", generation).put("strokes", strokes)
+            .put("ms", ms))
+    }
+
+    /** A tapped word's language score, raw, for calibrating the segmenter. */
+    @JvmStatic
+    fun tappedWordScore(word: String, context: String, score: Float, lm: Float, found: Boolean) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("tapped_word")
+            .put("word", word).put("context", context).put("score", score).put("lm", lm)
+            .put("found", found))
+    }
+
+    /** The finalizer committed a segmented stroke list as several words. */
+    /** The finalizer waited for the segmenter. */
+    @JvmStatic
+    fun segmentWait(ms: Int, arrived: Boolean) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("segment_wait").put("ms", ms).put("arrived", arrived))
+    }
+
+    @JvmStatic
+    fun segmentCommitted(words: String, strokes: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("segment_commit")
+            .put("words", words).put("strokes", strokes))
+    }
+
+    @JvmStatic
     fun split(head: String, at: Int, strokes: Int) = ifActive {
         TypingTestRecorder.emit(TypingTestRecorder.event("split")
             .put("head", head).put("at", at).put("strokes", strokes))

@@ -80,6 +80,11 @@ class Device:
         # A fresh activity per run, so each run gets its own recording. The keyboard process stays.
         self.sh(f"am start -W --activity-clear-task -n {TARGET} --es id {run_id}")
 
+    def set_field_text(self, run_id: str, text: str) -> None:
+        """Replaces the test field's text, keeping the activity, its recording, and the keyboard."""
+        import shlex
+        self.sh(f"am start -n {TARGET} -f 0x20000000 --es id {run_id} --es text {shlex.quote(text)}")
+
     def stop_app(self) -> None:
         self.sh(f"am force-stop {PKG}")
 

@@ -19,6 +19,7 @@ import org.futo.inputmethod.latin.common.ComposedData
 import org.futo.inputmethod.latin.common.InputPointers
 import org.futo.inputmethod.latin.tapswipe.TapSwipeTouchModel
 import org.futo.inputmethod.latin.tapswipe.TapSwipeDecodeInput
+import org.futo.inputmethod.latin.tapswipe.TapSwipeSegmenter
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.settings.SettingsValues
 import org.futo.inputmethod.latin.settings.SettingsValuesForSuggestion
@@ -40,6 +41,12 @@ private const val ENGLISH_LM_ASSET = "futo-swipe/hungry_jellyfish/context_lm.pte
 private const val ENGLISH_LM_VOCAB_ASSET = "futo-swipe/hungry_jellyfish/vocab.txt"
 private const val ENGLISH_DECODER_ASSET = "futo-swipe/magic_macaw/model_fp32.pte"
 private const val SCORING_ASSET = "futo-swipe/scoring.json"
+
+/** How many next-word predictions a tapped word is looked up in. Not found means not a likely word. */
+private const val TAPPED_WORD_PREDICTIONS = 400
+
+/** How far below the least likely prediction an unexpected common short word scores. */
+private const val UNEXPECTED_TAPPED_WORD = 1f
 
 @Serializable
 data class Input(
@@ -675,6 +682,35 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
          * word commits, only the chosen string survives. Learning is gated on it: a word the beam
          * search barely preferred is not evidence about aim.
          */
+        /**
+         * The word segmenter's verdict for one stroke list. See [segmentationFor].
+         *
+         * [ranges] holds each word's strokes as from, to pairs.
+         */
+        class Segmentation(
+            @JvmField val generation: Int,
+            @JvmField val strokeCount: Int,
+            @JvmField val words: List<String>,
+            @JvmField val ranges: List<IntArray>
+        )
+
+        @Volatile
+        private var lastSegmentation: Segmentation? = null
+
+        /**
+         * The segmenter's verdict for exactly this session generation and stroke count, or null.
+         *
+         * Computed on the decode thread after each full decode, read on the main thread when the word
+         * ends. The two checks are the invariant: a verdict may only be applied to the stroke list it
+         * was computed from. A stroke added since does not bump the generation, so the count is
+         * checked too.
+         */
+        @JvmStatic
+        fun segmentationFor(generation: Int, strokeCount: Int): Segmentation? {
+            val s = lastSegmentation ?: return null
+            return if (s.generation == generation && s.strokeCount == strokeCount) s else null
+        }
+
         @Volatile
         @JvmStatic
         var lastDecodeWord: String = ""
@@ -993,6 +1029,90 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
      * 2026-11-11: 117 of 180 TapSwipe decodes in a typing test. Drop that last token when the cursor
      * is inside a word.
      */
+    /**
+     * Runs [TapSwipeSegmenter] over the finished strokes and stores the verdict for the finalizer.
+     *
+     * A swiped part is decoded on its own, with the tapped words before it as context. A tapped word
+     * is exact text, so it has no shape to fit: it scores as a perfect shape, which leaves the
+     * decoder's length bonus and the context model's view of that word coming next.
+     */
+    private fun segmentWord(
+        input: TapSwipeDecodeInput, context: List<String>, whole: Pair<String, Float>,
+        trieWeights: FloatArray
+    ) {
+        val started = System.nanoTime()
+        val strokes = input.strokes
+        val infos = strokes.map {
+            TapSwipeSegmenter.StrokeInfo(it.isSwipe,
+                if (it.codePoint > 0) Character.toLowerCase(it.codePoint.toChar()) else '?')
+        }
+        if (infos.none { it.isSwipe } || (infos.first().isSwipe && infos.last().isSwipe)) {
+            // Nothing to judge: one word. Recorded, so the finalizer knows not to wait.
+            lastSegmentation = Segmentation(input.generation, strokes.size, listOf(whole.first),
+                listOf(intArrayOf(0, strokes.size)))
+            return
+        }
+        val decoder = getOrInitDecoder()
+        val scoring = decoder.scoring
+        val predictions = HashMap<List<String>, List<SwipeDecoder.Result>>()
+        val scorer = object : TapSwipeSegmenter.Scorer {
+            override fun decode(from: Int, to: Int, context2: List<String>): Pair<String, Float>? {
+                if (from == 0 && to == strokes.size && context2 == context) return whole
+                val part = strokes.subList(from, to)
+                if (part.none { it.isSwipe }) return null
+                val left = part.filter { !it.right }.map { it.seg }.toMutableList()
+                val right = part.filter { it.right }.map { it.seg }.toMutableList()
+                if (left.isEmpty()) { left.addAll(right); right.clear() }
+                decoder.setContext(context2)
+                val r = synchronized(BinaryDictionary.sTrieUsageLock) {
+                    if (appliedTries?.isEmpty() != false) null
+                    // Four candidates, as the normal decode asks for: with one, the search dropped
+                    // `think` and returned `tink` for a clean swipe of `think`.
+                    else decoder.recognize(left.toTypedArray(), right.toTypedArray(), topK = 4,
+                        beamWidth = BeamValues.highBeam, trieWeights = trieWeights)
+                } ?: return null
+                val top = r.maxByOrNull { it.score } ?: return null
+                return top.word to top.score
+            }
+
+            override fun tappedWord(word: String, context2: List<String>): Float? {
+                val w = word.lowercase()
+                if (w.length == 1 && w !in TapSwipeSegmenter.ONE_LETTER_WORDS) return null
+                val list = predictions.getOrPut(ArrayList(context2)) {
+                    decoder.setContext(context2)
+                    decoder.predictNext(TAPPED_WORD_PREDICTIONS)
+                }
+                val hit = list.firstOrNull { it.word.equals(w, ignoreCase = true) }
+                org.futo.inputmethod.latin.tapswipe.TypingTestEvents.tappedWordScore(w,
+                    context2.takeLast(3).joinToString(" "), hit?.score ?: 0f, hit?.lmScore ?: 0f, hit != null)
+                val lm = when {
+                    hit != null -> hit.lmScore
+                    // A common short word the model does not expect here: allowed, but scored below
+                    // every word it does expect.
+                    w in TapSwipeSegmenter.COMMON_SHORT_WORDS || w in TapSwipeSegmenter.ONE_LETTER_WORDS ->
+                        (list.minOfOrNull { it.lmScore } ?: 0f) - UNEXPECTED_TAPPED_WORD
+                    // Not a likely next word and not a common one: not a word that stands alone.
+                    else -> return null
+                }
+                return scoring.alpha * lm + scoring.beta * w.length
+            }
+        }
+        val result = TapSwipeSegmenter.segment(infos, context, scorer)
+        val ms = (System.nanoTime() - started) / 1_000_000f
+        if (result == null) {
+            lastSegmentation = Segmentation(input.generation, strokes.size, listOf(whole.first),
+                listOf(intArrayOf(0, strokes.size)))
+            return
+        }
+        val best = result.best
+        lastSegmentation = Segmentation(input.generation, strokes.size, best.words,
+            best.pieces.map { intArrayOf(it.from, it.to) })
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.segment(best.toString(),
+            result.considered.sortedByDescending { it.score }.take(6).joinToString(" | "),
+            input.generation, strokes.size, ms)
+        if (BuildConfig.DEBUG) Log.d("SwipeDecoderDictionary", "tapswipe SEGMENT ${"%.0f".format(ms)} ms: $best")
+    }
+
     private fun contextWordsBeforeComposing(ngramContext: NgramContext?): List<String> {
         val line = ngramContext?.fullContext?.lineSequence()?.lastOrNull() ?: return emptyList()
         val words = org.futo.inputmethod.latin.tapswipe.TapSwipeContext.words(line).takeLast(10)
@@ -1112,6 +1232,19 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
                 normalizedKeyPosition('l'.code))
         }
         val ranked = order.map { results[it] }
+
+        // Where the words are, when tap runs sit at the ends of the stroke list. Decided here, on the
+        // decode thread, right after the decode of every finished stroke, and read by the finalizer.
+        if (useHighBeam && input.strokes.size >= 2 && ranked.isNotEmpty()
+            && DataStoreHelper.getSetting(TapSwipeAutoSplitSetting)) {
+            val top = order[0]
+            try {
+                segmentWord(input, contextWordsBeforeComposing(ngramContext),
+                    results[top].word to (results[top].score - penalties[top]), trieWeights)
+            } catch (t: Throwable) {
+                Log.e("SwipeDecoderDictionary", "segmentation failed", t)
+            }
+        }
 
         // Only the high-beam pass asks for more than one candidate, and it is the one that runs at
         // the end of a stroke - which is exactly the decode a commit will be based on.

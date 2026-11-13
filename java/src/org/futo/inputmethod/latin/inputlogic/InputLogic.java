@@ -1298,6 +1298,85 @@ public final class InputLogic {
      *           the split cannot act on a different boundary than the one that was judged
      * @return true when the word was split, so the caller must not apply its own candidate
      */
+    /** The retired eager split. See onUpdateTailBatchInputCompleted. */
+    private static final boolean EAGER_SPLIT = false;
+
+    /**
+     * Commits every word but the last of a segmented stroke list, at the finalizer.
+     *
+     * The segmenter ran on the decode thread after the decode of these exact strokes (same
+     * generation, same stroke count), so its verdict describes what is on screen. Each word but the
+     * last is written and committed with a space, the way the old split committed its head. The last
+     * word is left composing, verbatim, with its own strokes, for the caller to commit with the
+     * separator the user typed.
+     *
+     * @return true when the stroke list was committed as several words
+     */
+    private boolean commitTapSwipeSegments(final SettingsValues settingsValues) {
+        if (!isTapSwipeAutoSplitEnabled()) return false;
+        final java.util.List<TapSwipeSession.Stroke> strokes = mTapSwipeSession.getStrokes();
+        final int generation = mTapSwipeSession.getGeneration();
+        SwipeDecoderDictionary.Companion.Segmentation seg =
+                SwipeDecoderDictionary.segmentationFor(generation, strokes.size());
+        if (seg == null && hasEndTapsBesideSwipe(strokes)) {
+            // The space came before the decode of the last stroke, and the segmenter after it,
+            // had finished. Both run on the decode thread and need nothing from this one, so wait
+            // for them, briefly. Without this, a fast space committed the whole stroke list as one
+            // word: `this is` became `Tutsis`.
+            final long start = SystemClock.uptimeMillis();
+            while (seg == null && SystemClock.uptimeMillis() - start < SEGMENT_WAIT_MS) {
+                SystemClock.sleep(5);
+                seg = SwipeDecoderDictionary.segmentationFor(generation, strokes.size());
+            }
+            org.futo.inputmethod.latin.tapswipe.TypingTestEvents.segmentWait(
+                    (int) (SystemClock.uptimeMillis() - start), seg != null);
+        }
+        if (seg == null || seg.words.size() < 2) return false;
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.segmentCommitted(
+                android.text.TextUtils.join(" ", seg.words), strokes.size());
+        if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe SEGMENT commit " + seg.words);
+
+        for (int i = 0; i < seg.words.size(); i++) {
+            final String word = displayFormOfSegment(seg.words.get(i));
+            final int[] range = seg.ranges.get(i);
+            final boolean last = i == seg.words.size() - 1;
+            if (i > 0) {
+                // A new word: its own strokes, and the space owed after the word before it.
+                resetTapSwipeSession("segment");
+                if (settingsValues.mAltSpacesMode != Settings.SPACES_MODE_NONE) {
+                    mSpaceState = SpaceState.PHANTOM;
+                }
+                mTapSwipeSession.restoreStrokes(strokes.subList(range[0], range[1]));
+                mTapSwipeSessionOriginMs = SystemClock.uptimeMillis();
+            }
+            // Verbatim: a stamped autocorrection from a query over the whole stroke list must not
+            // replace any of these words. See isTapSwipeVerbatimWord.
+            mTapSwipeWordFromSplit = true;
+            applyTapSwipeCandidate(settingsValues, word, false, i > 0);
+            if (!last) commitTyped(settingsValues, Constants.STRING_SPACE);
+        }
+        return true;
+    }
+
+    /** The longest the finalizer waits for the segmenter. See commitTapSwipeSegments. */
+    private static final long SEGMENT_WAIT_MS = 250;
+
+    /** Whether the segmenter has anything to judge: a swipe, and a tap at either end. */
+    private static boolean hasEndTapsBesideSwipe(final java.util.List<TapSwipeSession.Stroke> strokes) {
+        if (strokes.size() < 2) return false;
+        boolean anySwipe = false;
+        for (final TapSwipeSession.Stroke s : strokes) {
+            if (s.getKind() == TapSwipeSession.Kind.SWIPE) { anySwipe = true; break; }
+        }
+        return anySwipe && (strokes.get(0).getKind() == TapSwipeSession.Kind.TAP
+                || strokes.get(strokes.size() - 1).getKind() == TapSwipeSession.Kind.TAP);
+    }
+
+    /** A tapped `i` on its own is the pronoun. Everything else keeps its case. */
+    private static String displayFormOfSegment(final String word) {
+        return "i".equals(word) ? "I" : word;
+    }
+
     private boolean performTapSwipeSplit(final SettingsValues settingsValues, final String head,
             final int at, final KeyboardSwitcher keyboardSwitcher) {
         // Checked again here, at the only place that commits. The caller checks it too, so this is
@@ -2608,6 +2687,10 @@ public final class InputLogic {
                     Constants.EVENT_BACKSPACE);
             resetComposingWord(settingsValues, false);
         }
+        // TapSwipe: if the segmenter found several words in this stroke list, commit all but the
+        // last now. The last stays composing and is committed below like any other word.
+        final boolean tapSwipeSegmented = isTapSwipeMode() && mWordComposer.isComposingWord()
+                && commitTapSwipeSegments(settingsValues);
         // isComposingWord() may have changed since we stored wasComposing
         if (mWordComposer.isComposingWord()) {
             // TapSwipe: peck words and swiped words alike are committed exactly as shown - see
@@ -2644,9 +2727,12 @@ public final class InputLogic {
         // primary guard against strokes leaking into the next word.
         if (isTapSwipeMode()) {
             // Learn before discarding: this is the first moment the word is settled, and the last
-            // at which the strokes that produced it still exist.
-            maybeLearnTapSwipeGeometry(settingsValues);
-            captureTapSwipeGraceRecord();
+            // at which the strokes that produced it still exist. Not after a segmented commit: the
+            // learner aligns one word against all its strokes, and these strokes made several.
+            if (!tapSwipeSegmented) {
+                maybeLearnTapSwipeGeometry(settingsValues);
+                captureTapSwipeGraceRecord();
+            }
             resetTapSwipeSession("finalizer: " + StringUtils.newSingleCodePointString(codePoint));
         }
 
@@ -4208,9 +4294,13 @@ public final class InputLogic {
         // because no reading of `are` alone ends in `a`.
         final boolean decodeCoversWholeWord = tapSwipeOn
                 && decodeCoveredStrokes == mTapSwipeSession.getStrokes().size();
-        final boolean splitEligible = tapSwipeOn && tapSwipeContinuation && decodeCoversWholeWord
-                && isTapSwipeAutoSplitEnabled() && mWordComposer.isComposingWord();
-        if (tapSwipeOn && isTapSwipeAutoSplitEnabled() && !splitEligible) {
+        // The eager split below is retired (2026-11-13): the segmenter now decides once, when the
+        // word ends. See commitTapSwipeSegments and docs/plans/AUTO_SPACING.md. Kept behind
+        // EAGER_SPLIT until the new rule has proven itself on the phone.
+        final boolean splitEligible = EAGER_SPLIT && tapSwipeOn && tapSwipeContinuation
+                && decodeCoversWholeWord && isTapSwipeAutoSplitEnabled()
+                && mWordComposer.isComposingWord();
+        if (EAGER_SPLIT && tapSwipeOn && isTapSwipeAutoSplitEnabled() && !splitEligible) {
             // Say why, rather than leaving the previous word's decision standing and looking like
             // this one's. A stale line read as a decision that had been made and cost a diagnosis.
             TapSwipeSplitDebug.note("skipped:"

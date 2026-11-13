@@ -34,7 +34,11 @@ object TapSwipeInputBuilder {
         val right = ArrayList<SwipeDecoder.SwipeSeg>()
         var hasSwipe = session.hasSwipe
 
-        for (s in session.strokes) {
+        // One copy for everything below. Each read of session.strokes is a fresh copy, and the main
+        // thread can add a stroke between two reads, so the streams, the timings, and the
+        // snapshots would describe different stroke lists.
+        val finished = session.strokes
+        for (s in finished) {
             if (s.hand == TapSwipeSession.Hand.RIGHT) right.add(s.toSeg()) else left.add(s.toSeg())
         }
 
@@ -87,7 +91,7 @@ object TapSwipeInputBuilder {
 
         // Timing for the soft order across the two streams. Only for a decode of finished strokes:
         // mid-swipe, the live stroke is not in the session and its letters are still moving.
-        val timings = if (liveSegments != null) emptyList() else session.strokes.map { s ->
+        val timings = if (liveSegments != null) emptyList() else finished.map { s ->
             val right = s.hand == TapSwipeSession.Hand.RIGHT
             if (s.kind == TapSwipeSession.Kind.TAP) {
                 val lift = if (s.t.isNotEmpty()) s.t[0] else 0f
@@ -112,12 +116,18 @@ object TapSwipeInputBuilder {
             }
         }
 
+        val snapshots = if (liveSegments != null) emptyList() else finished.map { s ->
+            TapSwipeDecodeInput.StrokeSnapshot(s.kind == TapSwipeSession.Kind.SWIPE, s.codePoint, s.toSeg(),
+                s.hand == TapSwipeSession.Hand.RIGHT)
+        }
+
         return TapSwipeDecodeInput(
             left.toTypedArray(),
             right.toTypedArray(),
             hasSwipe,
             session.generation,
-            timings
+            timings,
+            snapshots
         )
     }
 }

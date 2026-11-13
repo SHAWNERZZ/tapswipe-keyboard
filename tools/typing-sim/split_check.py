@@ -40,10 +40,11 @@ for line in open(args.list):
     if not line or line.startswith("#"):
         continue
     left, want = [x.strip() for x in line.split("=>")]
+    ctx, _, strokes_text = left.rpartition("|")
     if args.only and args.only not in want:
         continue
-    parts = [(p[0], p[2:]) for p in left.split()]
-    cases.append((group, parts, want))
+    parts = [(p[0], p[2:]) for p in strokes_text.split()]
+    cases.append((group, ctx.strip(), parts, want))
 
 tempos = ["burst", "pause"] if args.tempo == "both" else [args.tempo]
 started = time.time()
@@ -74,14 +75,16 @@ def open_session(fresh: bool) -> Session:
 
 
 sess = open_session(fresh=True)
+run_ids = [sess.run_id]
 since_open = 0
 results = []
 for tempo in tempos:
-    for n, (group, parts, want) in enumerate(cases):
+    for n, (group, ctx, parts, want) in enumerate(cases):
         if since_open >= REOPEN_EVERY:
             sess.close()
             restarted = emulator.ensure()
             sess = open_session(fresh=restarted)
+            run_ids.append(sess.run_id)
             since_open = 0
         since_open += 1
         rng = random.Random(args.seed * 1000 + n)
@@ -98,7 +101,11 @@ for tempo in tempos:
                      else finger.swipe(rng, sess.layout, ch, p, t))
                 strokes.append(s)
         strokes.append(finger.space_tap(rng, sess.layout, p, strokes[-1].points[-1][0] + 300))
-        before = sess.field_text
+        # The case's own context, so earlier cases do not leak into the language model. A trailing
+        # space, so the first stroke starts a new word.
+        before = (ctx + " ") if ctx else ""
+        sess.dev.set_field_text(sess.run_id, before)
+        sess.settle(commits=0, quiet_s=0.3, timeout=1.5)
         sess.new_events()
         sess.player.play(finger.to_script(strokes))
         events = sess.settle()
@@ -106,10 +113,14 @@ for tempo in tempos:
         if after is None:
             after = before
         sess.field_text = after
-        got = (after[len(before):] if after.startswith(before) else after).strip()
+        got = (after[len(before):] if after.lower().startswith(before.lower()) else after).strip()
         ok = got.lower() == want.lower()
-        results.append({"tempo": tempo, "group": group, "want": want, "got": got, "ok": ok})
-        print(f"{tempo:5} {'ok ' if ok else 'BAD'} {want:18} -> {got!r}", flush=True)
+        seg = [e for e in events if e.get("type") in ("segment", "segment_commit")]
+        results.append({"tempo": tempo, "group": group, "want": want, "got": got, "ok": ok,
+                        "segment": seg})
+        last_seg = next((e for e in reversed(seg) if e.get("type") == "segment"), None)
+        why = f"   [{last_seg['readings']}] {last_seg['ms']:.0f} ms" if last_seg and not ok else ""
+        print(f"{tempo:5} {'ok ' if ok else 'BAD'} {want:18} -> {got!r}{why}", flush=True)
 sess.close()
 
 print(f"\n== {args.label}  ({time.time() - started:.0f} s, emulator {emulator.rss_mb()} MB)")
