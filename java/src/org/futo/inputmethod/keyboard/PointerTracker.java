@@ -775,6 +775,9 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
 
     private void onDownEvent(final int x, final int y, final long eventTime,
             final KeyDetector keyDetector) {
+        // Any touch cancels a pending auto space: the word may continue. First, before any filter
+        // below can return early, because a filtered touch is still a finger on the keyboard.
+        org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.onTouchDown();
         setKeyDetectorInner(keyDetector);
         if (DEBUG_EVENT) {
             printTouchEvent("onDownEvent:", x, y, eventTime);
@@ -1281,6 +1284,10 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         }
         onUpEventInternal(x, y, eventTime);
         sPointerTrackerQueue.remove(this);
+        // After the lift was processed, so the stroke it ended is already in the word.
+        if (sPointerTrackerQueue.size() == 0) {
+            org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.onAllFingersUp();
+        }
     }
 
     // Let this pointer tracker know that one of newer-than-this pointer trackers got an up event.
@@ -1467,6 +1474,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     }
 
     private void cancelKeyTracking() {
+        org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.cancel();
         resetKeySelectionByDraggingFinger();
         cancelTrackingForAction();
         setReleasedKeyGraphics(mCurrentKey, true /* withAnimation */);

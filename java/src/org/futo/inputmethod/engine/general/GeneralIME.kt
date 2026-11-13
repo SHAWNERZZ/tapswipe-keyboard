@@ -40,6 +40,7 @@ import org.futo.inputmethod.latin.SuggestionBlacklist
 import org.futo.inputmethod.latin.SwipeDecoderDictionary
 import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import org.futo.inputmethod.latin.tapswipe.NintypeGestures
+import org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace
 import org.futo.inputmethod.latin.WordComposer
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.common.InputPointers
@@ -268,7 +269,24 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
             settings.current
         )
 
+        TapSwipeAutoSpace.cancel()
+        TapSwipeAutoSpace.host = autoSpaceHost
+
         cancelSync()
+    }
+
+    /** The auto space timer's view of input handling. See [TapSwipeAutoSpace]. */
+    private val autoSpaceHost = object : TapSwipeAutoSpace.Host {
+        override fun autoSpaceWanted(): Boolean = inputLogic.isTapSwipeAutoSpaceWanted(settings.current)
+        override fun autoSpaceReady(): Boolean = inputLogic.isTapSwipeWordOnScreen()
+        override fun autoSpaceStamp(): Long = inputLogic.tapSwipeAutoSpaceStamp()
+        override fun autoSpaceFire() {
+            // The same event the space key sends, so every rule for a space applies: the word
+            // segmenter, the finalizer, the owed space, and the shift state after it.
+            onEvent(Event.createSoftwareKeypressEvent(Constants.CODE_SPACE, Event.NOT_A_KEY_CODE,
+                Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false))
+            inputLogic.noteAutoSpaceWritten()
+        }
     }
 
     var dictSyncJob: Job? = null
@@ -296,6 +314,8 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
     }
 
     override fun onFinishInput() {
+        TapSwipeAutoSpace.cancel()
+        if (TapSwipeAutoSpace.host === autoSpaceHost) TapSwipeAutoSpace.host = null
         inputLogic.finishInput()
         dictionaryFacilitator.onFinishInput(context)
         updateSuggestionJob?.cancel()

@@ -616,6 +616,7 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.setOnChange(mAutoSpaceRedraw);
         installPreviewPlacerView();
     }
 
@@ -844,6 +845,7 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
         final int code = key.getCode();
         if (code == Constants.CODE_SPACE && (key.getIconId().equals("space_key") || mLanguageSwipeProgress != 0.0f)) {
             drawLanguageOnSpacebar(key, canvas, paint, kdc.getHintColor());
+            drawAutoSpaceCountdown(key, canvas, paint, kdc.getHintColor());
             // Whether space key needs to show the "..." popup hint for special purposes
             if (key.isLongPressEnabled() && mHasMultipleEnabledIMEsOrSubtypes) {
                 drawKeyPopupHint(key, canvas, paint, params);
@@ -903,6 +905,39 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
 
         return "";
     }
+
+    /**
+     * The auto space countdown: a bar along the bottom of the space key that shrinks to nothing as
+     * the pause runs out. See {@link org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace}. While it
+     * runs, the space key redraws itself on every frame.
+     */
+    private void drawAutoSpaceCountdown(final Key key, final Canvas canvas, final Paint paint,
+            final int color) {
+        final float left = org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.remainingFraction();
+        if (left <= 0f) return;
+        final int width = key.getWidth();
+        final int height = key.getHeight();
+        final float barHeight = Math.max(2f, height * 0.06f);
+        final float barWidth = width * 0.8f * left;
+        final float x0 = (width - barWidth) / 2f;
+        final float y0 = height * 0.88f - barHeight;
+        final int oldColor = paint.getColor();
+        final int oldAlpha = paint.getAlpha();
+        paint.setColor(color);
+        paint.setAlpha(Constants.Color.ALPHA_OPAQUE);
+        canvas.drawRect(x0, y0, x0 + barWidth, y0 + barHeight, paint);
+        paint.setColor(oldColor);
+        paint.setAlpha(oldAlpha);
+        postOnAnimation(() -> invalidateKey(key));
+    }
+
+    /** Redraws the space key when the auto space countdown starts, stops, or fires. */
+    private final Runnable mAutoSpaceRedraw = () -> {
+        final Keyboard keyboard = getKeyboard();
+        if (keyboard == null) return;
+        final Key space = keyboard.getKey(Constants.CODE_SPACE);
+        if (space != null) invalidateKey(space);
+    };
 
     /** True when the spacebar is currently showing a status rather than the language name. */
     private boolean isShowingSpacebarStatus(final Paint paint, final int width) {

@@ -25,6 +25,8 @@ import org.futo.inputmethod.latin.TapSwipeNintypeGesturesSetting
 import org.futo.inputmethod.latin.TapSwipeApostropheKeySetting
 import org.futo.inputmethod.latin.TapSwipeWpmSetting
 import org.futo.inputmethod.latin.TapSwipePeckCadenceSetting
+import org.futo.inputmethod.latin.TapSwipeAutoSpaceSetting
+import org.futo.inputmethod.latin.TapSwipeAutoSpaceDelaySetting
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
 import org.futo.inputmethod.latin.uix.settings.UserSetting
 import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
@@ -260,6 +262,27 @@ val TapSwipeAutoSpacingMenu = UserSettingsMenu(
             setting = TapSwipeAutoSplitSetting,
             icon = { Icon(painterResource(R.drawable.scissors), contentDescription = null) }
         ),
+        userSettingToggleDataStore(
+            title = R.string.tapswipe_settings_auto_space,
+            subtitle = R.string.tapswipe_settings_auto_space_subtitle,
+            setting = TapSwipeAutoSpaceSetting,
+            icon = { Icon(painterResource(R.drawable.scissors), contentDescription = null) }
+        ),
+        UserSetting(
+            name = R.string.tapswipe_settings_auto_space_delay,
+            subtitle = R.string.tapswipe_settings_auto_space_delay_subtitle,
+            visibilityCheck = { useDataStoreValue(TapSwipeAutoSpaceSetting) }
+        ) {
+            SettingSlider(
+                title = stringResource(R.string.tapswipe_settings_auto_space_delay),
+                subtitle = stringResource(R.string.tapswipe_settings_auto_space_delay_subtitle),
+                setting = TapSwipeAutoSpaceDelaySetting,
+                range = 150.0f..800.0f,
+                transform = { (it / 50f).roundToInt() * 50 },
+                indicator = { "$it ms" },
+                steps = 12
+            )
+        },
     )
 )
 

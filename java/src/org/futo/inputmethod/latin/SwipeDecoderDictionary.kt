@@ -322,6 +322,18 @@ val TapSwipeApostropheKeyMigratedSetting =
 val TapSwipeAutoSplitSetting =
     SettingsKey(booleanPreferencesKey("tapswipe_auto_split"), false)
 
+/**
+ * Auto space after a pause: a word that holds a swipe ends when no finger touches the keyboard for
+ * [TapSwipeAutoSpaceDelaySetting] after the last lift. See [org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace].
+ * Off by default. Work in progress.
+ */
+val TapSwipeAutoSpaceSetting =
+    SettingsKey(booleanPreferencesKey("tapswipe_auto_space"), false)
+
+/** The pause, in milliseconds, after which [TapSwipeAutoSpaceSetting] presses space. */
+val TapSwipeAutoSpaceDelaySetting =
+    SettingsKey(intPreferencesKey("tapswipe_auto_space_delay_ms"), 300)
+
 /** What one tap of the backspace key removes. See [TapSwipeBackspaceTapSetting]. */
 object BackspaceTap {
     /** Removes the last gesture of the last word, then whole words for older text. */

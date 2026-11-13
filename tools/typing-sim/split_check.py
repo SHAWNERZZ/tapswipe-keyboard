@@ -30,6 +30,8 @@ ap.add_argument("--tempo", default="both")
 ap.add_argument("--list", default="lists/split-phrases.txt")
 ap.add_argument("--seed", type=int, default=3)
 ap.add_argument("--only", default="", help="run only cases whose expected text contains this")
+ap.add_argument("--auto", action="store_true",
+                help="no space tap at the end: wait for the auto space timer (setting tapswipe_auto_space)")
 args = ap.parse_args()
 
 cases, group = [], ""
@@ -89,18 +91,24 @@ for tempo in tempos:
         since_open += 1
         rng = random.Random(args.seed * 1000 + n)
         p = sess.params
-        # Parts that start a new expected word get the long gap in "pause" tempo.
-        n_words = len(want.split())
-        strokes, t = [], 0.0
+        # In "pause" tempo, the long gap goes only where a new expected word starts, counted in
+        # letters. A part that finishes the word before it (thi + s) gets the short gap.
+        boundaries, acc = set(), 0
+        for w in want.split()[:-1]:
+            acc += len(w.replace("'", ""))
+            boundaries.add(acc)
+        strokes, t, letters_before = [], 0.0, 0
         for i, (kind, letters) in enumerate(parts):
             for j, ch in enumerate(letters if kind == "t" else [letters]):
                 if strokes:
-                    new_word = (i > 0 and j == 0 and n_words > 1)
+                    new_word = letters_before in boundaries
                     t = strokes[-1].points[-1][0] + (450 if tempo == "pause" and new_word else 50)
                 s = (finger.tap(rng, sess.layout, ch, p, t) if kind == "t"
                      else finger.swipe(rng, sess.layout, ch, p, t))
                 strokes.append(s)
-        strokes.append(finger.space_tap(rng, sess.layout, p, strokes[-1].points[-1][0] + 300))
+                letters_before += len(ch)
+        if not args.auto:
+            strokes.append(finger.space_tap(rng, sess.layout, p, strokes[-1].points[-1][0] + 300))
         # The case's own context, so earlier cases do not leak into the language model. A trailing
         # space, so the first stroke starts a new word.
         before = (ctx + " ") if ctx else ""
@@ -108,14 +116,17 @@ for tempo in tempos:
         sess.settle(commits=0, quiet_s=0.3, timeout=1.5)
         sess.new_events()
         sess.player.play(finger.to_script(strokes))
-        events = sess.settle()
+        # With --auto, the timer presses space 300 ms after the last lift. A word of taps alone gets
+        # no space and stays composing, so wait for quiet rather than for a commit.
+        events = sess.settle(commits=0 if args.auto else 1, quiet_s=0.6 if args.auto else 0.3,
+                             timeout=4.0)
         after = sess.last_field_text(events)
         if after is None:
             after = before
         sess.field_text = after
         got = (after[len(before):] if after.lower().startswith(before.lower()) else after).strip()
         ok = got.lower() == want.lower()
-        seg = [e for e in events if e.get("type") in ("segment", "segment_commit")]
+        seg = [e for e in events if e.get("type") in ("segment", "segment_commit", "auto_space")]
         results.append({"tempo": tempo, "group": group, "want": want, "got": got, "ok": ok,
                         "segment": seg})
         last_seg = next((e for e in reversed(seg) if e.get("type") == "segment"), None)

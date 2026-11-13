@@ -330,7 +330,11 @@ mobile devices. [CHAR LIMIT=25] -->
     <string name="tapswipe_settings_apostrophe_key">Apostrophe key</string>
     <string name="tapswipe_settings_apostrophe_key_subtitle">Adds a thin apostrophe key in the gap to the right of L, as on Nintype. QWERTY only. The other keys keep their size.</string>
     <string name="tapswipe_settings_auto_split">Split tapped words automatically</string>
-    <string name="tapswipe_settings_auto_split_subtitle">Tapping a short word next to a swiped one normally folds it into that word. This puts the space in for you instead, so "swipe hello, tap I" gives "hello I". It only acts when the dictionary agrees, and the other reading stays in the suggestion strip.</string>
+    <string name="tapswipe_settings_auto_split_subtitle">Short words tapped before or after a swiped word become words of their own: tap I, swipe want, tap a gives "I want a". Taps that finish the word stay with it: swipe cat, tap s gives "cats". The keyboard decides when the word ends.</string>
+    <string name="tapswipe_settings_auto_space">Space after a pause</string>
+    <string name="tapswipe_settings_auto_space_subtitle">A word with a swipe ends when you stop touching the keyboard for a moment. The keyboard then adds the space. A bar on the space bar shows the time left. Touch again before it runs out to keep adding to the word.</string>
+    <string name="tapswipe_settings_auto_space_delay">Pause before the space</string>
+    <string name="tapswipe_settings_auto_space_delay_subtitle">How long the keyboard waits after your last lift.</string>
     <string name="tapswipe_settings_backspace_swipe_up">Swipe up on backspace</string>
     <string name="tapswipe_settings_backspace_swipe_up_subtitle">Swipe up from the backspace key to delete the last word in one motion. Takes any punctuation with it. Works whether or not swipe-to-delete is on.</string>
 

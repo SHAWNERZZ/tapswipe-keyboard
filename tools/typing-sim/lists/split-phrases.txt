@@ -46,3 +46,7 @@ Go | t:a s:way => away
 He went | t:in s:to => into
 Well | t:may s:be => maybe
 In this | s:are t:a => area
+# --- single swipes: no taps (the timer must still end the word)
+I | s:think => think
+We | s:want => want
+It is | s:time => time

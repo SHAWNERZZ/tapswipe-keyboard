@@ -1298,6 +1298,40 @@ public final class InputLogic {
      *           the split cannot act on a different boundary than the one that was judged
      * @return true when the word was split, so the caller must not apply its own candidate
      */
+    /**
+     * Whether the word being composed should get an auto space when the pause timer fires. See
+     * {@link org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace}. Only words that hold a swipe: a
+     * word of taps alone gets no auto space.
+     */
+    public boolean isTapSwipeAutoSpaceWanted(final SettingsValues settingsValues) {
+        if (!isTapSwipeMode()) return false;
+        if (!DataStoreHelper.getSetting(SwipeDecoderDictionaryKt.getTapSwipeAutoSpaceSetting())) return false;
+        if (settingsValues == null || !settingsValues.shouldInsertSpacesAutomatically()) return false;
+        return mTapSwipeSession.isOpen() && mTapSwipeSession.getHasSwipe();
+    }
+
+    /** Whether the open word has been written to the editor, so a space can follow it. */
+    public boolean isTapSwipeWordOnScreen() {
+        return mTapSwipeSession.isOpen() && mTapSwipeSession.getHasComposed()
+                && mWordComposer.isComposingWord();
+    }
+
+    /** Identifies the word for the auto space timer: the session generation and stroke count. */
+    public long tapSwipeAutoSpaceStamp() {
+        return ((long) mTapSwipeSession.getGeneration() << 20) | mTapSwipeSession.getStrokes().size();
+    }
+
+    /** When the auto space timer last wrote a space, or 0. See onCodeInput. */
+    private long mAutoSpaceWrittenAt = 0;
+
+    /** How long after an auto space a space press is taken as habit and ignored. */
+    private static final long AUTO_SPACE_SWALLOW_MS = 1500;
+
+    /** Called after the auto space timer pressed space. */
+    public void noteAutoSpaceWritten() {
+        mAutoSpaceWrittenAt = SystemClock.uptimeMillis();
+    }
+
     /** The retired eager split. See onUpdateTailBatchInputCompleted. */
     private static final boolean EAGER_SPLIT = false;
 
@@ -2014,6 +2048,20 @@ public final class InputLogic {
             final int currentKeyboardScriptId) {
         mWordBeingCorrectedByCursor = null;
 
+        // A space pressed right after the auto space timer wrote one does nothing. Out of habit the
+        // user will press space anyway, at least at first, and two quick spaces would also turn
+        // into ". " by the double-space shortcut. Only the very next input, and only soon after.
+        final long sinceAutoSpace = SystemClock.uptimeMillis() - mAutoSpaceWrittenAt;
+        final boolean afterAutoSpace = mAutoSpaceWrittenAt > 0;
+        mAutoSpaceWrittenAt = 0;
+        if (afterAutoSpace && sinceAutoSpace < AUTO_SPACE_SWALLOW_MS
+                && event.mCodePoint == Constants.CODE_SPACE && !event.isKeyRepeat()) {
+            org.futo.inputmethod.latin.tapswipe.TypingTestEvents.autoSpace("space_swallowed",
+                    (int) sinceAutoSpace);
+            return new InputTransaction(settingsValues, event, SystemClock.uptimeMillis(),
+                    mSpaceState, getActualCapsMode(settingsValues, keyboardShiftMode));
+        }
+
         if(settingsValues.needsToLookupSuggestions()) {
             synchronized (mLastEvents) {
                 if (mLastEvents.size() >= 8) mLastEvents.removeFirst();
@@ -2123,6 +2171,7 @@ public final class InputLogic {
 
     public void onStartBatchInput(final SettingsValues settingsValues,
             final KeyboardSwitcher keyboardSwitcher) {
+        mAutoSpaceWrittenAt = 0;
         mWordBeingCorrectedByCursor = null;
         mInputLogicHandler.onStartBatchInput();
 
@@ -4026,6 +4075,7 @@ public final class InputLogic {
     // TODO: how is this different from startInput ?!
     private void resetEntireInputState(final int newSelStart, final int newSelEnd,
             final boolean clearSuggestionStrip) {
+        mAutoSpaceWrittenAt = 0;
         final boolean shouldFinishComposition = mWordComposer.isComposingWord();
         resetComposingState(true /* alsoResetLastComposedWord */);
         if (clearSuggestionStrip) {

@@ -175,6 +175,12 @@ object TypingTestEvents {
     }
 
     /** The finalizer committed a segmented stroke list as several words. */
+    /** The auto space timer: armed, cancelled, fired, or stale (fired on a word that changed). */
+    @JvmStatic
+    fun autoSpace(what: String, delayMs: Int) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("auto_space").put("what", what).put("delay", delayMs))
+    }
+
     /** The finalizer waited for the segmenter. */
     @JvmStatic
     fun segmentWait(ms: Int, arrived: Boolean) = ifActive {
