@@ -435,6 +435,67 @@ on `TIE`, `LEAD_LETTER_COST` and `MIN_SPLIT_SWIPE_SCORE`.
 - Not yet: the losing reading in the suggestion strip, and one undo for
   a whole split.
 
+## Modes with auto space (proposal, 2026-11-13)
+
+The user asked for auto space after short tapped words (`is a `), and a
+clear rule for the three modes. Nothing in this section is built.
+
+### The modes today
+
+| Mode | Trigger | What it does |
+|---|---|---|
+| Swipe word | any swipe in the word | Decoded. Auto space after the pause. Segmenter. |
+| Undecided | taps only, fewer than 2 taps or quick taps | Stock typing for that word. |
+| Peck | taps only, median gap between taps 250 ms or more; a lone tap idle 2 s; any password field | Commits the letters as typed, learns the word, shows letters and key borders. |
+| Tap only (`LEGACY_TAP`) | 5 quick taps in a row across words, with no swipe; Master Mode only | Stock FUTO typing: autocorrect, letters shown. A swipe ends it. |
+
+### The conflict
+
+The peck threshold (250 ms between taps) equals the auto space pause
+(250 ms). With auto space after tapped words, a slow speller pauses long
+enough for peck mode, and the space has already been written.
+
+### Proposed rules
+
+1. **Swipe word.** No change.
+2. **Short tapped word.** The timer runs after a word of taps only when
+   the letters so far are a common short word of 1 to 3 letters (`a`,
+   `I`, `is`, `to`, `the`), typed at normal speed (gaps under 250 ms).
+   Longer tap runs, and runs that are not words, never get an auto space.
+3. **Peck.** Raise the peck threshold to 350 ms. A word whose taps come
+   350 ms or more apart is peck: no auto space; it ends with a manual
+   space and is learned. A lone tap stays undecided until a second tap
+   or the 2 s idle.
+4. **Take the space back.** If the timer wrote a space after a tapped
+   word and the next tap arrives within 600 ms, at peck pace (350 ms or
+   more after the previous tap), the space is removed and the word
+   continues in peck mode. This is the user's two-threshold idea: 250 ms
+   gives the space, a slow next tap turns it back into a spelled word.
+5. **Tap only.** Turns all auto space off, for swipe words too, until a
+   swipe ends the mode.
+
+Between 250 and 350 ms is a grey zone. A gap there counts as a word
+boundary after a short word, and as normal typing inside a word.
+
+### Options considered
+
+- **A. Cadence decides (the rules above).** Recommended. Keeps peck mode
+  as it is, with one raised threshold.
+- **B. The Nintype way.** Taps faster than the pause build one word. A
+  tap-only word that is not in the dictionary is learned. No slow peck
+  at all. Simpler, but a slow speller gets a word split into pieces.
+- **C. An explicit peck switch.** For example, hold the first letter.
+  No guessing, but one more thing to learn.
+
+### Open questions
+
+1. Rule 4: is 600 ms after the space the right window, and must the
+   joined letters also start a known word (Kinetica's rule)?
+2. Rule 5: should tap-only mode still need Master Mode? Today it exists
+   only to bring the letters back.
+3. Should a single tapped `a` or `I` get the auto space, or only words of
+   2 to 3 letters?
+
 ## Open questions for the user (answered above)
 
 1. Should a word made only of taps get an auto space? Kinetica keeps
