@@ -254,6 +254,14 @@ tapped letter, `S` is a swipe, and `L` is the tap run length limit (3).
 - A tap run may give only part of itself to the next word. For `S T T T`
   try every cut: `this` + `is` and `to` + `sis` are both readings. This
   is the `to sis` lesson from `WORD_SPLIT.md`.
+- One stroke list can hold several words. The user's examples:
+  `I want a` (tap, swipe, tap) and `a start is` (tap, swipe, two taps).
+  So both ends are judged in one pass, and a tap run may hold two short
+  words (`is a` in `this is a`). The judge tries every cut of each tap
+  run into zero, one or two short words.
+- A fast typist may chain two swiped words with no pause. A cut between
+  two swipes is not part of this design yet. The test list will show if
+  it is needed.
 - A tapped side must be a short standalone word. The dictionary holds
   every single letter, so one-letter words come from a short list (`a`,
   `I`, and the user's own). Two and three letters need a dictionary
@@ -340,6 +348,32 @@ phrase is typed two ways: as one fast burst (inside-word gaps of about
 Replay the user's recordings with `sim.py replay-words`. Every word in
 them is one word. With the setting on, the first-try count must not
 drop. Any split there is a false split, and each one gets a JVM case.
+
+The phrase list is `tools/typing-sim/lists/split-phrases.txt`, run by
+`tools/typing-sim/split_check.py`. It includes the user's cases
+(`I want a`, `a start is`) and tap runs that hold two words.
+
+Baseline, 2026-11-12, build `175609f0c`, the user's settings (34 cases,
+first number fast burst, second with pauses):
+
+| Group | Split off | Split on (today's judge) |
+|---|---|---|
+| Must split, trailing taps (6) | 0, 0 | 5, 5 |
+| Must split, leading taps (6) | 0, 0 | 0, 0 |
+| Must split, both ends (4) | 0, 0 | 0, 0 |
+| Must split, tap run of two words (3) | 0, 0 | 0, 0 |
+| Partial tap run (2) | 0, 0 | 2, 2 |
+| Must join, tapped ending (6) | 5, 6 | 6, 5 |
+| Must join, tapped start (3) | 2, 2 | 2, 2 |
+| Ambiguous, one word expected (4) | 4, 4 | 4, 4 |
+| **Total (34)** | **11, 12** | **19, 18** |
+
+Today's judge handles trailing taps. It never splits leading taps, both
+ends, or a tap run that holds two words. Those are the user's cases.
+Examples: `I want a` became `Intra`, `a start is` became `Asterisk`,
+`this is a` became `This isa`. Two other faults to look at: `hello I`
+became `Help i` (shape), and `a lot` became `A 🅰️` (an emoji replaced
+the swiped word).
 
 ### 4. A new phone test
 

@@ -1,0 +1,45 @@
+# Word split test phrases. One line per case: strokes => expected text.
+# t:xyz taps each letter, s:xyz swipes the letters. A case is typed as one stroke list,
+# with no space key between its parts. Lines starting with # are comments.
+# --- must split, trailing taps
+s:hello t:i => hello I
+s:this t:is => this is
+s:want t:to => want to
+s:think t:so => think so
+s:what t:is => what is
+s:there t:is => there is
+# --- must split, leading taps
+t:i s:think => I think
+t:a s:lot => a lot
+t:to s:go => to go
+t:in s:the => in the
+t:we s:have => we have
+t:my s:friend => my friend
+# --- must split, both ends (the user's cases)
+t:i s:want t:a => I want a
+t:a s:start t:is => a start is
+t:is s:this t:a => is this a
+t:i s:have t:a => I have a
+# --- must split, a tap run holding two words
+s:this t:is t:a => this is a
+s:there t:is t:a => there is a
+t:it t:is s:time => it is time
+# --- partial tap run: the first taps finish the swiped word
+s:thi t:s t:is => this is
+s:wor t:k t:on => work on
+# --- must join, tapped ending
+s:cat t:s => cats
+s:work t:ed => worked
+s:play t:s => plays
+s:the t:y => they
+s:go t:es => goes
+s:want t:s => wants
+# --- must join, tapped start
+t:a s:bout => about
+t:a s:gain => again
+t:be s:fore => before
+# --- ambiguous: one word expected, split reading offered
+t:a s:way => away
+t:in s:to => into
+t:may s:be => maybe
+s:are t:a => area
