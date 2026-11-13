@@ -267,7 +267,9 @@ val TapSwipeModeSetting = SettingsKey(booleanPreferencesKey("tapswipe_mode"), fa
  * deliberately pecked rather than fluently typed. Below it the word is treated as ordinary typing
  * (legacy tap mode) and keeps autocorrect.
  */
-val TapSwipePeckCadenceSetting = SettingsKey(intPreferencesKey("tapswipe_peck_cadence_ms"), 250)
+// 350 since 2026-11-13 (was 250): the auto space pause is 250 ms, and peck has to sit above it, or a
+// short tapped word typed at an easy pace became a peck word and lost its space.
+val TapSwipePeckCadenceSetting = SettingsKey(intPreferencesKey("tapswipe_peck_cadence_ms"), 350)
 
 /**
  * How many quick taps in a row - counted across words, reset by any swipe - before legacy tap mode

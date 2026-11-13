@@ -17,9 +17,6 @@ drop a task. Date each Done entry.
 - **New swipe language model** `chosen_planarian`: wait for a FUTO
   swipe library that has its scoring weights. See `docs/decisions.md`,
   2026-11-12, "Merge FUTO upstream".
-- **Tapped short words and peck mode with auto space.** Proposal in
-  `docs/plans/AUTO_SPACING.md`, "Modes with auto space". Waiting on the
-  user's choice.
 - **Auto spacing, next steps** (`docs/plans/AUTO_SPACING.md`, "Known
   gaps"): tapped words after an auto space (waiting on the user), the
   rejoin layer for pauses inside a word, the losing reading in the
@@ -62,6 +59,11 @@ drop a task. Date each Done entry.
   models, and `java/assets/futo-swipe` stops showing as modified.
 
 ## Done
+
+- 2026-11-13. Modes with auto space: tapped short words get the auto
+  space, peck after pause + 100 ms, swipe ends peck, tap-only mode turns
+  auto space off (no Master Mode needed), Peck mode toolbar action with a
+  pin button, peck threshold 350 ms. `modes_check.py` 8/8.
 
 - 2026-11-13. Phone test feedback: backspace holds the auto space timer,
   250 ms default, countdown bar at the top of the keyboard, stricter

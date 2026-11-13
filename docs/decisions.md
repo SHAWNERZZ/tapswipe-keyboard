@@ -241,3 +241,20 @@ word that holds a swipe. A touch-down cancels it. A space pressed within
 - Letting a habitual space press add a second space. Two quick spaces
   also trigger the double-space period.
 
+## 2026-11-13. Modes with auto space: short tapped words, peck by pause
+
+**Decision.** A word of taps alone gets the auto space when it is a
+common short word. If no space came, the word turns peck 100 ms after the
+pause. Peck threshold 350 ms. A Peck mode toolbar action forces peck for
+one word. Tap-only mode turns auto space off and no longer needs Master
+Mode; it counts quick taps only from a word's fourth letter.
+
+**Rejected.**
+
+- Taking the space back within 600 ms of a slow next tap. The user found
+  600 ms far too long.
+- The Nintype way (no slow peck at all). A slow speller would get a word
+  cut into pieces.
+- Counting every quick tap toward tap-only mode. `it is a` typed with
+  auto space would switch auto space off mid-sentence.
+

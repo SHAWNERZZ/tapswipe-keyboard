@@ -58,15 +58,33 @@ word back to `SWIPE` mode.
 |-------------|-----------------------------------------------|--------------------------------------------------------------|
 | `SWIPE`     | any swipe in the word                         | Decoded verbatim. Autocorrect disabled. Morphing on.         |
 | `UNDECIDED` | swipe-free and below the cadence threshold    | Behaves like stock while classification is pending.          |
-| `PECK`      | swipe-free, slow inter-tap cadence            | Literal commit. Force-learn. Borders visible. Morphing off.  |
-| `LEGACY_TAP`| swipe-free run of quick taps across words     | Stock behavior including autocorrect. Requires Master Mode.  |
+| `PECK`      | swipe-free, slow inter-tap cadence; idle after the auto space pause; the Peck mode action | Literal commit. Force-learn. Borders visible. Morphing off. No auto space. |
+| `LEGACY_TAP`| swipe-free run of quick taps across words     | Stock behavior including autocorrect. No auto space at all.  |
+
+With auto space on (since 2026-11-13), a word of taps alone, measured
+from the last lift:
+
+- Under the pause (250 ms): the next stroke continues the word.
+- At the pause: a common short word (`a`, `I`, `is`, `the`; list in
+  `TapSwipeSegmenter`) gets the auto space and is done.
+- 100 ms later, with no space written: the word latches `PECK`.
+- A swipe at any time makes it a `SWIPE` word, decoded from all its
+  strokes, with auto space again.
+
+The Peck mode toolbar action (`PeckModeAction`, `TapSwipePeckRequest`)
+puts one word in `PECK`. The finalizer clears it. A settings button pins
+it next to voice input.
+
+`LEGACY_TAP` no longer needs Master Mode. It counts quick taps only from
+the fourth letter of a word, so tapped short words in normal TapSwipe
+typing do not switch it on.
 
 The enum lives in
 `java/src/org/futo/inputmethod/latin/tapswipe/TapSwipeUiState.kt`, not in
 a file of its own.
 
 Cadence uses the median inter-tap interval, threshold
-`TapSwipePeckCadenceSetting` (default 250 ms). `LEGACY_TAP` is a run
+`TapSwipePeckCadenceSetting` (default 350 ms since 2026-11-13, was 250). `LEGACY_TAP` is a run
 counted across words (`TapSwipeLegacyTapRunSetting`, default 5) and is
 reset by any swipe.
 

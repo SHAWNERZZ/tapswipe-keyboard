@@ -438,7 +438,21 @@ on `TIE`, `LEAD_LETTER_COST` and `MIN_SPLIT_SWIPE_SCORE`.
 ## Modes with auto space (proposal, 2026-11-13)
 
 The user asked for auto space after short tapped words (`is a `), and a
-clear rule for the three modes. Nothing in this section is built.
+clear rule for the three modes. **Built on 2026-11-13** with the user's
+changes, listed under "Decided" below. The current rules are in
+`TAPSWIPE_ARCHITECTURE.md`, section 4.
+
+### Decided (2026-11-13)
+
+- Option A, plus a Peck mode toolbar action and a button to pin it.
+- Rule 4 replaced: no 600 ms window. After the 250 ms pause, a short word
+  gets its space; if no space came, 100 ms later the word turns peck. A
+  swipe still ends peck mode and the word decodes as a swipe word.
+- Single letters (`a`, `I`) get the auto space.
+- Tap-only mode turns all auto space off, without needing Master Mode.
+
+Checked with `tools/typing-sim/modes_check.py` (8 of 8) and the split
+test with no space key (37 of 37 in both tempos).
 
 ### The modes today
 

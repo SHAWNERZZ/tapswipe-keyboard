@@ -203,8 +203,26 @@ public final class InputLogic {
         final int gen = mTapSwipeSession.getGeneration();
         final int expectedSelStart = mConnection.getExpectedSelectionStart();
         mTapSwipePeckIdleRunnable = () -> fireTapSwipePeckIdleCheck(gen, expectedSelStart);
-        mTapSwipeIdleHandler.postDelayed(mTapSwipePeckIdleRunnable, TAPSWIPE_PECK_IDLE_MS);
+        mTapSwipeIdleHandler.postDelayed(mTapSwipePeckIdleRunnable, tapSwipePeckIdleMs());
     }
+
+    /**
+     * How long a word of taps sits idle before it becomes a peck word. With auto space on, 100 ms
+     * after the auto space pause: at the pause a short word gets its space, and if no space came,
+     * the next 100 ms of stillness says the user is spelling a word out. In tap-only mode, and with
+     * auto space off, the old two seconds: there a pause is just a pause.
+     */
+    private long tapSwipePeckIdleMs() {
+        if (!DataStoreHelper.getSetting(SwipeDecoderDictionaryKt.getTapSwipeAutoSpaceSetting())
+                || isTapSwipeLegacyTapActive()) {
+            return TAPSWIPE_PECK_IDLE_MS;
+        }
+        return DataStoreHelper.getSetting(SwipeDecoderDictionaryKt.getTapSwipeAutoSpaceDelaySetting())
+                + TAPSWIPE_PECK_AFTER_SPACE_MS;
+    }
+
+    /** See {@link #tapSwipePeckIdleMs}. */
+    private static final long TAPSWIPE_PECK_AFTER_SPACE_MS = 100L;
 
     /** Safe to call unconditionally, including when nothing is scheduled. */
     private void cancelTapSwipePeckIdleCheck() {
@@ -317,6 +335,11 @@ public final class InputLogic {
         final long prev = mTapSwipeLastTapMs;
         mTapSwipeLastTapMs = nowMs;
         if (prev < 0) return;
+        // Only taps from the fourth letter of a word on. Short words are tapped in normal TapSwipe
+        // typing (`is a`), and with auto space they come quickly one after another; counting them
+        // would switch tap-only mode on in the middle of a sentence. A longer word typed out letter
+        // by letter is what someone does who is not swiping.
+        if (mWordComposer.size() < 4) return;
         if (nowMs - prev < tapSwipePeckCadenceMs()) {
             mTapSwipeFastTapRun++;
         }
@@ -337,7 +360,9 @@ public final class InputLogic {
      * from ordinary typing. Setting the run to 0 turns it off.
      */
     public boolean isTapSwipeLegacyTapActive() {
-        if (!isTapSwipeMode() || !TapSwipeMasterMode.getEnabled()) return false;
+        // Not tied to Master Mode any more (2026-11-13): tap-only mode also turns auto space off,
+        // which matters whether or not the letters are hidden.
+        if (!isTapSwipeMode()) return false;
         final int run = tapSwipeLegacyTapRun();
         return run > 0 && mTapSwipeFastTapRun >= run;
     }
@@ -367,6 +392,11 @@ public final class InputLogic {
         if (isPasswordField()) return TapSwipeMode.PECK;
 
         if (mTapSwipeSession.getLatchedMode() == TapSwipeMode.PECK) return TapSwipeMode.PECK;
+        // The Peck mode toolbar action: the user asked for peck mode for this word.
+        if (org.futo.inputmethod.latin.tapswipe.TapSwipePeckRequest.getRequested()) {
+            if (mTapSwipeSession.isOpen()) mTapSwipeSession.latchMode(TapSwipeMode.PECK);
+            return TapSwipeMode.PECK;
+        }
 
         // Peck is decided purely on how deliberately the word is being tapped. A word-length gate
         // used to sit here too, but cadence turned out to be the reliable signal on its own, and
@@ -1308,7 +1338,18 @@ public final class InputLogic {
         if (mAutoSpaceHeld) return false;
         if (!DataStoreHelper.getSetting(SwipeDecoderDictionaryKt.getTapSwipeAutoSpaceSetting())) return false;
         if (settingsValues == null || !settingsValues.shouldInsertSpacesAutomatically()) return false;
-        return mTapSwipeSession.isOpen() && mTapSwipeSession.getHasSwipe();
+        // Tap-only mode: the user is typing like on a plain keyboard. No auto space at all.
+        if (isTapSwipeLegacyTapActive()) return false;
+        if (!mTapSwipeSession.isOpen()) return false;
+        if (mTapSwipeSession.getHasSwipe()) return true;
+        // A word of taps only. Peck mode spells a word out: it ends with a space the user presses.
+        if (tapSwipeMode() == TapSwipeMode.PECK) return false;
+        // Otherwise only a common short word gets the space: `is`, `a`, `I`, `the`. A longer run of
+        // taps, or letters that are not a word, wait for more taps or for peck mode.
+        final String typed = mTapSwipeSession.tapTextIn(0, mTapSwipeSession.getStrokes().size())
+                .toLowerCase(java.util.Locale.ROOT);
+        return org.futo.inputmethod.latin.tapswipe.TapSwipeSegmenter.ONE_LETTER_WORDS.contains(typed)
+                || org.futo.inputmethod.latin.tapswipe.TapSwipeSegmenter.COMMON_SHORT_WORDS.contains(typed);
     }
 
     /** Whether the open word has been written to the editor, so a space can follow it. */
@@ -1622,6 +1663,8 @@ public final class InputLogic {
         numCursorUpdatesSinceInputStarted = 0;
         mTapSwipeGraceRecord = null;
         mStockGeometrySession.reset("new field");
+        org.futo.inputmethod.latin.tapswipe.TapSwipePeckRequest.clear();
+        org.futo.inputmethod.latin.tapswipe.TapSwipePeckRequest.setListener(this::refreshTapSwipePeckIndicator);
         mConnection.finishComposingText(); // On screen rotation in case we were composing, finish composition before resetting
         mConnection.onStartInput();
         if (!mWordComposer.getTypedWord().isEmpty()) {
@@ -2791,6 +2834,8 @@ public final class InputLogic {
         // was actually committed above. Clearing unconditionally here is deliberate - it is the
         // primary guard against strokes leaking into the next word.
         if (isTapSwipeMode()) {
+            // A Peck mode request covers one word: this one is now done.
+            org.futo.inputmethod.latin.tapswipe.TapSwipePeckRequest.clear();
             // Learn before discarding: this is the first moment the word is settled, and the last
             // at which the strokes that produced it still exist. Not after a segmented commit: the
             // learner aligns one word against all its strokes, and these strokes made several.

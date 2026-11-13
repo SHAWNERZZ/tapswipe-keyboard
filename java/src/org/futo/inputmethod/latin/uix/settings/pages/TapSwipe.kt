@@ -1,5 +1,15 @@
 package org.futo.inputmethod.latin.uix.settings.pages
 
+import org.futo.inputmethod.latin.uix.settings.SettingItem
+import org.futo.inputmethod.latin.uix.actions.PinnedActions
+import org.futo.inputmethod.latin.uix.actions.ActionCategory
+import org.futo.inputmethod.latin.uix.actions.toActionList
+import org.futo.inputmethod.latin.uix.actions.PeckModeAction
+import org.futo.inputmethod.latin.uix.actions.ActionsSettings
+import org.futo.inputmethod.latin.uix.actions.toActionEditorItems
+import org.futo.inputmethod.latin.uix.actions.toActionMap
+import org.futo.inputmethod.latin.uix.actions.updateSettingsWithNewActions
+import org.futo.inputmethod.latin.uix.DataStoreHelper
 import androidx.annotation.StringRes
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.settings.SettingToggleDataStore
@@ -98,6 +108,22 @@ val TapSwipeMenu = UserSettingsMenu(
                 indicator = { "$it ms" },
                 steps = 9
             )
+        },
+        UserSetting(
+            name = R.string.tapswipe_settings_pin_peck,
+            subtitle = R.string.tapswipe_settings_pin_peck_subtitle,
+            visibilityCheck = tapSwipeEnabled
+        ) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val pinned = useDataStoreValue(PinnedActions).toActionList().contains(PeckModeAction)
+            SettingItem(
+                title = stringResource(R.string.tapswipe_settings_pin_peck),
+                subtitle = stringResource(
+                    if (pinned) R.string.tapswipe_settings_pin_peck_done
+                    else R.string.tapswipe_settings_pin_peck_subtitle),
+                onClick = if (pinned) null else ({ pinPeckModeAction(context) }),
+                icon = { Icon(painterResource(R.drawable.push_pin), contentDescription = null) }
+            ) {}
         },
         userSettingNavigationItem(
             title = R.string.tapswipe_settings_auto_spacing,
@@ -311,3 +337,14 @@ private fun inputModelToggle(
         )
     }
 )
+
+/**
+ * Pins the Peck mode action to the toolbar, next to the actions already pinned (voice input by
+ * default), and takes it out of any other place in the action list.
+ */
+private fun pinPeckModeAction(ctx: android.content.Context) {
+    val map = DataStoreHelper.getSetting(ActionsSettings).toActionEditorItems().toActionMap()
+        .mapValues { (_, list) -> list.filter { it != PeckModeAction } }.toMutableMap()
+    map[ActionCategory.PinnedKey] = (map[ActionCategory.PinnedKey] ?: emptyList()) + PeckModeAction
+    ctx.updateSettingsWithNewActions(map)
+}
