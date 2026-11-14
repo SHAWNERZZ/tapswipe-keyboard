@@ -28,7 +28,18 @@ behind one setting (Settings → TapSwipe), off by default.
 at once; the lexicon resolves the interleaving.
 
 **Only a separator commits.** Lifting a finger never does. Until you hit space, every new stroke
-re-decodes the whole word.
+re-decodes the whole word. (With auto spacing on, a short pause also ends the word; see below.)
+
+**Auto spacing** (optional, work in progress, under TapSwipe settings, *Auto spacing*). Stop touching
+the keyboard for a moment after a word and the space goes in by itself. A thin bar along the top of
+the keyboard shows the time left (250 ms by default, adjustable); touch again before it runs out to
+keep adding to the word. Short words you tap, such as a, I, is and to, get their space too, and short
+tapped words next to a swiped one become words of their own: tap I, swipe want, tap a gives
+"I want a", while swipe cat, tap s still gives "cats". Press space once after an auto space to end
+the sentence with a period. If a pause cut a word in two, the next stroke joins it back when the
+decoder reads it as one word. After any split or join, the other reading sits first in the
+suggestion strip, one tap away. A backspace holds the timer until you type again, and a backspace
+after a space removes the space first, then the word.
 
 **Apostrophe key** — optional, under TapSwipe settings, *Apostrophe key*. QWERTY only. A thin key in the gap right of L;
 redirect a swipe along the right edge to keep "its" and "it's" apart. It claims the margin stock
@@ -51,7 +62,10 @@ a request to go back to coarse deletion.
 **Peck mode.** Tap a word out slowly and it skips autocorrect, commits exactly as typed, and is
 learned so you can swipe it next time — that's how you enter a word the dictionary lacks. Key borders
 mark it, the space bar says so, and it ticks when it engages — it can engage on its own after a
-pause, so it has to announce itself.
+pause, so it has to announce itself. With auto spacing on, a word of taps that is not a short word
+turns into a peck word 100 ms after the auto space pause. An optional **Peck mode** toolbar button
+(crosshair, pinned left of voice input from TapSwipe settings) puts the next word in peck mode on
+demand.
 
 **Nintype gestures** (optional). Swipe straight down from V onto the space bar for a comma, as the
 original did. The comma key then comes off the bottom row and the space bar takes its width — the
@@ -74,7 +88,7 @@ brings them back while you spell something out, and tapping away for a few words
 you swipe again. Action-bar toggle.
 
 **Adaptive key geometry** (opt-in). Learns where your fingers actually land and tells the decoder,
-which takes key positions as a runtime input. Aimed at fast, sloppy swiping — deliberate spelling
+which takes key positions as a runtime input. It learns with or without the TapSwipe input model. Aimed at fast, sloppy swiping — deliberate spelling
 teaches it nothing. Accepted words get their stroke aligned against the letters it produced, so it
 learns mid-word too, where corner-cutting happens. Corrections teach it more: picking a suggestion
 labels a gesture the decoder misread, and backspacing into a word takes back what it taught. Shifts
@@ -82,8 +96,10 @@ are capped, confidence-gated, suppressed on keys you hit inconsistently, and fad
 **Learned key geometry** draws the model over your layout and replays the last word it learned from,
 at the timing you typed it.
 
-Design notes and the full bug history are in [docs/history/](docs/history/); the testing
-approach is in [TAPSWIPE_TESTING.md](TAPSWIPE_TESTING.md).
+**Typing test.** TapSwipe settings, *Typing test*: word lists and three short real-text passages,
+scored with punctuation, with every touch recorded on the phone so problems can be replayed.
+
+Based on FUTO Keyboard 0.1.30 and later upstream changes (November 2026).
 
 ## Licensing
 

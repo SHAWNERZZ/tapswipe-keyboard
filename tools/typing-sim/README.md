@@ -36,7 +36,7 @@ Run these commands from `tools/typing-sim`. The emulator is
 
    ```
    python3 sim.py setup --apk ../../build/outputs/apk/unstable/debug/tapswipe-keyboard-unstable-debug.apk \
-     --settings /Documents/Notes/FUTOKeyboardSettings_2026-11-11_09-14-06.backup
+     --settings /path/to/FUTOKeyboardSettings_YYYY-MM-DD.backup
    ```
 
 4. Run a word list in some styles.

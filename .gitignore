@@ -19,3 +19,12 @@ CLAUDE.local.md
 .claude/worktrees/
 
 atl/
+
+# Development notes and Claude Code project files: kept on the build machine, not published
+# (2026-11-14). The public description is README.md.
+CLAUDE.md
+TODO.md
+TAPSWIPE_ARCHITECTURE.md
+TAPSWIPE_TESTING.md
+docs/
+.claude/
