@@ -13,12 +13,6 @@ drop a task. Date each Done entry.
 
 Ordered by what the user is likely to hit most.
 
-- **Stroke undo after a commit re-decodes to the same word.** `cats`,
-  two taps of backspace (space, then the last stroke), gives `cats`
-  again, and `think` the same. Likely cause: the commit learned the word,
-  and the swipe decoder still favors it after the unlearn. Seen in
-  `edge_check.py`, "second backspace pops last stroke". Check before
-  changing.
 - **A pause inside a word splits it** (auto space). About 1 in 40 long
   words in the user's recordings (`celebration`). Planned fix: the rejoin
   layer in `docs/plans/AUTO_SPACING.md`.
@@ -57,6 +51,11 @@ Smaller and housekeeping:
   `simlib/emulator.py`. A newer emulator build may fix it.
 
 ## Done
+
+- 2026-11-14. Fixed: stroke undo after a commit gave the same word back
+  (`cats` stayed `cats`). The reopened composer was not in batch mode, so
+  the re-decode listed the old text first. Simulator setup now clears the
+  emulator's history dictionary, so runs repeat.
 
 - 2026-11-14. TODO cleaned: removed items finished or made moot by the
   segmenter (eager split bugs, `Ivar`, capitalizing a split `i`, tapped

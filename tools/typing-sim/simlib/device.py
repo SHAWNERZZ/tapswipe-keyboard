@@ -72,6 +72,11 @@ class Device:
                 self.sh(f"mkdir -p {d} && cp {remote_tmp} {APP_DIR}/{dest} && "
                         f"chown -R {uid}:{uid} {APP_DIR}/files && rm {remote_tmp}")
                 done.append(dest)
+        # Start from an empty history dictionary. It holds only what earlier simulator runs typed
+        # (the user's own history is never copied here), and the swipe decoder reads it, so runs
+        # drifted as the emulator learned from its own test typing.
+        self.sh(f"rm -rf {APP_DIR}/files/UserHistoryDictionary.* {APP_DIR}/cache/historyLog.json", check=False)
+        done.append("history cleared")
         # Force-stopping the app makes Android fall back to another keyboard. Select ours again.
         self.set_ime()
         return done

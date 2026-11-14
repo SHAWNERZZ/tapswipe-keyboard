@@ -656,6 +656,12 @@ public final class InputLogic {
 
         final int[] codePoints = StringUtils.toCodePointArray(record.committedWord);
         mWordComposer.setComposingWord(codePoints, mImeHelper.getCodepointCoordinates(codePoints));
+        // The capital the word was committed with becomes the word's shift record, so the
+        // re-decode after the stroke undo keeps it (Suggest capitalizes from that record).
+        if (!TextUtils.isEmpty(record.committedWord)
+                && Character.isUpperCase(record.committedWord.codePointAt(0))) {
+            mWordComposer.setCapitalizedModeAtStartComposingTime(WordComposer.CAPS_MODE_AUTO_SHIFTED);
+        }
         setComposingTextInternal(getTextWithUnderline(record.committedWord), 1);
 
         mTapSwipeSession.restoreStrokes(record.strokes);
@@ -754,6 +760,14 @@ public final class InputLogic {
             // Still a swiped word: re-decode what is left. The result arrives asynchronously and
             // is applied by onUpdateTailBatchInputCompleted, whose generation guard now rejects
             // anything computed before the pop.
+            //
+            // The composer must be in batch mode for that re-decode. A reopened word was put back
+            // with setComposingWord, which is not batch mode, so the request took the typed-letters
+            // path, which lists the composer's text first: the old word ("cats") came back as the
+            // top suggestion and won, whatever the decoder now read ("cat"). Found 2026-11-14.
+            if (!mWordComposer.isBatchMode()) {
+                mWordComposer.setBatchInputWord(mWordComposer.getTypedWord());
+            }
             if (DEBUG_TAPSWIPE) {
                 Log.d(TAG, "tapswipe stroke undo -> re-decoding "
                         + mTapSwipeSession.getStrokes().size() + " stroke(s)");
