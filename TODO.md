@@ -67,6 +67,9 @@ drop a task. Date each Done entry.
 
 ## Done
 
+- 2026-11-13. Split words keep their case ("If not"). Typing test scores
+  end punctuation, and capitals in real-text lists.
+
 - 2026-11-13. Backspace after a space removes the space first, then the
   word. Typing test field stays three lines high.
 
