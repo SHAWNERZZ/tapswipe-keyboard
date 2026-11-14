@@ -5,14 +5,13 @@ drop a task. Date each Done entry.
 
 ## Now
 
-- Next typing test from the user, on the build with both fixes, to
-  measure first-try accuracy against the 90 of 100 baseline. Use
-  `sim.py replay-words` and `sim.py stats` on it.
-- Phone check of the two fixes from 2026-11-11 (late selection report,
-  skipped tail decode). Bug A should be gone: a word built from parts
-  should no longer need a backspace to come out right.
+- Phone use of the current dev APK (auto space, tapped short words, peck
+  by pause, backspace space-first, capitalization fixes). Report what
+  feels off; a typing test with a `text-*` list gives numbers.
 
 ## Next
+
+Ordered by what the user is likely to hit most.
 
 - **Stroke undo after a commit re-decodes to the same word.** `cats`,
   two taps of backspace (space, then the last stroke), gives `cats`
@@ -20,52 +19,49 @@ drop a task. Date each Done entry.
   and the swipe decoder still favors it after the unlearn. Seen in
   `edge_check.py`, "second backspace pops last stroke". Check before
   changing.
-
-- **New swipe language model** `chosen_planarian`: wait for a FUTO
-  swipe library that has its scoring weights. See `docs/decisions.md`,
+- **A pause inside a word splits it** (auto space). About 1 in 40 long
+  words in the user's recordings (`celebration`). Planned fix: the rejoin
+  layer in `docs/plans/AUTO_SPACING.md`.
+- **The losing reading in the suggestion strip** after a split or a
+  join, so one tap fixes a wrong call (`about` read as `a bit`).
+- **Single swipes of short words** are the user's weakest case (75 to
+  77% first try in earlier tests). Ranking errors (`Wang`, `van`, `can`)
+  come from the right thumb landing low. Two candidate fixes, both
+  measured in replay, neither built:
+  - Session offset layer (waiting on the user): a correction from the
+    last 60 taps. `docs/plans/TYPING_SIMULATOR.md`, "Calibrated offsets".
+  - Calibration offsets: held-out check scored 77 against 80, so not
+    shown to help yet. Rerun with adaptive geometry off.
+- **`LAST_STROKE_FLIP`**: the final tap of a swipe-then-tap word can turn
+  a right decode into a wrong one. Needs a design,
+  `docs/plans/TYPING_SIMULATOR.md`, Results.
+- **New swipe language model** `chosen_planarian`: blocked until FUTO
+  ships a swipe library with its scoring weights. `docs/decisions.md`,
   2026-11-12, "Merge FUTO upstream".
-- **Auto spacing, next steps** (`docs/plans/AUTO_SPACING.md`, "Known
-  gaps"): tapped words after an auto space (waiting on the user), the
-  rejoin layer for pauses inside a word, the losing reading in the
-  suggestion strip. Phone test of the dev APK first.
 
-- **Calibration offsets: not shown to help yet.** Held-out check scored
-  77 against 80. Rerun with adaptive geometry off on the emulator.
-- **Session offset layer** (proposed 2026-11-11, waiting on the user).
-  Ranking errors ("Wang", "van", "cold") come from the right thumb
-  landing low, and the amount changes between sessions. A causal
-  correction from the last 60 taps fixed them in replay. Design and
-  numbers: `docs/plans/TYPING_SIMULATOR.md`, "Calibrated offsets".
-- Single swipes of short words are the user's weakest case (77% in the
-  second test).
-- Word split, open items. Full list in `docs/plans/WORD_SPLIT.md`.
-  - Words split with the setting off. Likely fixed on 2026-11-11 (late
-    selection report). Confirm on the phone with the debug panel counts.
-  - Wire n-gram probability through the `Dictionary` base class.
-  - Offer the losing reading in the suggestion strip.
-  - Decode the gesture alone for taps-then-gesture words (`Ivar`).
-  - Decide: capitalize a split `i`, what to learn, undo granularity.
-- `LAST_STROKE_FLIP`: the final tap of a swipe-then-tap word changes a
-  right decode into a wrong one. On some seeds swipe-then-tap is near
-  78%. Decoder input: a tap is resampled like a whole swipe. Needs a
-  design, see `docs/plans/TYPING_SIMULATOR.md`, Results.
-- Bug B (two thumbs read better than sequential strokes) is not
-  supported by synthetic runs or by the user's first recording (86%
-  overlapping vs 92% one at a time). Recheck with more data.
-- Weakest real cases: a single swipe of a short word (75% first try),
-  and words started with a tap. Look at these next.
-- Improve the simulator's two-thumb model: give each thumb the keys on
-  its side.
-- Recheck the swipe/space race in `TAPSWIPE_TESTING.md`. It may share
-  the skipped tail decode cause.
-- `CLAUDE.md` is over 190 lines. The shared rule says under 100. Propose
+Smaller and housekeeping:
+
+- Wire n-gram probability through the `Dictionary` base class (a second
+  opinion for the segmenter; the context model already scores pairs).
+- Two-thumb overlap: the user's first recording read 86% overlapping vs
+  92% one at a time. Recheck with more data. Improve the simulator's
+  two-thumb model (each thumb on its own side).
+- Recheck the swipe/space race in `TAPSWIPE_TESTING.md`.
+- `CLAUDE.md` is over 190 lines; the shared rule says under 100. Propose
   cuts to the user before editing.
 - Delete `MIGRATION.md` and `tapswipe-claude-v2.zip` from the main
-  checkout if the user agrees. Both are leftovers from 2026-08-18.
+  checkout if the user agrees. Leftovers from 2026-08-18.
 - Install `git-lfs` on the server, so a fresh clone gets the swipe
-  models, and `java/assets/futo-swipe` stops showing as modified.
+  models and `java/assets/futo-swipe` stops showing as modified.
+- Emulator leaks host memory per app start; worked around in
+  `simlib/emulator.py`. A newer emulator build may fix it.
 
 ## Done
+
+- 2026-11-14. TODO cleaned: removed items finished or made moot by the
+  segmenter (eager split bugs, `Ivar`, capitalizing a split `i`, tapped
+  words after an auto space, the 90-of-100 test, the 2026-11-11 phone
+  checks).
 
 - 2026-11-13. Fixed: a mid-word acronym reading made the rest of the word
   upper case. Capitalization audit, 13 edge cases.
