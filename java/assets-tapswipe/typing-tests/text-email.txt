@@ -1,0 +1,6 @@
+# Real text: a short work email. Longer words, a name, commas.
+Hi Maria, thanks for sending the report so quickly. I've read through most of it and the
+numbers look right to me. There are a few small changes I'd like to make before we share it
+with the team. Could you add a short summary at the top? It would also help to move the
+budget section closer to the end. I'm happy to talk it over tomorrow morning if that works
+for you. Have a great evening!

@@ -510,6 +510,26 @@ boundary after a short word, and as normal typing inside a word.
 3. Should a single tapped `a` or `I` get the auto space, or only words of
    2 to 3 letters?
 
+## Edge cases and real text, 2026-11-13
+
+`edge_check.py` (27 scenarios) found three faults, fixed in `d8342cd5b`:
+
+- A single space press after an auto space could not make a period:
+  within 1.5 s it was ignored, later it gave two spaces. Now one press
+  after the keyboard's own auto space makes ". " at any time (with the
+  double-space period setting on); a quick second press does nothing.
+- An apostrophe after an auto space gave `dog 's`. Now it takes the
+  space back: `dog's`.
+- Enter after an auto space left a trailing space. Now it takes it back.
+
+Open: with the user's whole-word backspace on, backspace after an auto
+space deletes the word and its space (`cat ` to nothing). Kinetica
+removes only the space and reopens the word. Waiting on the user.
+
+`text_check.py` typed the three real-text lists with no space key:
+219 of 226 words right, no punctuation errors. All 7 word errors were
+swipe-shape misreads, none from spacing or splitting.
+
 ## Open questions for the user (answered above)
 
 1. Should a word made only of taps get an auto space? Kinetica keeps

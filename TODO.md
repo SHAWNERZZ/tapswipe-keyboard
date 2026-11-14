@@ -60,6 +60,11 @@ drop a task. Date each Done entry.
 
 ## Done
 
+- 2026-11-13. Edge cases: one space after an auto space makes a period;
+  apostrophe and Enter take the auto space back. Three real-text typing
+  tests (`text-chat`, `text-email`, `text-story`). Simulator:
+  `edge_check.py`, `text_check.py`.
+
 - 2026-11-13. Modes with auto space: tapped short words get the auto
   space, peck after pause + 100 ms, swipe ends peck, tap-only mode turns
   auto space off (no Master Mode needed), Peck mode toolbar action with a
