@@ -397,6 +397,25 @@ public final class WordComposer {
         return mCapsCount == size();
     }
 
+    /**
+     * Whether suggestions for this word should be made all upper case.
+     *
+     * For typed letters, the stock rule: every letter the user typed is a capital. A TapSwipe word
+     * is different: its letters are the decoder's last reading, not what the user typed. When that
+     * reading was an acronym (`NATO`), the stock rule saw "all capitals" and uppercased every later
+     * reading of the word, so `NATO` plus one more swipe became `NATIONAL`, and stayed that way.
+     * So for a TapSwipe word, only shift lock makes suggestions all upper case. A first capital
+     * still comes from the shift state at the start of the word ({@link #wasShiftedNoLock}).
+     * Found 2026-11-13 from the user's report.
+     */
+    public boolean shouldMakeSuggestionsAllUpperCase() {
+        if (mTapSwipeInput != null) {
+            return mCapitalizedMode == CAPS_MODE_AUTO_SHIFT_LOCKED
+                    || mCapitalizedMode == CAPS_MODE_MANUAL_SHIFT_LOCKED;
+        }
+        return isAllUpperCase();
+    }
+
     public boolean wasShiftedNoLock() {
         return mCapitalizedMode == CAPS_MODE_AUTO_SHIFTED
                 || mCapitalizedMode == CAPS_MODE_MANUAL_SHIFTED;

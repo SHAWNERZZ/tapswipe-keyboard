@@ -116,8 +116,8 @@ public final class Suggest {
     private static ArrayList<SuggestedWordInfo> getTransformedSuggestedWordInfoList(
             final WordComposer wordComposer, final SuggestionResults results,
             final int trailingSingleQuotesCount, final Locale defaultLocale) {
-        final boolean shouldMakeSuggestionsAllUpperCase = wordComposer.isAllUpperCase()
-                && !wordComposer.isResumed();
+        final boolean shouldMakeSuggestionsAllUpperCase =
+                wordComposer.shouldMakeSuggestionsAllUpperCase() && !wordComposer.isResumed();
         final boolean isOnlyFirstCharCapitalized =
                 wordComposer.isOrWillBeOnlyFirstCharCapitalized();
 
@@ -359,7 +359,7 @@ public final class Suggest {
                 new ArrayList<>(suggestionResults);
         final int suggestionsCount = suggestionsContainer.size();
         final boolean isFirstCharCapitalized = wordComposer.wasShiftedNoLock();
-        final boolean isAllUpperCase = wordComposer.isAllUpperCase();
+        final boolean isAllUpperCase = wordComposer.shouldMakeSuggestionsAllUpperCase();
         if (isFirstCharCapitalized || isAllUpperCase) {
             for (int i = 0; i < suggestionsCount; ++i) {
                 final SuggestedWordInfo wordInfo = suggestionsContainer.get(i);

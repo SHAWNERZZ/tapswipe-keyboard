@@ -288,6 +288,30 @@ list is a false alignment.
 Also not done: the suggestion strip still lists candidates computed for
 the pre-split word for a moment after a split.
 
+## 7b. Capitalization
+
+Where case is decided for a TapSwipe word, checked 2026-11-13.
+
+- **Shift state at the start of the word.** `WordComposer` keeps a
+  capitalized mode, set by the first stroke (tap: `handleNonSeparatorEvent`;
+  gesture: `onStartBatchInput`, skipped for continuation strokes so a
+  sentence-start capital survives). `reset` does not clear it.
+- **Every decode result** is written with `setBatchInputWord`, which
+  recounts capitals from the written letters.
+- **Suggestions** are transformed in `Suggest`: a first capital from
+  `wasShiftedNoLock` (the mode), all upper case from
+  `WordComposer.shouldMakeSuggestionsAllUpperCase`. For a TapSwipe word
+  only shift lock makes them all upper case. Counting capitals in the
+  letters on screen made a mid-word acronym reading (`NATO`) uppercase
+  the rest of the word (`NATIONAL`).
+- **Split words** (`commitTapSwipeSegments`): tapped pieces keep the
+  letters as tapped; the first piece keeps a capital the word on screen
+  had; a lone `i` becomes `I`.
+- **After a period or ?/!**: the shift state updates from the text
+  (auto caps), including the auto-space period.
+
+`tools/typing-sim/edge_check.py --only caps:` covers these (13 cases).
+
 ## 8. Re-entrancy guards
 
 The design is validate-on-read. Each access checks that the session

@@ -10,7 +10,8 @@ Each scenario starts from the field text "So " and lists steps:
   ("flick", code, dx, dy, gap)  swipe off a key by dx, dy key sizes (Enter up: 0, -1.2)
   ("comma", gap)         swipe from V straight down onto the space bar
   ("wait", ms)           play what is queued, then wait
-The expected text is what an attentive user would want. A mismatch is a finding, not always a bug.
+The expected text is what an attentive user would want. "~title" means: one word with only its first
+letter capitalized (for cases where only case is under test). A mismatch is a finding, not always a bug.
 
 Usage: python3 edge_check.py [--only name]
 """
@@ -82,6 +83,25 @@ SCENARIOS = [
     # Shift, Enter.
     ("shift then word", [("s", "think", 0), ("wait", W), ("key", SHIFT, 0), ("s", "that", 120), ("wait", W)], "think That "),
     ("enter after auto space", [("s", "think", 0), ("wait", W), ("key", ENTER, 0), ("wait", 500)], "think\n"),
+    # Capitalization. A fourth item is the field text to start from (default "So ").
+    ("caps: sentence start swipe", [("s", "think", 0), ("wait", W)], "Think ", "Okay. "),
+    ("caps: mid-sentence swipe", [("s", "think", 0), ("wait", W)], "think "),
+    ("caps: shift then swipe", [("key", SHIFT, 0), ("s", "think", 120), ("wait", W)], "Think "),
+    ("caps: caps lock, two words", [("key", SHIFT, 0), ("key", SHIFT, 60), ("s", "think", 150), ("wait", W),
+                                    ("s", "that", 0), ("wait", W), ("key", SHIFT, 0), ("wait", 300)], "THINK THAT "),
+    ("caps: shifted taps then swipe", [("key", SHIFT, 0), ("t", "n", 90), ("key", SHIFT, 90), ("t", "a", 90),
+                                       ("s", "tion", 120), ("wait", W)], "~title"),
+    ("caps: lone i mid-sentence", [("t", "i", 0), ("wait", W)], "I "),
+    ("caps: lone i at sentence start", [("t", "i", 0), ("wait", W)], "I ", "Okay. "),
+    ("caps: split at sentence start", [("t", "if", 0), ("s", "not", 50), ("wait", W)], "If not ", "Okay. "),
+    ("caps: tapped short words at start", [("t", "is", 0), ("wait", W), ("t", "a", 0), ("wait", W)], "Is a ", "Okay. "),
+    ("caps: after question mark", [("s", "think", 0), ("wait", W), ("flick", ENTER, 0.0, -1.3, 0), ("wait", 400),
+                                   ("s", "that", 0), ("wait", W)], "think? That "),
+    ("caps: peck word at sentence start", [("t", "qz", 0), ("wait", 700), ("t", "x", 0), ("space", 300),
+                                           ("wait", 400)], "Qzx ", "Okay. "),
+    ("caps: reopened word keeps capital", [("s", "cat", 0), ("t", "s", 60), ("wait", W), ("key", DELETE, 0),
+                                           ("wait", 300), ("key", DELETE, 0), ("wait", 700)], "~title", "Okay. "),
+    ("caps: proper noun mid-sentence", [("s", "paris", 0), ("wait", W)], "Paris "),
 ]
 
 ap = argparse.ArgumentParser()
@@ -146,23 +166,30 @@ emulator.ensure()
 dev = Device()
 sess = Session(dev, f"edge-{datetime.datetime.now():%H%M%S%f}"[:20], finger.FingerParams(), fresh=False)
 results = []
-for n, (name, steps, want) in enumerate(SCENARIOS):
+for n, scenario in enumerate(SCENARIOS):
+    name, steps, want = scenario[:3]
+    ctx = scenario[3] if len(scenario) > 3 else "So "
     if args.only and args.only not in name:
         continue
     rng = random.Random(20 + n)
-    sess.dev.set_field_text(sess.run_id, "So ")
+    sess.dev.set_field_text(sess.run_id, ctx)
     sess.settle(commits=0, quiet_s=0.3, timeout=1.5)
     sess.new_events()
     play(sess, steps, rng)
     events = sess.new_events()
     after = sess.last_field_text(events)
-    after = after if after is not None else "So "
-    got = after[3:] if after.startswith("So ") else after
-    ok = got == want
+    after = after if after is not None else ctx
+    got = after[len(ctx):] if after.startswith(ctx) else after
+    if want == "~title":
+        # Only the case is under test: one word, capital first letter, the rest lower case.
+        w = got.strip()
+        ok = len(w.split()) == 1 and w[:1].isupper() and w[1:] == w[1:].lower()
+    else:
+        ok = got == want
     results.append(ok)
     timer = [e["what"] for e in events if e.get("type") == "auto_space" and e["what"] not in ("armed", "cancelled")]
     print(f"{'ok ' if ok else 'BAD'} {name:32} want={want!r:16} got={got!r:18} timer={timer}", flush=True)
-    if after and "So" not in after[:3]:
+    if after and not after.startswith(ctx):
         print(f"     (field: {after!r})")
 sess.close()
 print(f"\n{sum(results)}/{len(results)}")
