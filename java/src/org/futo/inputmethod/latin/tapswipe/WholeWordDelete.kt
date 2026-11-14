@@ -31,6 +31,22 @@ object WholeWordDelete {
      * @param isWordCodePoint whether a code point is part of a word
      * @return how many characters to delete, or 0 to leave this to the ordinary delete path
      */
+    /**
+     * Whether a backspace tap should remove only the space before the cursor, and leave the word
+     * for the next tap.
+     *
+     * True when the text ends in exactly one space with something other than a space before it:
+     * `word ` or `word. `. The user's reference keyboards (Nintype and others) delete words whole,
+     * but a tap after a space removes the space first, then the word. Taking both at once removed
+     * a word the user only meant to touch.
+     */
+    @JvmStatic
+    fun spaceFirst(before: CharSequence): Boolean {
+        val n = before.length
+        if (n < 2) return false
+        return before[n - 1] == ' ' && !before[n - 2].isWhitespace()
+    }
+
     @JvmStatic
     fun lengthToDelete(before: CharSequence, isWordCodePoint: IntPredicate): Int {
         if (before.isEmpty()) return 0

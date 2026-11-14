@@ -90,7 +90,11 @@ class TypingTestScoreTest {
         for (f in files) {
             val words = TypingTestScore.parseWordList(f.readText())
             assertTrue("${f.name} is empty", words.isNotEmpty())
-            assertTrue("${f.name} has a non-word", words.all { w -> w.all { it.isLetter() || it == '\'' } })
+            // Letters and apostrophes, plus end punctuation (. , ? !) for the real-text lists. The
+            // score ignores end punctuation, so a prompt may carry it.
+            assertTrue("${f.name} has a non-word", words.all { w ->
+                w.trimEnd('.', ',', '?', '!').let { core -> core.isNotEmpty() && core.all { it.isLetter() || it == '\'' } }
+            })
         }
     }
 }

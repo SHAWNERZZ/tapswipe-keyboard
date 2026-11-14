@@ -176,4 +176,17 @@ class WholeWordDeleteTest {
         assertEquals(0, swipe("  "))
         assertEquals(0, swipe("Hello  "))
     }
+
+    @Test fun spaceFirstAfterAWord() {
+        org.junit.Assert.assertTrue(WholeWordDelete.spaceFirst("hello "))
+        org.junit.Assert.assertTrue(WholeWordDelete.spaceFirst("so this. "))
+    }
+
+    @Test fun noSpaceFirstWithoutALoneTrailingSpace() {
+        org.junit.Assert.assertFalse(WholeWordDelete.spaceFirst("hello"))
+        org.junit.Assert.assertFalse(WholeWordDelete.spaceFirst("hello  "))
+        org.junit.Assert.assertFalse(WholeWordDelete.spaceFirst(" "))
+        org.junit.Assert.assertFalse(WholeWordDelete.spaceFirst("line\n "))
+        org.junit.Assert.assertFalse(WholeWordDelete.spaceFirst(""))
+    }
 }

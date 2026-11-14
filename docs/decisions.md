@@ -258,3 +258,18 @@ Mode; it counts quick taps only from a word's fourth letter.
 - Counting every quick tap toward tap-only mode. `it is a` typed with
   auto space would switch auto space off mid-sentence.
 
+## 2026-11-13. Backspace after a space removes the space first
+
+**Decision.** A backspace tap right after one space that follows a word
+removes only the space. The next tap removes the word, or its last
+stroke, as the backspace tap setting says. This holds for typed spaces
+and auto spaces.
+
+**Rejected.**
+
+- Taking the space with the word (the old rule). The user found it
+  deleted words they only meant to touch; Nintype and the other
+  keyboards they use remove the space first.
+- Removing the space and reopening the word for more strokes in one
+  tap (Kinetica). The user asked for the space alone.
+

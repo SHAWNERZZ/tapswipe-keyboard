@@ -62,9 +62,19 @@ SCENARIOS = [
     # Apostrophe after the auto space: the user meant to continue the word.
     ("apostrophe s after auto space", [("s", "dog", 0), ("wait", W), ("key", APOS, 0), ("t", "s", 80), ("wait", W)], "dog's"),
     # Backspace.
+    # A tap after a space removes the space first, then the word (with the user's "last gesture"
+    # setting: the word's last stroke).
     ("backspace removes auto space", [("s", "cat", 0), ("wait", W), ("key", DELETE, 0), ("wait", 600)], "cat"),
+    ("two backspaces after auto space", [("s", "cat", 0), ("wait", W), ("key", DELETE, 0), ("wait", 300),
+                                         ("key", DELETE, 0), ("wait", 600)], ""),
+    ("backspace after typed space", [("s", "think", 0), ("space", 100), ("wait", 500), ("key", DELETE, 0),
+                                     ("wait", 600)], "think"),
+    ("second backspace pops last stroke", [("s", "cat", 0), ("t", "s", 60), ("wait", W), ("key", DELETE, 0),
+                                           ("wait", 300), ("key", DELETE, 0), ("wait", 600)], "cat"),
+    ("backspace after period", [("s", "think", 0), ("wait", W), ("space", 0), ("wait", 400), ("key", DELETE, 0),
+                                ("wait", 600)], "think."),
     ("backspace then s", [("s", "cat", 0), ("wait", W), ("key", DELETE, 0), ("wait", 300), ("t", "s", 0),
-                          ("wait", W)], "cats "),
+                          ("wait", W)], "cats"),
     ("backspace in the countdown", [("s", "think", 0), ("key", DELETE, 120), ("wait", 700)], ""),
     # Strokes during the countdown continue the word.
     ("tap during the countdown", [("s", "think", 0), ("t", "s", 150), ("wait", W)], "thinks "),

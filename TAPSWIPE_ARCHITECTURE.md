@@ -140,6 +140,7 @@ Three tiers, chosen by `TapSwipeBackspaceTapSetting`.
 
 | Tier | State | Result |
 |---|---|---|
+| Space first | One space after a finished word (`word `), any mode but one character | Remove only the space. The next tap reaches the word. |
 | Open word | A word is composing | Pop the last stroke and re-decode |
 | Last word | The word just committed | Reopen it, then pop the last stroke |
 | Older | Anything before that | Delete the whole word |

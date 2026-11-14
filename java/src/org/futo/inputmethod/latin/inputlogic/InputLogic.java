@@ -675,6 +675,33 @@ public final class InputLogic {
         return handled;
     }
 
+    /**
+     * Removes the one space after a finished word, and keeps the last word reopenable without it.
+     * See {@link org.futo.inputmethod.latin.tapswipe.WholeWordDelete#spaceFirst}.
+     *
+     * @return true when the space was removed and the backspace is done
+     */
+    private boolean deleteSpaceBeforeWord() {
+        if (mWordComposer.isComposingWord()) return false;
+        final CharSequence before = mConnection.getTextBeforeCursor(2, 0);
+        if (before == null || !org.futo.inputmethod.latin.tapswipe.WholeWordDelete.spaceFirst(before)) {
+            return false;
+        }
+        final int cursor = mConnection.getExpectedSelectionStart();
+        mConnection.deleteTextBeforeCursor(1);
+        // The reopen record for the last word expects its separator in front of the cursor. That
+        // space is now gone, so the record describes the word with no separator, at the same place.
+        final TapSwipeGraceRecord record = mTapSwipeGraceRecord;
+        if (record != null && " ".equals(record.separator)
+                && record.selStartAfterWord + 1 == cursor) {
+            mTapSwipeGraceRecord = new TapSwipeGraceRecord(record.strokes, record.committedWord, "",
+                    record.selStartAfterWord, record.createdAtMs);
+        }
+        mSpaceState = SpaceState.NONE;
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.backspaceTier("space_first", null);
+        return true;
+    }
+
     private int backspaceTapMode() {
         return DataStoreHelper.getSetting(
                 SwipeDecoderDictionaryKt.getTapSwipeBackspaceTapSetting());
@@ -3239,6 +3266,13 @@ public final class InputLogic {
             // after the revert branches above deliberately - undoing an autocorrect, a double-space
             // period or an inserted ".com" is a one-press undo of the *previous keystroke* and must
             // keep priority, matching tier 2's own ordering rationale below.
+            // TapSwipe: right after a finished word and its space, the first tap removes only the
+            // space. The next tap reaches the word: tier 0 below reopens it, or tier 2 deletes it.
+            if (isTapSwipeMode() && !event.isKeyRepeat() && !mConnection.hasSelection()
+                    && backspaceTapMode() != BackspaceTap.ONE_CHARACTER
+                    && deleteSpaceBeforeWord()) {
+                return;
+            }
             if (isTapSwipeMode() && !event.isKeyRepeat() && !mConnection.hasSelection()
                     && handleTapSwipeGraceReopen(event, inputTransaction)) {
                 return;

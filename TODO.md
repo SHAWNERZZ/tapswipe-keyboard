@@ -14,6 +14,13 @@ drop a task. Date each Done entry.
 
 ## Next
 
+- **Stroke undo after a commit re-decodes to the same word.** `cats`,
+  two taps of backspace (space, then the last stroke), gives `cats`
+  again, and `think` the same. Likely cause: the commit learned the word,
+  and the swipe decoder still favors it after the unlearn. Seen in
+  `edge_check.py`, "second backspace pops last stroke". Check before
+  changing.
+
 - **New swipe language model** `chosen_planarian`: wait for a FUTO
   swipe library that has its scoring weights. See `docs/decisions.md`,
   2026-11-12, "Merge FUTO upstream".
@@ -59,6 +66,9 @@ drop a task. Date each Done entry.
   models, and `java/assets/futo-swipe` stops showing as modified.
 
 ## Done
+
+- 2026-11-13. Backspace after a space removes the space first, then the
+  word. Typing test field stays three lines high.
 
 - 2026-11-13. Edge cases: one space after an auto space makes a period;
   apostrophe and Enter take the auto space back. Three real-text typing
