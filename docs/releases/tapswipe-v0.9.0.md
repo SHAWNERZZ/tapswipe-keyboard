@@ -40,6 +40,8 @@ Also new:
 
 ## Fixed
 
+Bugs that were already in 0.8.0:
+
 - **Words breaking mid-word.** A word you were still building could suddenly end and the next tap
   start a new word. The keyboard misread its own edit as you moving the cursor.
 - **Taps ignored when typing fast.** A tap's re-read was skipped when the decoder was busy, so the
@@ -48,12 +50,13 @@ Also new:
   a second thumb's tap was mixed into the other thumb's swipe ("then" became "the").
 - **Contractions.** A swipe through the apostrophe for I'm read as "in". Contractions also broke
   the context for the next word ("He'll" was read as "He" and "ll").
+- **The word being typed was used as its own context** by the language model, which skewed what it
+  read.
 - **A quick tap right after a swipe** could replace the whole word with the tapped letter.
 - **Undo** of the last stroke could bring the same word back.
-- **Capitals.** A split at the start of a sentence lost its capital ("If not" became "if not"), and
-  a mid-word acronym reading made the rest of the word upper case ("NATIONAL").
+- **A mid-word acronym reading** made the rest of the word upper case ("NATIONAL").
 - **A space pressed right after a swipe** could lose the word.
-- **A crash** during long swipes, and **lag** of up to 0.7 s on long two-thumb words.
+- **A crash** during long swipes.
 
 ## Under the hood
 
