@@ -16,34 +16,20 @@ space bar between words.
 
 Everything is off by default. Without TapSwipe turned on, it is FUTO Keyboard.
 
-## What makes it different
+## Why TapSwipe
 
-Most keyboards with auto spacing just add a space after a pause. That alone is hard to live with:
-you have to wait for the timer after every short word, and one hesitation in the middle of a word
-splits it in two. TapSwipe fixes both.
+- **Taps and swipes in one word.** Swipe most of a word, tap the rest, use one thumb or two. The
+  keyboard reads the whole word at once.
+- **Auto spacing that knows where your words are.** Short tapped words (a, I, is, to) and parts of
+  a longer word are told apart as you type, with no waiting for a timer: "I want a" is three words,
+  "cats" is one.
+- **Hesitations do not break words.** Pause mid-word, keep going, and the word joins back together.
+- **Mistakes cost one tap.** The other reading of any split or join waits in the suggestion strip,
+  and backspace undoes a stroke, not a letter.
+- **New words are easy.** Spell one out slowly, or press the Peck mode button, and it is typed
+  exactly and learned.
 
-**It knows where the words are, without waiting.** Short words of one to three letters are usually
-tapped, and longer words hold a swipe. So when you tap and swipe in one quick burst, TapSwipe works
-out where one word ends and the next begins, from the dictionary and the swipe decoder's own
-language model:
-
-- tap I, swipe want, tap a: **"I want a"**, three words, no pauses needed
-- tap a, swipe start, tap i s: **"a start is"**
-- swipe this, tap i s a: **"this is a"**
-- swipe cat, tap s: **"cats"**, because a tapped ending that is not a word stays with its word
-- tap a, swipe nother: **"another"**, because tapping the first letter of a long word is also normal
-
-**A hesitation does not break the word.** If you pause in the middle of a word long enough for the
-space to go in, just keep going. When the next part reads as the rest of the same word, TapSwipe
-takes the space back and joins them: swipe cele, pause, swipe bration gives **"celebration"**. Two
-real words with a pause between them stay apart.
-
-**A wrong call costs one tap.** After any split or join, the other reading is first in the
-suggestion strip. Tap it to swap.
-
-The rest is what you would expect from auto spacing: a thin bar along the top of the keyboard
-shows when the space will go in, and one press of space after an auto space ends the sentence with
-a period.
+Details: [Auto spacing](#auto-spacing) and the rest of [Features](#features).
 
 ## Download and setup
 
@@ -84,11 +70,6 @@ signing, not who built it.
 **Taps and swipes make one word.** Every new stroke re-decodes the whole word. Both thumbs can
 swipe at once.
 
-**Auto spacing** (optional, work in progress). See [What makes it different](#what-makes-it-different).
-Settings: the pause before the space (250 ms by default), and the word split on its own. A
-backspace holds the timer until you type again. A space you press out of habit right after an auto
-space turns into a period instead of a second space.
-
 **Peck mode.** Spell a word out slowly and it skips autocorrect, is committed exactly as typed, and
 is learned. Key borders and the space bar show when it is on. With auto spacing on, a word of taps
 that is not a short word turns into a peck word 100 ms after the pause. The optional **Peck mode**
@@ -101,6 +82,41 @@ Keyboard, with autocorrect and no auto spacing, until your next swipe.
 contractions: I'm, don't, we'll. It uses space QWERTY already gives to L's tap area, so no other
 key moves. Cost: FUTO's English/QWERTY decoder refinement expects 26 keys, so a 27th turns it off,
 about half a point of top-1 accuracy by [their paper](https://arxiv.org/abs/2606.25247).
+
+### Auto spacing
+
+Optional, work in progress: **Settings → TapSwipe → Auto spacing**.
+
+Most keyboards with auto spacing just add a space after a pause. That alone is hard to live with:
+you have to wait for the timer after every short word, and one hesitation in the middle of a word
+splits it in two. TapSwipe fixes both.
+
+**It knows where the words are, without waiting.** Short words of one to three letters are usually
+tapped, and longer words hold a swipe. So when you tap and swipe in one quick burst, TapSwipe works
+out where one word ends and the next begins, from the dictionary and the swipe decoder's own
+language model:
+
+- tap I, swipe want, tap a: **"I want a"**, three words, no pauses needed
+- tap a, swipe start, tap i s: **"a start is"**
+- swipe this, tap i s a: **"this is a"**
+- swipe cat, tap s: **"cats"**, because a tapped ending that is not a word stays with its word
+- tap a, swipe nother: **"another"**, because tapping the first letter of a long word is also normal
+
+**A hesitation does not break the word.** If you pause in the middle of a word long enough for the
+space to go in, just keep going. When the next part reads as the rest of the same word, TapSwipe
+takes the space back and joins them: swipe cele, pause, swipe bration gives **"celebration"**. Two
+real words with a pause between them stay apart.
+
+**A wrong call costs one tap.** After any split or join, the other reading is first in the
+suggestion strip. Tap it to swap.
+
+The rest is what you would expect from auto spacing: a thin bar along the top of the keyboard
+shows when the space will go in, and one press of space after an auto space ends the sentence with
+a period.
+
+Settings: the pause before the space (250 ms by default), and the word split on its own. A
+backspace holds the timer until you type again. A space you press out of habit right after an auto
+space turns into a period instead of a second space.
 
 ### Editing
 
