@@ -1573,7 +1573,13 @@ public final class InputLogic {
     public SuggestedWordInfo tapSwipeAlternativeChip() {
         final AlternativeOffer offer = mAlternativeOffer;
         if (offer == null) return null;
-        if (mWordComposer.isComposingWord()) return null;
+        // Never while a new word is being typed. A swipe's decode lands before anything of the word
+        // is composed, and the chip put first in that list became the word: "but I" + swipe "was"
+        // wrote "but" (user's test, 2026-11-14). The offer ends with the first new stroke.
+        if (mWordComposer.isComposingWord() || mTapSwipeSession.isOpen()) {
+            mAlternativeOffer = null;
+            return null;
+        }
         final String expected = offer.shown + offer.separator;
         final CharSequence before = mConnection.getTextBeforeCursor(expected.length(), 0);
         if (before == null || !TextUtils.equals(before, expected)) {
@@ -2567,6 +2573,7 @@ public final class InputLogic {
 
     public void onStartBatchInput(final SettingsValues settingsValues,
             final KeyboardSwitcher keyboardSwitcher) {
+        mAlternativeOffer = null;
         mAutoSpaceHeld = false;
         mRejoinEligible = mAutoSpaceWrittenAt > 0 && !mAutoPeriodWritten
                 && SystemClock.uptimeMillis() - mAutoSpaceWrittenAt < REJOIN_WINDOW_MS;
@@ -2968,6 +2975,7 @@ public final class InputLogic {
      */
     private void handleNonSeparatorEvent(final Event event, final SettingsValues settingsValues,
             final InputTransaction inputTransaction) {
+        mAlternativeOffer = null;
         mAutoSpaceHeld = false;
         final int codePoint = event.mCodePoint;
         // TODO: refactor this method to stop flipping isComposingWord around all the time, and

@@ -62,6 +62,19 @@ object TypingTestScore {
      */
     fun strictCaseFor(prompt: List<String>): Boolean = prompt.any { w -> w.any { it.isUpperCase() } }
 
+    /**
+     * Whether the test is complete: every prompt word is finished, and, when the last prompt word
+     * ends in punctuation, the last typed word has it too. With auto space the last word finishes
+     * the moment its space appears, before the user can add the period (user's report, 2026-11-14).
+     */
+    fun isComplete(prompt: List<String>, text: String): Boolean {
+        if (prompt.isEmpty() || finishedWordCount(text) < prompt.size) return false
+        val wanted = endOf(prompt.last())
+        if (wanted.isEmpty()) return true
+        val typed = words(text).getOrNull(prompt.size - 1) ?: return false
+        return endOf(typed) == wanted
+    }
+
     enum class Kind { MATCH, WRONG, MISSED, EXTRA }
 
     data class Aligned(val kind: Kind, val prompt: String?, val typed: String?, val promptIndex: Int)

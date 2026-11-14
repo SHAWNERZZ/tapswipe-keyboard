@@ -349,7 +349,7 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
                                     .put("selStart", selectionStart)
                                     .put("selEnd", selectionEnd)
                                     .put("promptIndex", TypingTestScore.finishedWordCount(now)))
-                                if (TypingTestScore.finishedWordCount(now) >= prompt.size && prompt.isNotEmpty()) {
+                                if (TypingTestScore.isComplete(prompt, now)) {
                                     finish("completed")
                                 }
                             }

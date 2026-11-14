@@ -81,6 +81,14 @@ class TypingTestScoreTest {
     }
 
     @Test
+    fun `a test ending in punctuation waits for it`() {
+        val prompt = listOf("by", "the", "door.")
+        assertFalse(TypingTestScore.isComplete(prompt, "by the door "))
+        assertTrue(TypingTestScore.isComplete(prompt, "by the door. "))
+        assertTrue(TypingTestScore.isComplete(listOf("the", "cat"), "the cat "))
+    }
+
+    @Test
     fun `a fused pair costs one word, not every word after it`() {
         val a = TypingTestScore.align(listOf("see", "me", "now", "please"), listOf("seem", "now", "please"))
         assertEquals(2, a.count { it.kind == Kind.MATCH })
