@@ -7,99 +7,131 @@
 > [@SHAWNERZZ](https://github.com/SHAWNERZZ). It is **not** affiliated with, endorsed by, or
 > supported by FUTO Holdings, Inc. Please do not report issues with this fork to FUTO.
 >
-> Changes are not submitted upstream. Bugs you encounter here are most likely mine, not theirs.
+> Changes are not submitted upstream. Bugs you find here are most likely mine, not theirs.
 
-## Download
+TapSwipe brings back the way the old **Nintype** keyboard worked, on top of FUTO Keyboard's
+offline neural swipe decoder. You build each word from taps and swipes in any mix, with one thumb
+or two, and the keyboard reads the whole word at once. With auto spacing on, you never need the
+space bar between words.
 
-Builds are published on the [Releases page](https://github.com/SHAWNERZZ/tapswipe-keyboard/releases).
-It installs alongside the official FUTO Keyboard rather than replacing it, and everything is off by
-default — enable it at **Settings → TapSwipe**.
+Everything is off by default. Without TapSwipe turned on, it is FUTO Keyboard.
+
+## Download and setup
+
+1. Get the APK from the [Releases page](https://github.com/SHAWNERZZ/tapswipe-keyboard/releases).
+   It installs next to the official FUTO Keyboard and does not replace it.
+2. Enable it as a keyboard, as you would FUTO Keyboard.
+3. Open **Settings → TapSwipe** and turn on **TapSwipe input model**.
+4. Optional, recommended for the full Nintype feel:
+   - **Auto spacing → Space after a pause** and **Split tapped words automatically**.
+   - **Pin Peck mode to the toolbar**.
+   - **Master Mode** (letters shown as dots) once you type by shape.
 
 APKs are signed with the shared keystore committed to the upstream repository, as FUTO's own builds
-are. That keystore is public, so a signature here proves nothing about who built the APK — only that
-it was not tampered with after signing.
+are. That keystore is public, so a signature proves only that the APK was not changed after
+signing, not who built it.
 
-## What's different
+## How to type
 
-A reimplementation of the old **Nintype** input model on FUTO's neural swipe decoder. All of it sits
-behind one setting (Settings → TapSwipe), off by default.
+- **Swipe** most words. **Tap** short words such as a, I, is and to.
+- **Mix them in one word.** Tap h, tap e, swipe l to o: "hello". Swipe cat, tap s: "cats".
+  Lifting your finger does not end the word.
+- **Use both thumbs at once** if you like. The decoder sorts out the order.
+- **End a word** with space, punctuation, or Enter. With auto spacing, just pause: a thin bar at
+  the top of the keyboard runs down, and the space goes in when it ends. Touch again before then to
+  keep adding to the word.
+- **Several words in one go:** tap I, swipe want, tap a gives "I want a".
+- **End a sentence:** after an auto space, press space once for a period.
+- **Spell out a new word** slowly, letter by letter, or press the **Peck mode** button first. The
+  word is kept exactly as typed and learned, so you can swipe it next time.
+- **Backspace** removes the last stroke, not the last letter. After a space it removes the space
+  first, then the word.
+- **Wrong split or join?** The other reading is first in the suggestion strip. Tap it.
 
-**Taps and swipes make one word.** `tap H, tap E, tap L, swipe L→O` → "hello". Both thumbs can swipe
-at once; the lexicon resolves the interleaving.
+## Features
 
-**Only a separator commits.** Lifting a finger never does. Until you hit space, every new stroke
-re-decodes the whole word. (With auto spacing on, a short pause also ends the word; see below.)
+### Typing
 
-**Auto spacing** (optional, work in progress, under TapSwipe settings, *Auto spacing*). Stop touching
-the keyboard for a moment after a word and the space goes in by itself. A thin bar along the top of
-the keyboard shows the time left (250 ms by default, adjustable); touch again before it runs out to
-keep adding to the word. Short words you tap, such as a, I, is and to, get their space too, and short
-tapped words next to a swiped one become words of their own: tap I, swipe want, tap a gives
-"I want a", while swipe cat, tap s still gives "cats". Press space once after an auto space to end
-the sentence with a period. If a pause cut a word in two, the next stroke joins it back when the
-decoder reads it as one word. After any split or join, the other reading sits first in the
-suggestion strip, one tap away. A backspace holds the timer until you type again, and a backspace
-after a space removes the space first, then the word.
+**Taps and swipes make one word.** Every new stroke re-decodes the whole word. Both thumbs can
+swipe at once.
 
-**Apostrophe key** — optional, under TapSwipe settings, *Apostrophe key*. QWERTY only. A thin key in the gap right of L;
-redirect a swipe along the right edge to keep "its" and "it's" apart. It claims the margin stock
-QWERTY already hides inside L's tap area, so no other key moves. Cost: FUTO's English/QWERTY decoder
-refinement is fixed at 26 keys, so a 27th disables it — roughly half a point of top-1 accuracy by
-[their paper](https://arxiv.org/abs/2606.25247), the same tax Dvorak and AZERTY already pay. The
-layout-agnostic encoder does the real work and handles the extra key natively.
+**Auto spacing** (optional, work in progress). A word ends when you stop touching the keyboard for
+a moment (250 ms by default, adjustable), and the space goes in by itself. Short tapped words get a
+space too. Short tapped words next to a swiped word become words of their own, while a tapped
+ending stays with the word (cats). If a pause cut a word in two, the next stroke joins it back
+when the decoder reads it as one word. After any split or join, the other reading sits first in the
+suggestion strip. A backspace holds the timer until you type again. A space you press out of habit
+right after an auto space turns into a period instead of a second space.
 
-**Backspace undoes the last stroke, not the last letter.** Re-swipe a bad gesture without losing the
-taps before it — including for a moment after the word commits, which is usually when you notice.
-Optional whole-word delete covers older words, and never touches a run of digits or symbols: losing
-a whole phone number to one mistyped digit isn't a trade worth making.
+**Peck mode.** Spell a word out slowly and it skips autocorrect, is committed exactly as typed, and
+is learned. Key borders and the space bar show when it is on. With auto spacing on, a word of taps
+that is not a short word turns into a peck word 100 ms after the pause. The optional **Peck mode**
+button (a crosshair, left of voice input) does it on demand for one word.
 
-**Backspace slide changes gear mid-gesture.** Sliding across backspace deletes as you drag, starting
-at whatever granularity the swipe-backspace setting names. Reverse past a full step and the rest of
-that gesture switches to the other granularity — sweep back over three words, bounce right, then
-continue left character by character. The switch is one-way: a second reversal is another nudge, not
-a request to go back to coarse deletion.
+**Tap-only mode.** Type a few long words letter by letter and the keyboard behaves like plain FUTO
+Keyboard, with autocorrect and no auto spacing, until your next swipe.
 
-**Peck mode.** Tap a word out slowly and it skips autocorrect, commits exactly as typed, and is
-learned so you can swipe it next time — that's how you enter a word the dictionary lacks. Key borders
-mark it, the space bar says so, and it ticks when it engages — it can engage on its own after a
-pause, so it has to announce itself. With auto spacing on, a word of taps that is not a short word
-turns into a peck word 100 ms after the auto space pause. An optional **Peck mode** toolbar button
-(crosshair, pinned left of voice input from TapSwipe settings) puts the next word in peck mode on
-demand.
+**Apostrophe key** (optional, QWERTY only). A thin key in the gap right of L. Swipe through it for
+contractions: I'm, don't, we'll. It uses space QWERTY already gives to L's tap area, so no other
+key moves. Cost: FUTO's English/QWERTY decoder refinement expects 26 keys, so a 27th turns it off,
+about half a point of top-1 accuracy by [their paper](https://arxiv.org/abs/2606.25247).
 
-**Nintype gestures** (optional). Swipe straight down from V onto the space bar for a comma, as the
-original did. The comma key then comes off the bottom row and the space bar takes its width — the
-gesture buys back space rather than leaving a hole. The pull is matched strictly, and anchored to V's
-centre with half a key of slack either side, because a false positive eats a word you meant to type.
+### Editing
 
-**Enter key swipes** (optional). Eight assignable directions off the enter key: punctuation by
-default (up `?`, down `!`, left `(`, right `)`), and editor actions — paste, clipboard history,
-undo, cut, select all, arrows — available for any direction. Optionally drops the period key, handing
-its width to enter rather than to the space bar. A plain tap is still enter. Assigning it is a keypad
-grid rather than eight dropdowns, since "where is my question mark" is a spatial question. Cost: a
-flickable key can't also hold a long-press menu, so enter's is displaced — shift+enter and field
-navigation are in the assignable list instead, to be put back on a direction of your choosing.
+**Backspace undoes the last stroke, not the last letter.** Re-swipe a bad gesture without losing
+the taps before it, even just after the word is committed. Optional whole-word delete covers older
+words and never removes a run of digits or symbols.
 
-**Typing speed** (optional). Words per minute on the space bar, measured per text field. Pauses over
-ten seconds aren't counted against you.
+**Backspace slide changes gear mid-gesture.** Slide across backspace to delete as you drag. Reverse
+past a full step and the rest of the slide switches between words and characters.
 
-**Master Mode.** Letter keys render as dots, since typing by shape makes the letters noise. Peck mode
-brings them back while you spell something out, and tapping away for a few words restores them until
-you swipe again. Action-bar toggle.
+### Gestures and layout
 
-**Adaptive key geometry** (opt-in). Learns where your fingers actually land and tells the decoder,
-which takes key positions as a runtime input. It learns with or without the TapSwipe input model. Aimed at fast, sloppy swiping — deliberate spelling
-teaches it nothing. Accepted words get their stroke aligned against the letters it produced, so it
-learns mid-word too, where corner-cutting happens. Corrections teach it more: picking a suggestion
-labels a gesture the decoder misread, and backspacing into a word takes back what it taught. Shifts
-are capped, confidence-gated, suppressed on keys you hit inconsistently, and faded by age.
-**Learned key geometry** draws the model over your layout and replays the last word it learned from,
-at the timing you typed it.
+**Nintype gestures** (optional). Swipe straight down from V onto the space bar for a comma. The
+comma key comes off the bottom row and the space bar gets its width.
 
-**Typing test.** TapSwipe settings, *Typing test*: word lists and three short real-text passages,
-scored with punctuation, with every touch recorded on the phone so problems can be replayed.
+**Enter key swipes** (optional). Eight assignable directions off Enter: punctuation by default (up
+?, down !, left (, right )), and editor actions such as paste, clipboard history, undo, cut, select
+all and arrows. Optionally drops the period key and gives its width to Enter.
 
-Based on FUTO Keyboard 0.1.30 and later upstream changes (November 2026).
+### Appearance
+
+**Master Mode.** Letter keys show as dots, since typing by shape makes the letters noise. Peck mode
+brings them back while you spell something out. There is a toolbar toggle.
+
+**Show the word's gestures.** Every tap and swipe of the word being typed is drawn on the keys.
+
+**Typing speed** (optional). Words per minute on the space bar.
+
+### Learning
+
+**Adaptive key geometry** (opt-in). Learns where your fingers actually land and tells the decoder.
+It works with or without the TapSwipe input model. **Learned key geometry** shows the model over
+your layout and replays the last word it learned from.
+
+**Typing test.** Word lists and three short real-text passages, scored with punctuation. Every
+touch is recorded on the phone, so a problem can be replayed and fixed.
+
+## What's new in 0.9.0
+
+- Auto spacing: space after a pause, a countdown bar at the top of the keyboard, short tapped words,
+  a period from one space press, rejoining a word cut by a pause.
+- Word splitting decided once, when the word ends: "I want a", "a start is", "this is a" now come
+  out right.
+- The other reading of a split or join in the suggestion strip.
+- Peck mode toolbar button; peck mode by pause; tap-only mode turns auto spacing off.
+- Backspace after a space removes the space first.
+- Fixes: contractions such as I'm, capitals after a split or a mid-word acronym, a quick tap right
+  after a swipe, undo bringing back the same word, a crash during long swipes.
+- Rebased on FUTO Keyboard 0.1.30 and later upstream changes.
+
+## Known limits
+
+- Auto spacing is new. A long pause inside a word can still split it.
+- FUTO's newer swipe language model is not used yet: the prebuilt swipe library has no tuning for
+  it, so this build keeps the previous one.
+- Turn off **Block potentially offensive words** (FUTO's setting) if a mild word you swipe never
+  appears.
 
 ## Licensing
 
