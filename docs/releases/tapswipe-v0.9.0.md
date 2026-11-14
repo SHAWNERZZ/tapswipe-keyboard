@@ -9,15 +9,25 @@ screen and turn on **Space after a pause** and **Split tapped words automaticall
 
 ## New
 
-- **Auto spacing.** Stop touching the keyboard for a moment after a word and the space goes in. A
-  thin bar at the top of the keyboard shows the time left (250 ms, adjustable). Touch again to keep
-  adding to the word.
-- **Short tapped words** (a, I, is, to) get their space too, and stand alone next to a swiped word:
-  tap I, swipe want, tap a gives "I want a". A tapped ending stays with its word: swipe cat, tap s
-  gives "cats".
-- **One space press after an auto space ends the sentence** with a period.
-- **A word cut in two by a pause joins back** when the decoder reads it as one word.
-- **The other reading** of any split or join is first in the suggestion strip. One tap swaps it.
+**Auto spacing that knows where your words are.** A space after a pause is the easy part. The hard
+parts are what make auto spacing hard to live with, and this release handles both:
+
+- **No waiting after short words.** Short words (one to three letters) are usually tapped, longer
+  words swiped. In one quick burst, TapSwipe works out where the words are from the dictionary and
+  the decoder's language model: tap I, swipe want, tap a gives "I want a"; swipe cat, tap s gives
+  "cats"; tap a, swipe nother gives "another".
+- **Hesitations repaired.** If you pause mid-word long enough for the space to go in, keep going:
+  when the next part reads as the rest of the same word, the space comes back out. Swipe cele, pause,
+  swipe bration gives "celebration". Two real words with a pause stay apart.
+- **A wrong call costs one tap.** After any split or join, the other reading is first in the
+  suggestion strip.
+
+The timer itself: stop touching the keyboard for a moment (250 ms, adjustable) and the space goes
+in; a thin bar at the top of the keyboard shows the time left; one space press after an auto space
+ends the sentence with a period.
+
+Also new:
+
 - **Peck mode button**: pin it from TapSwipe settings (a crosshair, left of voice input). It puts
   the next word in peck mode: typed exactly, then learned.
 - **Peck mode by pause**: a word of taps that is not a short word becomes a peck word 100 ms after

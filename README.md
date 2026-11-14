@@ -16,6 +16,35 @@ space bar between words.
 
 Everything is off by default. Without TapSwipe turned on, it is FUTO Keyboard.
 
+## What makes it different
+
+Most keyboards with auto spacing just add a space after a pause. That alone is hard to live with:
+you have to wait for the timer after every short word, and one hesitation in the middle of a word
+splits it in two. TapSwipe fixes both.
+
+**It knows where the words are, without waiting.** Short words of one to three letters are usually
+tapped, and longer words hold a swipe. So when you tap and swipe in one quick burst, TapSwipe works
+out where one word ends and the next begins, from the dictionary and the swipe decoder's own
+language model:
+
+- tap I, swipe want, tap a: **"I want a"**, three words, no pauses needed
+- tap a, swipe start, tap i s: **"a start is"**
+- swipe this, tap i s a: **"this is a"**
+- swipe cat, tap s: **"cats"**, because a tapped ending that is not a word stays with its word
+- tap a, swipe nother: **"another"**, because tapping the first letter of a long word is also normal
+
+**A hesitation does not break the word.** If you pause in the middle of a word long enough for the
+space to go in, just keep going. When the next part reads as the rest of the same word, TapSwipe
+takes the space back and joins them: swipe cele, pause, swipe bration gives **"celebration"**. Two
+real words with a pause between them stay apart.
+
+**A wrong call costs one tap.** After any split or join, the other reading is first in the
+suggestion strip. Tap it to swap.
+
+The rest is what you would expect from auto spacing: a thin bar along the top of the keyboard
+shows when the space will go in, and one press of space after an auto space ends the sentence with
+a period.
+
 ## Download and setup
 
 1. Get the APK from the [Releases page](https://github.com/SHAWNERZZ/tapswipe-keyboard/releases).
@@ -55,13 +84,10 @@ signing, not who built it.
 **Taps and swipes make one word.** Every new stroke re-decodes the whole word. Both thumbs can
 swipe at once.
 
-**Auto spacing** (optional, work in progress). A word ends when you stop touching the keyboard for
-a moment (250 ms by default, adjustable), and the space goes in by itself. Short tapped words get a
-space too. Short tapped words next to a swiped word become words of their own, while a tapped
-ending stays with the word (cats). If a pause cut a word in two, the next stroke joins it back
-when the decoder reads it as one word. After any split or join, the other reading sits first in the
-suggestion strip. A backspace holds the timer until you type again. A space you press out of habit
-right after an auto space turns into a period instead of a second space.
+**Auto spacing** (optional, work in progress). See [What makes it different](#what-makes-it-different).
+Settings: the pause before the space (250 ms by default), and the word split on its own. A
+backspace holds the timer until you type again. A space you press out of habit right after an auto
+space turns into a period instead of a second space.
 
 **Peck mode.** Spell a word out slowly and it skips autocorrect, is committed exactly as typed, and
 is learned. Key borders and the space bar show when it is on. With auto spacing on, a word of taps
@@ -114,11 +140,12 @@ touch is recorded on the phone, so a problem can be replayed and fixed.
 
 ## What's new in 0.9.0
 
-- Auto spacing: space after a pause, a countdown bar at the top of the keyboard, short tapped words,
-  a period from one space press, rejoining a word cut by a pause.
-- Word splitting decided once, when the word ends: "I want a", "a start is", "this is a" now come
-  out right.
-- The other reading of a split or join in the suggestion strip.
+- **Word boundaries without waiting.** Short tapped words and pieces of a longer word are told
+  apart in one burst: "I want a", "a start is", "this is a", "cats", "another".
+- **Hesitations repaired.** A word split by a pause joins back as you keep typing ("celebration").
+- **The other reading** of any split or join, first in the suggestion strip.
+- Auto spacing itself: space after a pause, a countdown bar at the top of the keyboard, short
+  tapped words get their space, a period from one space press.
 - Peck mode toolbar button; peck mode by pause; tap-only mode turns auto spacing off.
 - Backspace after a space removes the space first.
 - Fixes: contractions such as I'm, capitals after a split or a mid-word acronym, a quick tap right
