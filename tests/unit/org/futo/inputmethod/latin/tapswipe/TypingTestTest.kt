@@ -59,6 +59,28 @@ class TypingTestScoreTest {
     }
 
     @Test
+    fun `punctuation counts, capitals count only in lists that have them`() {
+        // Real text: "If not," must keep its capital and its comma.
+        assertTrue(TypingTestScore.exact("If", "If", strictCase = true))
+        assertFalse(TypingTestScore.exact("If", "if", strictCase = true))
+        assertFalse(TypingTestScore.exact("not,", "not", strictCase = true))
+        assertTrue(TypingTestScore.exact("not,", "not,", strictCase = true))
+        // A lowercase word list: the field's first word is capitalized by the keyboard, not a mistake.
+        assertTrue(TypingTestScore.exact("the", "The", strictCase = false))
+        assertFalse(TypingTestScore.exact("the", "the.", strictCase = false))
+        assertTrue(TypingTestScore.strictCaseFor(listOf("Hey,", "are")))
+        assertFalse(TypingTestScore.strictCaseFor(listOf("the", "and")))
+    }
+
+    @Test
+    fun `a wrong comma or capital is a format error, and the words after it still line up`() {
+        val t = TypingTestScore.totals(listOf("If", "not,", "we'll", "try."), "if not we'll try. ", 6000)
+        assertEquals(2, t.correctWords)
+        assertEquals(2, t.formatErrors)
+        assertEquals(0, t.wrongWords)
+    }
+
+    @Test
     fun `a fused pair costs one word, not every word after it`() {
         val a = TypingTestScore.align(listOf("see", "me", "now", "please"), listOf("seem", "now", "please"))
         assertEquals(2, a.count { it.kind == Kind.MATCH })

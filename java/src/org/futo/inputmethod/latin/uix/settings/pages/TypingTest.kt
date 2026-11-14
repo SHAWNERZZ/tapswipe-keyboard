@@ -279,6 +279,7 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
 
             if (prompt.isNotEmpty()) {
                 val typedWords = TypingTestScore.words(typed)
+                val strictCase = TypingTestScore.strictCaseFor(prompt)
                 val finished = TypingTestScore.finishedWordCount(typed)
                 // A window around the current word, so it never scrolls off while typing.
                 val from = (finished - WINDOW_BEHIND).coerceAtLeast(0)
@@ -291,7 +292,7 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
                             val w = prompt[i]
                             val style = when {
                                 i < finished && i < typedWords.size ->
-                                    SpanStyle(color = if (TypingTestScore.same(w, typedWords[i])) good else bad)
+                                    SpanStyle(color = if (TypingTestScore.exact(w, typedWords[i], strictCase)) good else bad)
                                 i == finished -> SpanStyle(color = textColor, fontWeight = FontWeight.Bold,
                                     textDecoration = TextDecoration.Underline)
                                 else -> SpanStyle(color = textColor.copy(alpha = 0.6f))
@@ -365,6 +366,7 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
                     "%.1f WPM, %.0f%% of words right\n".format(r.wpm, r.accuracy * 100) +
                         "${r.correctWords} right, ${r.wrongWords} wrong, ${r.missedWords} missed, " +
                         "${r.extraWords} extra\n" +
+                        (if (r.formatErrors > 0) "${r.formatErrors} right word with wrong punctuation or capitals\n" else "") +
                         "$deletions backspaces"
                 )
                 if (corrected.isNotEmpty()) {

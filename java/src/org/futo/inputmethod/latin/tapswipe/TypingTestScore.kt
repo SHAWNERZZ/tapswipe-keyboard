@@ -32,10 +32,35 @@ object TypingTestScore {
         return if (text.last().isWhitespace()) w.size else w.size - 1
     }
 
-    /** Compares words the way the test does: case does not count, and neither does end punctuation. */
+    /**
+     * Whether two words are the same word, ignoring case and end punctuation. Used to line typed
+     * words up with prompt words, so that one punctuation slip does not shift every word after it.
+     * Whether the word was typed right is [exact].
+     */
     fun same(a: String, b: String): Boolean = norm(a) == norm(b)
 
-    private fun norm(s: String): String = s.lowercase().trimEnd('.', ',', '!', '?', ';', ':')
+    private val END_PUNCTUATION = charArrayOf('.', ',', '!', '?', ';', ':')
+
+    private fun norm(s: String): String = s.lowercase().trimEnd(*END_PUNCTUATION)
+
+    private fun endOf(s: String): String = s.substring(s.trimEnd(*END_PUNCTUATION).length)
+
+    /**
+     * Whether the typed word is right: the same word, the same end punctuation, and, when
+     * [strictCase], the same capitals. Added 2026-11-13: the real-text lists test punctuation and
+     * capitals, and the user found both were ignored.
+     */
+    fun exact(prompt: String, typed: String, strictCase: Boolean): Boolean {
+        if (!same(prompt, typed)) return false
+        if (endOf(prompt) != endOf(typed)) return false
+        return !strictCase || prompt.trimEnd(*END_PUNCTUATION) == typed.trimEnd(*END_PUNCTUATION)
+    }
+
+    /**
+     * Capitals count only in lists that have capitals (the real-text lists). In a list of
+     * lowercase words, the keyboard capitalizing the first word of the field is not a mistake.
+     */
+    fun strictCaseFor(prompt: List<String>): Boolean = prompt.any { w -> w.any { it.isUpperCase() } }
 
     enum class Kind { MATCH, WRONG, MISSED, EXTRA }
 
@@ -84,6 +109,8 @@ object TypingTestScore {
         val wrongWords: Int,
         val missedWords: Int,
         val extraWords: Int,
+        /** The right word, but with wrong end punctuation or capitals. Not counted as right. */
+        val formatErrors: Int,
         val wpm: Double,
         val accuracy: Double,
     )
@@ -94,7 +121,9 @@ object TypingTestScore {
      */
     fun totals(prompt: List<String>, typedText: String, elapsedMs: Long): Totals {
         val a = align(prompt, words(typedText))
-        val correct = a.filter { it.kind == Kind.MATCH }
+        val strict = strictCaseFor(prompt)
+        val matched = a.filter { it.kind == Kind.MATCH }
+        val correct = matched.filter { exact(it.prompt!!, it.typed!!, strict) }
         val chars = correct.sumOf { (it.typed ?: "").length + 1 }
         val minutes = elapsedMs / 60000.0
         return Totals(
@@ -103,6 +132,7 @@ object TypingTestScore {
             wrongWords = a.count { it.kind == Kind.WRONG },
             missedWords = a.count { it.kind == Kind.MISSED },
             extraWords = a.count { it.kind == Kind.EXTRA },
+            formatErrors = matched.size - correct.size,
             wpm = if (minutes > 0) chars / 5.0 / minutes else 0.0,
             accuracy = if (prompt.isEmpty()) 0.0 else correct.size.toDouble() / prompt.size,
         )

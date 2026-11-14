@@ -1473,8 +1473,18 @@ public final class InputLogic {
                 android.text.TextUtils.join(" ", seg.words), strokes.size());
         if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe SEGMENT commit " + seg.words);
 
+        // The segmenter works in lowercase. Case comes from what the user did: a tapped word keeps
+        // the letters exactly as tapped (shift included), and the first word keeps a capital the
+        // word on screen started with (sentence start). Without this, "If not" became "if not".
+        final String onScreen = mWordComposer.getTypedWord();
+        final boolean firstCapital = !TextUtils.isEmpty(onScreen)
+                && Character.isUpperCase(onScreen.codePointAt(0));
         for (int i = 0; i < seg.words.size(); i++) {
-            final String word = displayFormOfSegment(seg.words.get(i));
+            final int[] r = seg.ranges.get(i);
+            String word = tappedTextOrNull(strokes, r[0], r[1]);
+            if (word == null) word = seg.words.get(i);
+            if (i == 0 && firstCapital) word = capitalizeFirst(word);
+            word = displayFormOfSegment(word);
             final int[] range = seg.ranges.get(i);
             final boolean last = i == seg.words.size() - 1;
             if (i > 0) {
@@ -1507,6 +1517,25 @@ public final class InputLogic {
         }
         return anySwipe && (strokes.get(0).getKind() == TapSwipeSession.Kind.TAP
                 || strokes.get(strokes.size() - 1).getKind() == TapSwipeSession.Kind.TAP);
+    }
+
+    /** The letters of strokes [from, to) as tapped, or null if any of them is a swipe. */
+    private static String tappedTextOrNull(final java.util.List<TapSwipeSession.Stroke> strokes,
+            final int from, final int to) {
+        final StringBuilder sb = new StringBuilder();
+        for (int i = from; i < to && i < strokes.size(); i++) {
+            final TapSwipeSession.Stroke s = strokes.get(i);
+            if (s.getKind() != TapSwipeSession.Kind.TAP || s.getCodePoint() <= 0) return null;
+            sb.appendCodePoint(s.getCodePoint());
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    private static String capitalizeFirst(final String word) {
+        if (TextUtils.isEmpty(word)) return word;
+        final int first = word.codePointAt(0);
+        return new StringBuilder().appendCodePoint(Character.toUpperCase(first))
+                .append(word.substring(Character.charCount(first))).toString();
     }
 
     /** A tapped `i` on its own is the pronoun. Everything else keeps its case. */
