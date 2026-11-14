@@ -1381,6 +1381,28 @@ public final class InputLogic {
     /** How long after an auto space a space press is taken as habit and ignored. */
     private static final long AUTO_SPACE_SWALLOW_MS = 1500;
 
+    /** True when the space after an auto space was turned into a period. See onCodeInput. */
+    private boolean mAutoPeriodWritten = false;
+
+    /**
+     * Turns the auto space before the cursor into ". ", as a double space would. Only after a
+     * character that may end a sentence. See onCodeInput.
+     */
+    private boolean replaceAutoSpaceWithPeriod(final SettingsValues settingsValues) {
+        final CharSequence lastTwo = mConnection.getTextBeforeCursor(3, 0);
+        if (lastTwo == null || lastTwo.length() < 2) return false;
+        final int length = lastTwo.length();
+        if (lastTwo.charAt(length - 1) != Constants.CODE_SPACE) return false;
+        final int firstCodePoint = Character.isSurrogatePair(lastTwo.charAt(0), lastTwo.charAt(1))
+                ? Character.codePointAt(lastTwo, length - 3) : lastTwo.charAt(length - 2);
+        if (!canBeFollowedByDoubleSpacePeriod(firstCodePoint)) return false;
+        cancelDoubleSpacePeriodCountdown();
+        mConnection.deleteTextBeforeCursor(1);
+        mConnection.commitText(settingsValues.mSpacingAndPunctuations.sentenceSeparatorAndSpace, 1);
+        mSpaceState = SpaceState.NONE;
+        return true;
+    }
+
     /** Called after the auto space timer pressed space. */
     public void noteAutoSpaceWritten() {
         mAutoSpaceWrittenAt = SystemClock.uptimeMillis();
@@ -2104,18 +2126,49 @@ public final class InputLogic {
             final int currentKeyboardScriptId) {
         mWordBeingCorrectedByCursor = null;
 
-        // A space pressed right after the auto space timer wrote one does nothing. Out of habit the
-        // user will press space anyway, at least at first, and two quick spaces would also turn
-        // into ". " by the double-space shortcut. Only the very next input, and only soon after.
+        // Right after the auto space timer wrote a space, with nothing typed since (any other input
+        // clears mAutoSpaceWrittenAt):
+        // - A space press means "end the sentence": the auto space was the first of a double
+        //   space, so this press makes ". ", whenever it comes. Otherwise the period would need two
+        //   presses close together, and one press after a pause gave two spaces.
+        // - A second quick press after that period does nothing, so a habitual double tap still
+        //   gives one period.
+        // - An apostrophe or Enter takes the auto space back first: "dog" + "'s", or the end of a
+        //   line, never wants a space before it.
         final long sinceAutoSpace = SystemClock.uptimeMillis() - mAutoSpaceWrittenAt;
         final boolean afterAutoSpace = mAutoSpaceWrittenAt > 0;
+        final boolean afterAutoPeriod = mAutoPeriodWritten;
         mAutoSpaceWrittenAt = 0;
-        if (afterAutoSpace && sinceAutoSpace < AUTO_SPACE_SWALLOW_MS
-                && event.mCodePoint == Constants.CODE_SPACE && !event.isKeyRepeat()) {
-            org.futo.inputmethod.latin.tapswipe.TypingTestEvents.autoSpace("space_swallowed",
-                    (int) sinceAutoSpace);
-            return new InputTransaction(settingsValues, event, SystemClock.uptimeMillis(),
-                    mSpaceState, getActualCapsMode(settingsValues, keyboardShiftMode));
+        mAutoPeriodWritten = false;
+        if (afterAutoSpace && event.mCodePoint == Constants.CODE_SPACE && !event.isKeyRepeat()) {
+            final InputTransaction t = new InputTransaction(settingsValues, event,
+                    SystemClock.uptimeMillis(), mSpaceState,
+                    getActualCapsMode(settingsValues, keyboardShiftMode));
+            if (!afterAutoPeriod && settingsValues.mUseDoubleSpacePeriod
+                    && replaceAutoSpaceWithPeriod(settingsValues)) {
+                org.futo.inputmethod.latin.tapswipe.TypingTestEvents.autoSpace("auto_period",
+                        (int) sinceAutoSpace);
+                mAutoSpaceWrittenAt = SystemClock.uptimeMillis();
+                mAutoPeriodWritten = true;
+                t.requireShiftUpdate(InputTransaction.SHIFT_UPDATE_NOW);
+                t.setRequiresUpdateSuggestions();
+                return t;
+            }
+            if (sinceAutoSpace < AUTO_SPACE_SWALLOW_MS) {
+                org.futo.inputmethod.latin.tapswipe.TypingTestEvents.autoSpace("space_swallowed",
+                        (int) sinceAutoSpace);
+                return t;
+            }
+        }
+        if (afterAutoSpace && !afterAutoPeriod && (event.mCodePoint == '\''
+                || event.mCodePoint == Constants.CODE_ENTER)) {
+            final CharSequence before = mConnection.getTextBeforeCursor(1, 0);
+            if (before != null && before.length() == 1 && before.charAt(0) == Constants.CODE_SPACE) {
+                mConnection.deleteTextBeforeCursor(1);
+                mSpaceState = SpaceState.NONE;
+                org.futo.inputmethod.latin.tapswipe.TypingTestEvents.autoSpace("space_taken_back",
+                        event.mCodePoint);
+            }
         }
 
         if(settingsValues.needsToLookupSuggestions()) {
