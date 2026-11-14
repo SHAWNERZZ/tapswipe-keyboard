@@ -11,6 +11,12 @@ drop a task. Date each Done entry.
 
 ## Next
 
+- **First-run tutorial** (asked 2026-11-14), like the original Nintype's:
+  a walkthrough page for the TapSwipe input model (taps and swipes in one
+  word, peck mode, backspace) and one for auto spacing (the pause, the
+  bar, short tapped words, the period by space, the alternative chip).
+  Shown on first use, and reachable from TapSwipe settings.
+
 Ordered by what the user is likely to hit most.
 
 - **Single swipes of short words** are the user's weakest case (75 to
@@ -42,6 +48,10 @@ Smaller and housekeeping:
   `simlib/emulator.py`. A newer emulator build may fix it.
 
 ## Done
+
+- 2026-11-14. Peck mode pins to the left of voice input, crosshair icon.
+  Auto spacing icon and a plain explanation. Calibration typing test
+  removed; "Delete all recordings" button on the typing test screen.
 
 - 2026-11-14. Rechecked: the swipe/space race is gone (0, 20, 50 ms, 9 of
   9). Two thumbs overlapping is not worse: 117/133 (88%) against one at a

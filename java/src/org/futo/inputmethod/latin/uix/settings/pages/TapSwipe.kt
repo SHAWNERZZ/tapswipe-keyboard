@@ -5,6 +5,7 @@ import org.futo.inputmethod.latin.uix.actions.PinnedActions
 import org.futo.inputmethod.latin.uix.actions.ActionCategory
 import org.futo.inputmethod.latin.uix.actions.toActionList
 import org.futo.inputmethod.latin.uix.actions.PeckModeAction
+import org.futo.inputmethod.latin.uix.actions.VoiceInputAction
 import org.futo.inputmethod.latin.uix.actions.ActionsSettings
 import org.futo.inputmethod.latin.uix.actions.toActionEditorItems
 import org.futo.inputmethod.latin.uix.actions.toActionMap
@@ -115,7 +116,8 @@ val TapSwipeMenu = UserSettingsMenu(
             visibilityCheck = tapSwipeEnabled
         ) {
             val context = androidx.compose.ui.platform.LocalContext.current
-            val pinned = useDataStoreValue(PinnedActions).toActionList().contains(PeckModeAction)
+            val pinnedList = useDataStoreValue(PinnedActions).toActionList()
+            val pinned = isPeckPinnedLeftOfVoice(pinnedList)
             SettingItem(
                 title = stringResource(R.string.tapswipe_settings_pin_peck),
                 subtitle = stringResource(
@@ -130,7 +132,7 @@ val TapSwipeMenu = UserSettingsMenu(
             subtitle = R.string.tapswipe_settings_auto_spacing_subtitle,
             style = NavigationItemStyle.HomeSecondary,
             navigateTo = "tapswipeAutoSpacing",
-            icon = R.drawable.scissors
+            icon = R.drawable.auto_space
         ).copy(visibilityCheck = tapSwipeEnabled),
 
         // ---- Swiping ----
@@ -292,7 +294,7 @@ val TapSwipeAutoSpacingMenu = UserSettingsMenu(
             title = R.string.tapswipe_settings_auto_space,
             subtitle = R.string.tapswipe_settings_auto_space_subtitle,
             setting = TapSwipeAutoSpaceSetting,
-            icon = { Icon(painterResource(R.drawable.scissors), contentDescription = null) }
+            icon = { Icon(painterResource(R.drawable.auto_space), contentDescription = null) }
         ),
         UserSetting(
             name = R.string.tapswipe_settings_auto_space_delay,
@@ -345,6 +347,18 @@ private fun inputModelToggle(
 private fun pinPeckModeAction(ctx: android.content.Context) {
     val map = DataStoreHelper.getSetting(ActionsSettings).toActionEditorItems().toActionMap()
         .mapValues { (_, list) -> list.filter { it != PeckModeAction } }.toMutableMap()
-    map[ActionCategory.PinnedKey] = (map[ActionCategory.PinnedKey] ?: emptyList()) + PeckModeAction
+    // Just to the left of voice input, or first when voice input is not pinned.
+    val pinned = (map[ActionCategory.PinnedKey] ?: emptyList()).toMutableList()
+    val voice = pinned.indexOf(VoiceInputAction)
+    pinned.add(if (voice >= 0) voice else 0, PeckModeAction)
+    map[ActionCategory.PinnedKey] = pinned
     ctx.updateSettingsWithNewActions(map)
+}
+
+/** Whether Peck mode is pinned, and to the left of voice input when that is pinned too. */
+private fun isPeckPinnedLeftOfVoice(pinned: List<org.futo.inputmethod.latin.uix.Action>): Boolean {
+    val peck = pinned.indexOf(PeckModeAction)
+    if (peck < 0) return false
+    val voice = pinned.indexOf(VoiceInputAction)
+    return voice < 0 || peck < voice
 }

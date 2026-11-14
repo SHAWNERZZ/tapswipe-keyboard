@@ -383,6 +383,21 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
 
             if (!running && recordings.isNotEmpty()) {
                 Text("Recordings on this phone", style = MaterialTheme.typography.titleMedium)
+                var confirmDelete by remember { mutableStateOf(false) }
+                if (!confirmDelete) {
+                    OutlinedButton(onClick = { confirmDelete = true }) { Text("Delete all recordings") }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("Delete ${recordings.size} recordings?", modifier = Modifier.weight(1f))
+                        OutlinedButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+                        Button(onClick = {
+                            recordings.forEach { it.delete() }
+                            recordings = TypingTestRecorder.list(context)
+                            confirmDelete = false
+                        }) { Text("Delete") }
+                    }
+                }
                 recordings.take(20).forEach { f ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${f.name} (${f.length() / 1024} KB)", modifier = Modifier.weight(1f))

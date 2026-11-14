@@ -12,7 +12,7 @@ import org.futo.inputmethod.latin.uix.DataStoreHelper
  * keyboard does not know. Press again to cancel. See [TapSwipePeckRequest].
  */
 val PeckModeAction = Action(
-    icon = R.drawable.type,
+    icon = R.drawable.crosshair,
     name = R.string.action_peck_mode_title,
     simplePressImpl = { _, _ ->
         // Peck mode belongs to the TapSwipe input model; without it there is nothing to switch.
