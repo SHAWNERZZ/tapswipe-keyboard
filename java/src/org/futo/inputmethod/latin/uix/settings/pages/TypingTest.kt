@@ -317,7 +317,12 @@ fun TypingTestScreen(navController: androidx.navigation.NavHostController? = nul
                             InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                             InputType.TYPE_TEXT_FLAG_AUTO_CORRECT or
                             InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                        // A fixed height of three lines. Without a limit the field grew with every
+                        // line typed and pushed the prompt off the screen on long lists. With one,
+                        // it scrolls inside itself and keeps the cursor, the newest words, in view.
                         minLines = 3
+                        maxLines = 3
+                        isVerticalScrollBarEnabled = true
                         textSize = 20f
                         setTextColor(textColor.toArgb())
                         hint = "Press Start, then type here"
