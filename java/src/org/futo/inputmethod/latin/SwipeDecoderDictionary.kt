@@ -45,6 +45,9 @@ private const val SCORING_ASSET = "futo-swipe/scoring.json"
 /** How many next-word predictions a tapped word is looked up in. Not found means not a likely word. */
 private const val TAPPED_WORD_PREDICTIONS = 400
 
+/** A losing split reading within this many points of the one-word call is offered as an alternative. */
+private const val ALTERNATIVE_BAND = 8f
+
 /** How far below the least likely prediction an unexpected common short word scores. */
 private const val UNEXPECTED_TAPPED_WORD = 1f
 
@@ -705,7 +708,13 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             @JvmField val generation: Int,
             @JvmField val strokeCount: Int,
             @JvmField val words: List<String>,
-            @JvmField val ranges: List<IntArray>
+            @JvmField val ranges: List<IntArray>,
+            /**
+             * The other reading, offered in the suggestion strip after the commit: the one-word
+             * reading after a split, or the best split reading (words joined by spaces) after a
+             * close one-word call. Null when there is none worth offering.
+             */
+            @JvmField val alternative: String? = null
         )
 
         @Volatile
@@ -1088,8 +1097,15 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
             return
         }
         val best = result.best
+        val alternative = if (best.isSplit) {
+            result.single?.words?.singleOrNull()
+        } else {
+            result.considered.filter { it.isSplit }.maxByOrNull { it.score }
+                ?.takeIf { it.score >= best.score - ALTERNATIVE_BAND }
+                ?.words?.joinToString(" ") { TapSwipeSegmenter.contextForm(it) }
+        }
         lastSegmentation = Segmentation(input.generation, strokes.size, best.words,
-            best.pieces.map { intArrayOf(it.from, it.to) })
+            best.pieces.map { intArrayOf(it.from, it.to) }, alternative)
         org.futo.inputmethod.latin.tapswipe.TypingTestEvents.segment(best.toString(),
             result.considered.sortedByDescending { it.score }.take(6).joinToString(" | "),
             input.generation, strokes.size, ms)

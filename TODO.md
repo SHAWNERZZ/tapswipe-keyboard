@@ -13,8 +13,6 @@ drop a task. Date each Done entry.
 
 Ordered by what the user is likely to hit most.
 
-- **The losing reading in the suggestion strip** after a split or a
-  join, so one tap fixes a wrong call (`about` read as `a bit`).
 - **Single swipes of short words** are the user's weakest case (75 to
   77% first try in earlier tests). Ranking errors (`Wang`, `van`, `can`)
   come from the right thumb landing low. Two candidate fixes, both
@@ -48,6 +46,11 @@ Smaller and housekeeping:
   `simlib/emulator.py`. A newer emulator build may fix it.
 
 ## Done
+
+- 2026-11-14. Alternative chip: after a split, a close one-word call, or
+  a rejoin, the other reading is first in the suggestion strip; one tap
+  swaps it. Fixed a race: swipe + quick tap could commit only the tapped
+  letter ("are" + "a" gave "a").
 
 - 2026-11-14. Rejoin: a word started soon after an auto space joins the
   word before when the decoder reads them as one (`cele~bration`). 9 of

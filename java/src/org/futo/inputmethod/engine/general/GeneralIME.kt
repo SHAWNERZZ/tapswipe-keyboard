@@ -452,8 +452,17 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
             else -> suggestedWords
         }
 
-        val words = unfilteredWords?.let { suggestionBlacklist.filterBlacklistedSuggestions(it) }
+        val filtered = unfilteredWords?.let { suggestionBlacklist.filterBlacklistedSuggestions(it) }
             ?: SuggestedWords.getEmptyInstance()
+        // TapSwipe: after a split, a join, or a rejoin, the other reading goes first in the strip.
+        val chip = inputLogic.tapSwipeAlternativeChip()
+        val words = if (chip == null) filtered else SuggestedWords(
+            ArrayList<SuggestedWordInfo>().apply {
+                add(chip)
+                addAll(filtered.mSuggestedWordInfoList.filter { it.mWord != chip.mWord })
+            },
+            null, null, false, false, false, filtered.mInputStyle, filtered.mSequenceNumber
+        )
 
 
         // If any blacklisted learned words are here, we must unlearn them

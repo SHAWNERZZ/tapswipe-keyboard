@@ -1465,7 +1465,8 @@ public final class InputLogic {
      *
      * @return true when the rejoin was applied
      */
-    private boolean applyTapSwipeRejoin(final SettingsValues settingsValues, final String joinedWord) {
+    private boolean applyTapSwipeRejoin(final SettingsValues settingsValues, final String joinedWord,
+            final String secondWordReading) {
         final TapSwipeSession.Prefix prefix = mTapSwipeSession.getPrefix();
         if (prefix == null || TextUtils.isEmpty(joinedWord)) return false;
         final String composing = mWordComposer.isComposingWord() ? mWordComposer.getTypedWord() : "";
@@ -1475,6 +1476,11 @@ public final class InputLogic {
 
         final java.util.List<TapSwipeSession.Stroke> all = new java.util.ArrayList<>(prefix.getStrokes());
         all.addAll(mTapSwipeSession.getStrokes());
+        // The two words apart, offered in the suggestion strip once the joined word commits.
+        // When the second part's first decode is what triggered the join, nothing of it was written
+        // yet, so its reading comes from that decode.
+        final String second = !composing.isEmpty() ? composing : secondWordReading;
+        mPendingRejoinAlternative = TextUtils.isEmpty(second) ? null : prefix.getWord() + " " + second;
         String word = joinedWord;
         final boolean capital = Character.isUpperCase(prefix.getWord().codePointAt(0));
         if (capital) word = capitalizeFirst(word);
@@ -1524,12 +1530,89 @@ public final class InputLogic {
         return mTapSwipeSession.isOpen() && covered == mTapSwipeSession.getStrokes().size();
     }
 
+    /** The apart reading of a rejoined word, until it commits. See handleSeparatorEvent. */
+    private String mPendingRejoinAlternative = null;
+    /** What the last segmented commit wrote, and its one-word alternative. */
+    private String mLastSegmentShown = null;
+    private String mLastSegmentAlternative = null;
+
+    /**
+     * The other reading of the words just committed, shown first in the suggestion strip. Tapping
+     * it replaces [shown] with [replacement]. Valid only while exactly [shown] plus [separator]
+     * sits before the cursor and nothing is being composed.
+     */
+    private static final class AlternativeOffer {
+        final String shown;
+        final String replacement;
+        final String separator;
+        final SuggestedWordInfo info;
+
+        AlternativeOffer(String shown, String replacement, String separator) {
+            this.shown = shown;
+            this.replacement = replacement;
+            this.separator = separator;
+            this.info = new SuggestedWordInfo(replacement, "", 0, SuggestedWordInfo.KIND_CORRECTION,
+                    null, 0, 0);
+        }
+    }
+
+    private AlternativeOffer mAlternativeOffer = null;
+
+    private void registerAlternativeOffer(final String shown, String alternative, final String separator) {
+        mAlternativeOffer = null;
+        if (TextUtils.isEmpty(shown) || TextUtils.isEmpty(alternative)) return;
+        if (Character.isUpperCase(shown.codePointAt(0))) alternative = capitalizeFirst(alternative);
+        if (alternative.equalsIgnoreCase(shown)) return;
+        mAlternativeOffer = new AlternativeOffer(shown, alternative, separator);
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.alternativeOffered(shown, alternative);
+    }
+
+    /**
+     * The alternative chip for the suggestion strip, or null. See {@link AlternativeOffer}.
+     */
+    public SuggestedWordInfo tapSwipeAlternativeChip() {
+        final AlternativeOffer offer = mAlternativeOffer;
+        if (offer == null) return null;
+        if (mWordComposer.isComposingWord()) return null;
+        final String expected = offer.shown + offer.separator;
+        final CharSequence before = mConnection.getTextBeforeCursor(expected.length(), 0);
+        if (before == null || !TextUtils.equals(before, expected)) {
+            mAlternativeOffer = null;
+            return null;
+        }
+        return offer.info;
+    }
+
+    /** Replaces the committed words with the offered reading. @return true if done */
+    private boolean pickTapSwipeAlternative(final SettingsValues settingsValues) {
+        final AlternativeOffer offer = mAlternativeOffer;
+        mAlternativeOffer = null;
+        if (offer == null || mWordComposer.isComposingWord()) return false;
+        final String expected = offer.shown + offer.separator;
+        final CharSequence before = mConnection.getTextBeforeCursor(expected.length(), 0);
+        if (before == null || !TextUtils.equals(before, expected)) return false;
+        mConnection.beginBatchEdit();
+        mConnection.deleteTextBeforeCursor(expected.length());
+        mConnection.commitText(offer.replacement + offer.separator, 1);
+        mConnection.endBatchEdit();
+        if (!offer.shown.contains(" ")) unlearnWord(offer.shown, settingsValues, Constants.EVENT_REVERT);
+        mTapSwipeGraceRecord = null;
+        mAutoSpaceWrittenAt = 0;
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.alternativePicked(offer.shown, offer.replacement);
+        return true;
+    }
+
     /** The rejoin verdict for the current strokes, applied if it says join. */
     private boolean maybeApplyTapSwipeRejoin(final SettingsValues settingsValues) {
+        return maybeApplyTapSwipeRejoin(settingsValues, null);
+    }
+
+    private boolean maybeApplyTapSwipeRejoin(final SettingsValues settingsValues,
+            final String secondWordReading) {
         if (mTapSwipeSession.getPrefix() == null) return false;
         final SwipeDecoderDictionary.Companion.Rejoin r = SwipeDecoderDictionary.rejoinFor(
                 mTapSwipeSession.getGeneration(), mTapSwipeSession.getStrokes().size());
-        return r != null && r.word != null && applyTapSwipeRejoin(settingsValues, r.word);
+        return r != null && r.word != null && applyTapSwipeRejoin(settingsValues, r.word, secondWordReading);
     }
 
     /** When the auto space timer last wrote a space, or 0. See onCodeInput. */
@@ -1599,6 +1682,8 @@ public final class InputLogic {
                     (int) (SystemClock.uptimeMillis() - start), seg != null);
         }
         if (seg == null || seg.words.size() < 2) return false;
+        mLastSegmentAlternative = seg.alternative;
+        final StringBuilder shownWords = new StringBuilder();
         org.futo.inputmethod.latin.tapswipe.TypingTestEvents.segmentCommitted(
                 android.text.TextUtils.join(" ", seg.words), strokes.size());
         if (DEBUG_TAPSWIPE) Log.d(TAG, "tapswipe SEGMENT commit " + seg.words);
@@ -1615,6 +1700,9 @@ public final class InputLogic {
             if (word == null) word = seg.words.get(i);
             if (i == 0 && firstCapital) word = capitalizeFirst(word);
             word = displayFormOfSegment(word);
+            if (shownWords.length() > 0) shownWords.append(' ');
+            shownWords.append(word);
+            if (i == seg.words.size() - 1) mLastSegmentShown = shownWords.toString();
             final int[] range = seg.ranges.get(i);
             final boolean last = i == seg.words.size() - 1;
             if (i > 0) {
@@ -2091,6 +2179,15 @@ public final class InputLogic {
         final Event event = Event.createSuggestionPickedEvent(suggestionInfo);
         final InputTransaction inputTransaction = new InputTransaction(settingsValues,
                 event, SystemClock.uptimeMillis(), mSpaceState, keyboardShiftState);
+        // TapSwipe: the alternative chip after a split, a join, or a rejoin.
+        final AlternativeOffer offer = mAlternativeOffer;
+        if (offer != null && suggestionInfo == offer.info) {
+            pickTapSwipeAlternative(settingsValues);
+            inputTransaction.setDidAffectContents();
+            inputTransaction.setRequiresUpdateSuggestions();
+            inputTransaction.requireShiftUpdate(InputTransaction.SHIFT_UPDATE_NOW);
+            return inputTransaction;
+        }
         // Manual pick affects the contents of the editor, so we take note of this. It's important
         // for the sequence of language switching.
         inputTransaction.setDidAffectContents();
@@ -2989,6 +3086,13 @@ public final class InputLogic {
                             + " strokes=" + mTapSwipeSession.getStrokes().size());
                 }
                 if (mTapSwipeSession.getHasSwipe()) {
+                    // A word with a swipe is decoded in batch mode, always. When this tap came
+                    // before the swipe's own decode landed, it started the composer as typed
+                    // letters (not batch mode), and the typing query then listed that literal
+                    // first: swipe "are" + quick tap "a" came out as "a" (found 2026-11-14).
+                    if (!mWordComposer.isBatchMode()) {
+                        mWordComposer.setBatchInputWord(mWordComposer.getTypedWord());
+                    }
                     // The word already contains a swipe, so the literal text just written is not
                     // the answer - re-decode the whole word (taps included) and let the tail-batch
                     // path overwrite the composing region with the result, exactly as a finger
@@ -3046,10 +3150,28 @@ public final class InputLogic {
         // TapSwipe: a word that started right after an auto space may belong to the word before
         // it (a pause inside one word). Join them now if the decoder said so.
         if (isTapSwipeMode() && mWordComposer.isComposingWord()) maybeApplyTapSwipeRejoin(settingsValues);
+        final String rejoinAlternative = mPendingRejoinAlternative;
+        mPendingRejoinAlternative = null;
         // TapSwipe: if the segmenter found several words in this stroke list, commit all but the
         // last now. The last stays composing and is committed below like any other word.
         final boolean tapSwipeSegmented = isTapSwipeMode() && mWordComposer.isComposingWord()
                 && commitTapSwipeSegments(settingsValues);
+        // The other reading of this word, offered in the suggestion strip after the commit.
+        String offerAlternative = null;
+        String offerShown = null;
+        if (isTapSwipeMode()) {
+            if (tapSwipeSegmented) {
+                offerAlternative = mLastSegmentAlternative;
+                offerShown = mLastSegmentShown;
+            } else if (rejoinAlternative != null) {
+                offerAlternative = rejoinAlternative;
+            } else if (mWordComposer.isComposingWord()) {
+                final SwipeDecoderDictionary.Companion.Segmentation seg =
+                        SwipeDecoderDictionary.segmentationFor(mTapSwipeSession.getGeneration(),
+                                mTapSwipeSession.getStrokes().size());
+                if (seg != null && seg.words.size() == 1) offerAlternative = seg.alternative;
+            }
+        }
         // isComposingWord() may have changed since we stored wasComposing
         if (mWordComposer.isComposingWord()) {
             // TapSwipe: peck words and swiped words alike are committed exactly as shown - see
@@ -3077,6 +3199,13 @@ public final class InputLogic {
                 inputTransaction.setDidAutoCorrect();
             } else {
                 commitTyped(settingsValues,
+                        StringUtils.newSingleCodePointString(codePoint));
+            }
+            if (offerAlternative != null) {
+                final LastComposedWord last = mLastComposedWord;
+                final String shown = offerShown != null ? offerShown
+                        : (last != null && last.mCommittedWord != null ? last.mCommittedWord.toString() : null);
+                registerAlternativeOffer(shown, offerAlternative,
                         StringUtils.newSingleCodePointString(codePoint));
             }
         }
@@ -4656,7 +4785,7 @@ public final class InputLogic {
         // A pause inside one word let the auto space end it early. If the decoder, judging the two
         // stroke lists together, says they are one word, join them instead of writing this decode.
         if (tapSwipeOn && decodeCoversWholeWordForRejoin(decodeCoveredStrokes)
-                && maybeApplyTapSwipeRejoin(settingsValues)) {
+                && maybeApplyTapSwipeRejoin(settingsValues, batchInputText)) {
             keyboardSwitcher.requestUpdatingShiftState(getCurrentAutoCapsState(settingsValues));
             updateUiInputState();
             return;

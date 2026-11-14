@@ -61,7 +61,7 @@ SCENARIOS = [
     ("comma then next word", [("s", "yes", 0), ("wait", W), ("comma", 0), ("wait", 400), ("s", "that", 0),
                               ("wait", W)], "yes, that "),
     # Apostrophe after the auto space: the user meant to continue the word.
-    ("apostrophe s after auto space", [("s", "cat", 0), ("wait", W), ("key", APOS, 0), ("t", "s", 80), ("wait", W)], "cat's"),
+    ("apostrophe s after auto space", [("s", "that", 0), ("wait", W), ("key", APOS, 0), ("t", "s", 80), ("wait", W)], "that's"),
     # Backspace.
     # A tap after a space removes the space first, then the word (with the user's "last gesture"
     # setting: the word's last stroke).

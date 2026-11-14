@@ -552,6 +552,21 @@ rejoin (misses: `some thing`, a real pair; `yester day`, 1 point short;
 `text_check.py`: 219 of 226, unchanged, so no false joins in about 220
 word pairs.
 
+## Alternative chip, 2026-11-14
+
+After the finalizer commits a word the segmenter judged, the other
+reading goes first in the suggestion strip:
+
+- after a split (`I want a`): the one-word reading;
+- after a one-word call with a split reading within 8 points (`area`):
+  the split reading (`are a`);
+- after a rejoin (`wonderful`): the two words apart (`wonder full`).
+
+Tapping it replaces the committed words. The offer holds only while the
+same text sits before the cursor and nothing is being composed
+(`InputLogic.AlternativeOffer`, chip added in
+`GeneralIME.onGetSuggestedWordsInternal`).
+
 ## Open questions for the user (answered above)
 
 1. Should a word made only of taps get an auto space? Kinetica keeps

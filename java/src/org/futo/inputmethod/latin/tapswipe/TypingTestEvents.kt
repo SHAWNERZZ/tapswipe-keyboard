@@ -194,6 +194,20 @@ object TypingTestEvents {
         TypingTestRecorder.emit(TypingTestRecorder.event("rejoin").put("prefix", prefix).put("joined", joined))
     }
 
+    /** An alternative reading was offered in the suggestion strip. */
+    @JvmStatic
+    fun alternativeOffered(shown: String, alternative: String) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("alternative_offered").put("shown", shown)
+            .put("alternative", alternative))
+    }
+
+    /** The user tapped the alternative. */
+    @JvmStatic
+    fun alternativePicked(shown: String, alternative: String) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("alternative_picked").put("shown", shown)
+            .put("alternative", alternative))
+    }
+
     /** The finalizer waited for the segmenter. */
     @JvmStatic
     fun segmentWait(ms: Int, arrived: Boolean) = ifActive {
