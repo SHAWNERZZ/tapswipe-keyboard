@@ -80,6 +80,10 @@ SCENARIOS = [
     ("backspace then s", [("s", "cat", 0), ("wait", W), ("key", DELETE, 0), ("wait", 300), ("t", "s", 0),
                           ("wait", W)], "cats"),
     ("backspace in the countdown", [("s", "think", 0), ("key", DELETE, 120), ("wait", 700)], ""),
+    # The swipe/space race (TAPSWIPE_TESTING.md): a space right after a swipe ends, before its decode.
+    ("space 0 ms after swipe", [("s", "think", 0), ("space", 0), ("wait", 700)], "think "),
+    ("space 20 ms after swipe", [("s", "think", 0), ("space", 20), ("wait", 700)], "think "),
+    ("space 50 ms after swipe", [("s", "think", 0), ("space", 50), ("wait", 700)], "think "),
     # Strokes during the countdown continue the word.
     ("tap during the countdown", [("s", "think", 0), ("t", "s", 150), ("wait", W)], "thinks "),
     ("swipe right after a space", [("s", "think", 0), ("space", 100), ("s", "that", 120), ("wait", W)], "think that "),

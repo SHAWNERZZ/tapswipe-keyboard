@@ -32,10 +32,6 @@ Smaller and housekeeping:
 
 - Wire n-gram probability through the `Dictionary` base class (a second
   opinion for the segmenter; the context model already scores pairs).
-- Two-thumb overlap: the user's first recording read 86% overlapping vs
-  92% one at a time. Recheck with more data. Improve the simulator's
-  two-thumb model (each thumb on its own side).
-- Recheck the swipe/space race in `TAPSWIPE_TESTING.md`.
 - `CLAUDE.md` is over 190 lines; the shared rule says under 100. Propose
   cuts to the user before editing.
 - Delete `MIGRATION.md` and `tapswipe-claude-v2.zip` from the main
@@ -46,6 +42,10 @@ Smaller and housekeeping:
   `simlib/emulator.py`. A newer emulator build may fix it.
 
 ## Done
+
+- 2026-11-14. Rechecked: the swipe/space race is gone (0, 20, 50 ms, 9 of
+  9). Two thumbs overlapping is not worse: 117/133 (88%) against one at a
+  time 107/119 (90%) over four recordings.
 
 - 2026-11-14. Alternative chip: after a split, a close one-word call, or
   a rejoin, the other reading is first in the suggestion strip; one tap

@@ -99,16 +99,15 @@ non-deterministic. Assert "one word not two", "replaced not appended",
    `onCodeInput` subtracts view padding.
 4. Assert the invariant, not the decoder's output.
 
-## Known limitation: swipe/space decode race
+## Resolved: swipe/space decode race
 
-Recheck this after 2026-11-11. The same skip rule in
-`GeneralIME.updateSuggestions` that lost tap re-decodes may be the
-cause here too. Tail-batch jobs are no longer skipped in TapSwipe mode.
-
-Space within about 50 ms of a swipe end loses the word. Measured with a
-ladder at 0, 50, 100, 200, 350 ms. Lost at 0 ms, safe from 50 ms up. A
-thumb needs more than 150 ms to reach the space bar. The scenario
-reports `KNOWN`, not `FAIL`. Revisit if the 50 ms rung ever fails.
+Space within about 50 ms of a swipe end used to lose the word (ladder
+at 0, 50, 100, 200, 350 ms, lost at 0 ms). Rechecked 2026-11-14 in the
+simulator: a space 0, 20 and 50 ms after a swipe kept the word in 9 of 9
+tries (`tools/typing-sim/edge_check.py --only "ms after swipe"`). Fixed
+by the 2026-11-11 change that never skips tail decodes in TapSwipe mode,
+and the finalizer's wait for the segmenter. The scenario runner may
+still list it as `KNOWN`; treat a failure there as a regression.
 
 ## Manual checklist
 

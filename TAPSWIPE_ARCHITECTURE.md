@@ -489,10 +489,8 @@ per-sample age horizon. Add one only after a fresh decision.
 
 ## 12. Known risks and limitations
 
-- **Swipe/space race under 50 ms.** Hitting space within about 50 ms of
-  ending a swipe loses the word. No finger can reach the space bar in
-  that window. The scenario runner reports `KNOWN`, not `FAIL`. Revisit
-  if the 50 ms rung ever fails.
+- **Swipe/space race under 50 ms.** Resolved; rechecked 2026-11-14 at
+  0, 20 and 50 ms. See `TAPSWIPE_TESTING.md`.
 - **`sInGesture` is a single global boolean.** Two thumbs cannot hold
   independent gesture state. Overlapping two-thumb use works today only
   because a second finger inherits gesture mode.
