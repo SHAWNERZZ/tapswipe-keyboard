@@ -65,7 +65,26 @@ class TapSwipeSession {
         val isEmpty: Boolean get() = x.isEmpty()
         val hasViewPoints: Boolean get() = viewX.isNotEmpty() && viewX.size == viewY.size
         fun toSeg(): SwipeDecoder.SwipeSeg = SwipeDecoder.SwipeSeg(x, y, t)
+
+        /** The same stroke, moved by [dtMs] on the timeline. */
+        fun shifted(dtMs: Float): Stroke = Stroke(kind, hand, x, y,
+            FloatArray(t.size) { t[it] + dtMs }, codePoint, viewX, viewY,
+            if (downT.isNaN()) downT else downT + dtMs)
     }
+
+    /**
+     * The word before this one, when this word started right after that word's auto space.
+     *
+     * A pause inside a word lets the auto space timer end it early (`celeb` + `ration`). The
+     * decoder then judges, in the background, whether [strokes] plus this word's strokes read
+     * better as one word. [strokes] are already on this word's timeline. See
+     * `InputLogic.applyTapSwipeRejoin` and `docs/plans/AUTO_SPACING.md`, "Rejoin".
+     */
+    class Prefix(val strokes: List<Stroke>, val word: String)
+
+    /** See [Prefix]. Cleared by [reset], so it never outlives the word it was attached to. */
+    @Volatile
+    var prefix: Prefix? = null
 
     companion object {
         const val TAG = "TapSwipeSession"
@@ -334,6 +353,7 @@ class TapSwipeSession {
         anchorSelStart = NO_ANCHOR
         lastComposedText = ""
         readings.fill(null)
+        prefix = null
         generation++
     }
 

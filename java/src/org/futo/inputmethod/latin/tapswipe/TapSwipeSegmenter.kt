@@ -129,6 +129,72 @@ object TapSwipeSegmenter {
         return Result(best, single, considered)
     }
 
+    /**
+     * How far the joined reading must beat the two words apart before a rejoin. Above [TIE],
+     * because the pause before the second part is itself evidence of a word boundary. Set
+     * 2026-11-14; see [rejoin].
+     */
+    @JvmField var REJOIN_MARGIN = 1.0f
+
+    /**
+     * A previous word read below this is likely a fragment of a longer word (`Celle` for `cele`,
+     * `Evey` for `every`). Then the second part often reads as a real word of its own (`creation`,
+     * `thing`), which makes "apart" look good, so [rejoin] accepts a joined reading that is a real
+     * word ([FRAGMENT_JOINED_MIN]) and at most [FRAGMENT_SLACK] behind. Set 2026-11-14 from the
+     * rejoin test: fragments trailed by 4.5 and 7.5; real pairs with a weak first word trailed by 14
+     * and 25.
+     */
+    @JvmField var FRAGMENT_SCORE = 6.0f
+    @JvmField var FRAGMENT_JOINED_MIN = 6.0f
+    @JvmField var FRAGMENT_SLACK = 8.0f
+
+    /**
+     * Whether the previous word and this one are really one word that a pause split.
+     *
+     * [strokes] holds the previous word's strokes (the first [prefixCount]) followed by this word's.
+     * [prefixWord] is the previous word as committed. [context] is the text before the previous
+     * word. The joined reading is a decode of every stroke. The apart reading is the previous word
+     * as decoded on its own, plus this word decoded with it as context (or, for taps only, scored as
+     * a tapped word), less [EXTRA_WORD_COST]. Join only when joined wins by more than
+     * [REJOIN_MARGIN].
+     *
+     * @return the joined word, or null to keep the two words
+     */
+    @JvmStatic
+    fun rejoin(strokes: List<StrokeInfo>, prefixCount: Int, prefixWord: String, context: List<String>,
+               scorer: Scorer): String? {
+        val n = strokes.size
+        if (prefixCount <= 0 || prefixCount >= n) return null
+        val (joined, joinedScore) = scorer.decode(0, n, context) ?: return null
+        if (joined.isEmpty() || joined.equals(prefixWord, ignoreCase = true)) return null
+        val (_, leftScore) = scorer.decode(0, prefixCount, context) ?: return joined
+        val ctx = context + contextForm(prefixWord)
+        val rightHasSwipe = (prefixCount until n).any { strokes[it].isSwipe }
+        val rightScore = if (rightHasSwipe) {
+            scorer.decode(prefixCount, n, ctx)?.second
+        } else {
+            val letters = buildString { for (i in prefixCount until n) append(strokes[i].letter) }
+            scorer.tappedWord(letters, ctx)
+        }
+        // This part reads as no word at all on its own: strong evidence it belongs to the word before.
+        if (rightScore == null) {
+            lastRejoinDetail = "$joined %.1f vs $prefixWord %.1f + (no word)".format(joinedScore, leftScore)
+            return if (joinedScore > leftScore) joined else null
+        }
+        val apart = leftScore + rightScore - EXTRA_WORD_COST
+        lastRejoinDetail = "$joined %.1f vs apart %.1f (%.1f + %.1f - %.1f)".format(
+            joinedScore, apart, leftScore, rightScore, EXTRA_WORD_COST)
+        if (joinedScore - apart > REJOIN_MARGIN) return joined
+        val fragment = leftScore < FRAGMENT_SCORE && joinedScore >= FRAGMENT_JOINED_MIN &&
+            joinedScore >= apart - FRAGMENT_SLACK
+        return if (fragment) joined else null
+    }
+
+    /** The scores behind the last [rejoin] verdict, for the typing test recorder. */
+    @JvmStatic
+    @Volatile
+    var lastRejoinDetail: String = ""
+
     /** Ways to cut taps [from] until [to] into one or two words of 1 to [MAX_TAP_WORD] letters. */
     private fun partitions(strokes: List<StrokeInfo>, from: Int, to: Int): List<List<String>> {
         val len = to - from

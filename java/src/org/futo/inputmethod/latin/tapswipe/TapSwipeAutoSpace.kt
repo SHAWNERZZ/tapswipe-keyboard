@@ -94,6 +94,13 @@ object TapSwipeAutoSpace {
         changed()
     }
 
+    /** The word changed identity (a rejoin), but it is still the same word: keep the countdown. */
+    @JvmStatic
+    fun restamp() {
+        val h = host ?: return
+        if (fireAtMs != 0L) armedStamp = h.autoSpaceStamp()
+    }
+
     @JvmStatic
     fun cancel() {
         if (fireAtMs == 0L) return

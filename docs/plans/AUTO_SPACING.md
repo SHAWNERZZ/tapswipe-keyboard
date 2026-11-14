@@ -530,6 +530,28 @@ removes only the space and reopens the word. Waiting on the user.
 219 of 226 words right, no punctuation errors. All 7 word errors were
 swipe-shape misreads, none from spacing or splitting.
 
+## Rejoin, 2026-11-14
+
+A pause over 250 ms inside a word lets the timer end it early. Built:
+
+- When a word starts within 1.5 s of a timer space, with nothing typed
+  between, the previous word's strokes ride along as a prefix
+  (`TapSwipeSession.Prefix`, moved onto the new word's timeline).
+- On the decode thread, `TapSwipeSegmenter.rejoin` compares the joined
+  reading with the two words apart. The screen does not change unless
+  joined wins: by more than `REJOIN_MARGIN` (1), or, when the first part
+  reads weakly (a fragment), by being a real word no more than 8 behind.
+- `InputLogic.applyTapSwipeRejoin` then replaces "word, space, this word"
+  with the joined word and makes the strokes one word. For a swiped
+  continuation this happens when its decode lands; for taps, shortly
+  after the tap.
+
+Rejoin list (`lists/rejoin-phrases.txt`): 9 of 12 pause-split words
+rejoin (misses: `some thing`, a real pair; `yester day`, 1 point short;
+`differ ent`, joined decode read `direct`). Real word pairs stay apart.
+`text_check.py`: 219 of 226, unchanged, so no false joins in about 220
+word pairs.
+
 ## Open questions for the user (answered above)
 
 1. Should a word made only of taps get an auto space? Kinetica keeps

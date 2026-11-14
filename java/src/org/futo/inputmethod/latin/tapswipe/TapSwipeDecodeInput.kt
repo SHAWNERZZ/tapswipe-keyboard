@@ -21,7 +21,11 @@ class TapSwipeDecodeInput(
     /** Stroke timing in session order, for the soft order across streams. Empty mid-swipe. */
     @JvmField val timings: List<TapSwipeTimingOrder.Timing> = emptyList(),
     /** The finished strokes in session order, for the word segmenter. Empty mid-swipe. */
-    @JvmField val strokes: List<StrokeSnapshot> = emptyList()
+    @JvmField val strokes: List<StrokeSnapshot> = emptyList(),
+    /** The previous word's strokes, when this word may rejoin it. See TapSwipeSession.Prefix. */
+    @JvmField val prefixStrokes: List<StrokeSnapshot> = emptyList(),
+    /** The previous word as committed, or empty. */
+    @JvmField val prefixWord: String = ""
 ) {
     /** One finished stroke: what the segmenter needs to decode part of the word on its own. */
     class StrokeSnapshot(

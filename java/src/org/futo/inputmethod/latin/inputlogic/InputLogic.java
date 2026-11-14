@@ -543,6 +543,8 @@ public final class InputLogic {
         /** Cursor position right after {@link #committedWord}, before {@link #separator} lands. */
         final int selStartAfterWord;
         final long createdAtMs;
+        /** The word's session timeline origin, so its strokes can join a later word's timeline. */
+        long sessionOriginMs = -1;
 
         TapSwipeGraceRecord(java.util.List<TapSwipeSession.Stroke> strokes, String committedWord,
                 String separator, int selStartAfterWord, long createdAtMs) {
@@ -594,6 +596,7 @@ public final class InputLogic {
         mTapSwipeGraceRecord = new TapSwipeGraceRecord(
                 new java.util.ArrayList<>(strokes), committedWord, separator,
                 mConnection.getExpectedSelectionStart(), SystemClock.uptimeMillis());
+        mTapSwipeGraceRecord.sessionOriginMs = mTapSwipeSessionOriginMs;
     }
 
     /**
@@ -1416,6 +1419,119 @@ public final class InputLogic {
         org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.cancel();
     }
 
+    /**
+     * True for the first stroke of a word that started soon after the auto space timer's space,
+     * with nothing typed since. That word may rejoin the one the space ended. See
+     * attachTapSwipePrefix.
+     */
+    private boolean mRejoinEligible = false;
+
+    /**
+     * How soon after an auto space a new word may still rejoin the previous one. The user's next
+     * word starts a median of 400 ms after the space (90% within 940 ms), and a pause inside a word
+     * looks the same, so the window is wide and the decoder's score decides.
+     */
+    private static final long REJOIN_WINDOW_MS = 1500;
+
+    /**
+     * Gives the session the previous word as a prefix, at the first stroke of a word that may
+     * rejoin it. The decoder then judges the two together in the background. The screen does not
+     * change unless the joined reading clearly wins (applyTapSwipeRejoin).
+     */
+    private void attachTapSwipePrefix() {
+        if (!mRejoinEligible) return;
+        mRejoinEligible = false;
+        final TapSwipeGraceRecord record = mTapSwipeGraceRecord;
+        if (record == null || !" ".equals(record.separator) || record.sessionOriginMs < 0) return;
+        boolean hasSwipe = false;
+        for (final TapSwipeSession.Stroke s : record.strokes) {
+            if (s.getKind() == TapSwipeSession.Kind.SWIPE) { hasSwipe = true; break; }
+        }
+        if (!hasSwipe) return;
+        // The previous word and its space must still sit right before this word.
+        final String composing = mWordComposer.isComposingWord() ? mWordComposer.getTypedWord() : "";
+        final String expected = record.committedWord + " " + composing;
+        final CharSequence before = mConnection.getTextBeforeCursor(expected.length(), 0);
+        if (before == null || !TextUtils.equals(before, expected)) return;
+        final float shift = (float) (record.sessionOriginMs - mTapSwipeSessionOriginMs);
+        final java.util.List<TapSwipeSession.Stroke> moved = new java.util.ArrayList<>();
+        for (final TapSwipeSession.Stroke s : record.strokes) moved.add(s.shifted(shift));
+        mTapSwipeSession.setPrefix(new TapSwipeSession.Prefix(moved, record.committedWord));
+    }
+
+    /**
+     * Replaces "previous word, space, this word" with the joined word, and makes the two stroke
+     * lists one word. Called when the rejoin verdict for the current strokes says join.
+     *
+     * @return true when the rejoin was applied
+     */
+    private boolean applyTapSwipeRejoin(final SettingsValues settingsValues, final String joinedWord) {
+        final TapSwipeSession.Prefix prefix = mTapSwipeSession.getPrefix();
+        if (prefix == null || TextUtils.isEmpty(joinedWord)) return false;
+        final String composing = mWordComposer.isComposingWord() ? mWordComposer.getTypedWord() : "";
+        final String expected = prefix.getWord() + " " + composing;
+        final CharSequence before = mConnection.getTextBeforeCursor(expected.length(), 0);
+        if (before == null || !TextUtils.equals(before, expected)) return false;
+
+        final java.util.List<TapSwipeSession.Stroke> all = new java.util.ArrayList<>(prefix.getStrokes());
+        all.addAll(mTapSwipeSession.getStrokes());
+        String word = joinedWord;
+        final boolean capital = Character.isUpperCase(prefix.getWord().codePointAt(0));
+        if (capital) word = capitalizeFirst(word);
+
+        mConnection.beginBatchEdit();
+        setComposingTextInternal("", 1);
+        mConnection.deleteTextBeforeCursor(prefix.getWord().length() + 1);
+        mConnection.endBatchEdit();
+        mTapSwipeSession.reset("rejoin");
+        mTapSwipeSession.restoreStrokes(all);
+        if (capital) {
+            mWordComposer.setCapitalizedModeAtStartComposingTime(WordComposer.CAPS_MODE_AUTO_SHIFTED);
+        }
+        applyTapSwipeCandidate(settingsValues, word, false, false);
+        unlearnWord(prefix.getWord(), settingsValues, Constants.EVENT_REVERT);
+        TapSwipeLearner.onWordRejected(prefix.getWord());
+        mTapSwipeGraceRecord = null;
+        mSpaceState = SpaceState.NONE;
+        publishGestureTrail();
+        org.futo.inputmethod.latin.tapswipe.TypingTestEvents.rejoined(prefix.getWord(), word);
+        // Same word, new identity: the countdown that was running for it still stands.
+        org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.restamp();
+        return true;
+    }
+
+    /**
+     * A word of taps has no decode to apply, so its rejoin verdict (computed by the typing query on
+     * the decode thread) is picked up shortly after the tap instead. Without this, "cat" + pause +
+     * tapped "s" showed "cat s" until the word ended.
+     */
+    private void scheduleTapRejoinCheck(final SettingsValues settingsValues) {
+        if (mTapSwipeSession.getPrefix() == null || mTapSwipeSession.getHasSwipe()) return;
+        final int gen = mTapSwipeSession.getGeneration();
+        final int count = mTapSwipeSession.getStrokes().size();
+        for (final long delay : new long[] {120, 260}) {
+            mTapSwipeIdleHandler.postDelayed(() -> {
+                if (!mTapSwipeSession.isCurrent(gen) || mTapSwipeSession.getStrokes().size() != count) return;
+                if (maybeApplyTapSwipeRejoin(settingsValues)) {
+                    // The joined word holds a swipe, so it now wants its auto space.
+                    org.futo.inputmethod.latin.tapswipe.TapSwipeAutoSpace.onAllFingersUp();
+                }
+            }, delay);
+        }
+    }
+
+    private boolean decodeCoversWholeWordForRejoin(final int covered) {
+        return mTapSwipeSession.isOpen() && covered == mTapSwipeSession.getStrokes().size();
+    }
+
+    /** The rejoin verdict for the current strokes, applied if it says join. */
+    private boolean maybeApplyTapSwipeRejoin(final SettingsValues settingsValues) {
+        if (mTapSwipeSession.getPrefix() == null) return false;
+        final SwipeDecoderDictionary.Companion.Rejoin r = SwipeDecoderDictionary.rejoinFor(
+                mTapSwipeSession.getGeneration(), mTapSwipeSession.getStrokes().size());
+        return r != null && r.word != null && applyTapSwipeRejoin(settingsValues, r.word);
+    }
+
     /** When the auto space timer last wrote a space, or 0. See onCodeInput. */
     private long mAutoSpaceWrittenAt = 0;
 
@@ -2210,6 +2326,10 @@ public final class InputLogic {
         final boolean afterAutoPeriod = mAutoPeriodWritten;
         mAutoSpaceWrittenAt = 0;
         mAutoPeriodWritten = false;
+        // A letter soon after the timer's space may continue the word the space ended. See
+        // attachTapSwipePrefix.
+        mRejoinEligible = afterAutoSpace && !afterAutoPeriod && sinceAutoSpace < REJOIN_WINDOW_MS
+                && Character.isLetter(event.mCodePoint);
         if (afterAutoSpace && event.mCodePoint == Constants.CODE_SPACE && !event.isKeyRepeat()) {
             final InputTransaction t = new InputTransaction(settingsValues, event,
                     SystemClock.uptimeMillis(), mSpaceState,
@@ -2351,6 +2471,8 @@ public final class InputLogic {
     public void onStartBatchInput(final SettingsValues settingsValues,
             final KeyboardSwitcher keyboardSwitcher) {
         mAutoSpaceHeld = false;
+        mRejoinEligible = mAutoSpaceWrittenAt > 0 && !mAutoPeriodWritten
+                && SystemClock.uptimeMillis() - mAutoSpaceWrittenAt < REJOIN_WINDOW_MS;
         mAutoSpaceWrittenAt = 0;
         mWordBeingCorrectedByCursor = null;
         mInputLogicHandler.onStartBatchInput();
@@ -2439,6 +2561,7 @@ public final class InputLogic {
         // dispatched, so that decode sees the whole word rather than just this gesture.
         if (isTapSwipeMode()) {
             absorbBatchIntoTapSwipeSession(batchPointers);
+            attachTapSwipePrefix();
         } else {
             recordStockGeometrySwipe(batchPointers);
         }
@@ -2847,6 +2970,8 @@ public final class InputLogic {
                 mTapSwipeSession.noteTapTime(tapNowMs);
                 noteTapForLegacyRun(tapNowMs);
                 absorbTapIntoTapSwipeSession(codePoint, event.mX, event.mY);
+                attachTapSwipePrefix();
+                scheduleTapRejoinCheck(settingsValues);
                 // Outside absorbTap deliberately: that method bails out for a code point the
                 // layout can't place, but the word still grew, so peck state must be re-evaluated
                 // regardless of whether the tap became decodable evidence.
@@ -2918,6 +3043,9 @@ public final class InputLogic {
                     Constants.EVENT_BACKSPACE);
             resetComposingWord(settingsValues, false);
         }
+        // TapSwipe: a word that started right after an auto space may belong to the word before
+        // it (a pause inside one word). Join them now if the decoder said so.
+        if (isTapSwipeMode() && mWordComposer.isComposingWord()) maybeApplyTapSwipeRejoin(settingsValues);
         // TapSwipe: if the segmenter found several words in this stroke list, commit all but the
         // last now. The last stays composing and is committed below like any other word.
         final boolean tapSwipeSegmented = isTapSwipeMode() && mWordComposer.isComposingWord()
@@ -4523,6 +4651,15 @@ public final class InputLogic {
         // the next one using the word before it.
         if (tapSwipeOn && hasDecodedText && mTapSwipeSession.isOpen() && decodeCoveredStrokes > 0) {
             mTapSwipeSession.noteReading(decodeCoveredStrokes, batchInputText);
+        }
+
+        // A pause inside one word let the auto space end it early. If the decoder, judging the two
+        // stroke lists together, says they are one word, join them instead of writing this decode.
+        if (tapSwipeOn && decodeCoversWholeWordForRejoin(decodeCoveredStrokes)
+                && maybeApplyTapSwipeRejoin(settingsValues)) {
+            keyboardSwitcher.requestUpdatingShiftState(getCurrentAutoCapsState(settingsValues));
+            updateUiInputState();
+            return;
         }
 
         // Decide the word boundary before writing anything. This is the only point that holds both

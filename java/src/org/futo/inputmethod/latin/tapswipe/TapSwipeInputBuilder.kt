@@ -121,13 +121,21 @@ object TapSwipeInputBuilder {
                 s.hand == TapSwipeSession.Hand.RIGHT)
         }
 
+        val prefix = if (liveSegments != null) null else session.prefix
+        val prefixSnapshots = prefix?.strokes?.map { s ->
+            TapSwipeDecodeInput.StrokeSnapshot(s.kind == TapSwipeSession.Kind.SWIPE, s.codePoint, s.toSeg(),
+                s.hand == TapSwipeSession.Hand.RIGHT)
+        } ?: emptyList()
+
         return TapSwipeDecodeInput(
             left.toTypedArray(),
             right.toTypedArray(),
             hasSwipe,
             session.generation,
             timings,
-            snapshots
+            snapshots,
+            prefixSnapshots,
+            prefix?.word ?: ""
         )
     }
 }

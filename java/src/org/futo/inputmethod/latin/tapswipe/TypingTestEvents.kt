@@ -181,6 +181,19 @@ object TypingTestEvents {
         TypingTestRecorder.emit(TypingTestRecorder.event("auto_space").put("what", what).put("delay", delayMs))
     }
 
+    /** The rejoin check: [joined] is the joined word, or empty when the words stay apart. */
+    @JvmStatic
+    fun rejoinCheck(prefix: String, joined: String, strokes: Int, ms: Float, detail: String) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("rejoin_check").put("prefix", prefix)
+            .put("joined", joined).put("strokes", strokes).put("ms", ms).put("detail", detail))
+    }
+
+    /** A rejoin was applied: the previous word and this one became [joined]. */
+    @JvmStatic
+    fun rejoined(prefix: String, joined: String) = ifActive {
+        TypingTestRecorder.emit(TypingTestRecorder.event("rejoin").put("prefix", prefix).put("joined", joined))
+    }
+
     /** The finalizer waited for the segmenter. */
     @JvmStatic
     fun segmentWait(ms: Int, arrived: Boolean) = ifActive {

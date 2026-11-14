@@ -18,12 +18,14 @@ class TapSwipeSegmenterTest {
     private var savedTie = 0f
     private var savedLead = 0f
     private var savedMin = 0f
+    private var savedRejoin = 0f
 
     @Before fun pin() {
         savedCost = TapSwipeSegmenter.EXTRA_WORD_COST
         savedTie = TapSwipeSegmenter.TIE
         savedLead = TapSwipeSegmenter.LEAD_LETTER_COST
         savedMin = TapSwipeSegmenter.MIN_SPLIT_SWIPE_SCORE
+        savedRejoin = TapSwipeSegmenter.REJOIN_MARGIN
         TapSwipeSegmenter.MIN_SPLIT_SWIPE_SCORE = -1000f
         TapSwipeSegmenter.EXTRA_WORD_COST = 2.0f
         TapSwipeSegmenter.TIE = 0.5f
@@ -35,6 +37,7 @@ class TapSwipeSegmenterTest {
         TapSwipeSegmenter.TIE = savedTie
         TapSwipeSegmenter.LEAD_LETTER_COST = savedLead
         TapSwipeSegmenter.MIN_SPLIT_SWIPE_SCORE = savedMin
+        TapSwipeSegmenter.REJOIN_MARGIN = savedRejoin
     }
 
     private fun swipe() = StrokeInfo(true, '?')
@@ -176,5 +179,50 @@ class TapSwipeSegmenterTest {
         val fake = Fake(mapOf("0-2" to ("available" to -45.9f), "1-2" to ("bailable" to -31.4f)),
             mapOf("a" to 3.1f))
         assertEquals(listOf("available"), words(listOf(tap('a'), swipe()), fake))
+    }
+
+    @Test fun aPauseInsideAWordRejoins() {
+        // "celeb" + pause + "ration": apart, both parts read poorly; together, a strong word.
+        TapSwipeSegmenter.REJOIN_MARGIN = 3f
+        val fake = Fake(mapOf("0-2" to ("celebration" to 20f), "0-1" to ("celeb" to 6f), "1-2" to ("ration" to 7f)),
+            emptyMap())
+        assertEquals("celebration", TapSwipeSegmenter.rejoin(listOf(swipe(), swipe()), 1, "celeb", emptyList(), fake))
+    }
+
+    @Test fun twoRealWordsStayApart() {
+        // "the" + pause + "rain": the joined reading is a weak word.
+        TapSwipeSegmenter.REJOIN_MARGIN = 3f
+        val fake = Fake(mapOf("0-2" to ("therein" to 9f), "0-1" to ("the" to 19f), "1-2" to ("rain" to 15f)),
+            emptyMap())
+        assertNull(TapSwipeSegmenter.rejoin(listOf(swipe(), swipe()), 1, "the", emptyList(), fake))
+    }
+
+    @Test fun aNearTieStaysApartBecauseOfThePause() {
+        TapSwipeSegmenter.REJOIN_MARGIN = 3f
+        TapSwipeSegmenter.EXTRA_WORD_COST = 2f
+        // joined 12 against apart 6 + 9 - 2 = 13: apart wins; and joined 15 is only 2 ahead.
+        val fake = Fake(mapOf("0-2" to ("into" to 15f), "0-1" to ("in" to 6f), "1-2" to ("to" to 9f)), emptyMap())
+        assertNull(TapSwipeSegmenter.rejoin(listOf(swipe(), swipe()), 1, "in", emptyList(), fake))
+    }
+
+    @Test fun aTappedEndingThatIsNoWordRejoins() {
+        // "cat" + pause + tap "s": "s" is no word on its own.
+        val fake = Fake(mapOf("0-2" to ("cats" to 12f), "0-1" to ("cat" to 11f)), mapOf("a" to 2f))
+        assertEquals("cats", TapSwipeSegmenter.rejoin(listOf(swipe(), tap('s')), 1, "cat", emptyList(), fake))
+    }
+
+    @Test fun aFragmentRejoinsEvenWhenItsSecondPartIsAWord() {
+        // "cele" + pause + "bration": the first part reads as a weak "Celle", the second as "creation".
+        TapSwipeSegmenter.REJOIN_MARGIN = 1f
+        val fake = Fake(mapOf("0-2" to ("celebration" to 9f), "0-1" to ("Celle" to 2.6f), "1-2" to ("creation" to 12.9f)),
+            emptyMap())
+        assertEquals("celebration", TapSwipeSegmenter.rejoin(listOf(swipe(), swipe()), 1, "Celle", emptyList(), fake))
+    }
+
+    @Test fun aWeakFirstWordWithABadJoinStaysApart() {
+        // "see" read weakly as "set", but the joined reading is no real word.
+        TapSwipeSegmenter.REJOIN_MARGIN = 1f
+        val fake = Fake(mapOf("0-2" to ("set" to -0.4f), "0-1" to ("set" to 2.3f), "1-2" to ("you" to 13.4f)), emptyMap())
+        assertNull(TapSwipeSegmenter.rejoin(listOf(swipe(), swipe()), 1, "set", emptyList(), fake))
     }
 }

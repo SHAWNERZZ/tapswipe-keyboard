@@ -1,0 +1,22 @@
+# Rejoin test phrases: a "~" is a 450 ms pause, long enough for the auto space timer to fire.
+# Run with: python3 split_check.py rejoin --auto --list lists/rejoin-phrases.txt
+# --- a pause inside one word: must rejoin
+ | s:cele ~ s:bration => celebration
+I | s:under ~ s:stand => understand
+ | s:every ~ s:thing => everything
+It was | s:wonder ~ s:ful => wonderful
+She | s:remem ~ s:ber => remember
+I like | s:cat ~ t:s => cats
+# --- two real words with a pause: must stay apart
+ | s:the ~ s:rain => the rain
+We | s:have ~ s:fun => have fun
+ | s:see ~ s:you => see you
+ | s:good ~ s:morning => good morning
+I | s:think ~ s:that => think that
+# --- more pauses inside one word
+It is | s:beauti ~ s:ful => beautiful
+It is | s:impor ~ s:tant => important
+I need | s:some ~ s:thing => something
+We work | s:toge ~ s:ther => together
+I saw her | s:yester ~ s:day => yesterday
+It was | s:differ ~ s:ent => different

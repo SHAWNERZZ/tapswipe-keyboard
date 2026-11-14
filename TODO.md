@@ -13,9 +13,6 @@ drop a task. Date each Done entry.
 
 Ordered by what the user is likely to hit most.
 
-- **A pause inside a word splits it** (auto space). About 1 in 40 long
-  words in the user's recordings (`celebration`). Planned fix: the rejoin
-  layer in `docs/plans/AUTO_SPACING.md`.
 - **The losing reading in the suggestion strip** after a split or a
   join, so one tap fixes a wrong call (`about` read as `a bit`).
 - **Single swipes of short words** are the user's weakest case (75 to
@@ -51,6 +48,10 @@ Smaller and housekeeping:
   `simlib/emulator.py`. A newer emulator build may fix it.
 
 ## Done
+
+- 2026-11-14. Rejoin: a word started soon after an auto space joins the
+  word before when the decoder reads them as one (`cele~bration`). 9 of
+  12 on the rejoin list, no false joins in the real-text runs.
 
 - 2026-11-14. Fixed: stroke undo after a commit gave the same word back
   (`cats` stayed `cats`). The reopened composer was not in batch mode, so

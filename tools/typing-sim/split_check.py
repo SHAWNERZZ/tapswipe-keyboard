@@ -45,7 +45,14 @@ for line in open(args.list):
     ctx, _, strokes_text = left.rpartition("|")
     if args.only and args.only not in want:
         continue
-    parts = [(p[0], p[2:]) for p in strokes_text.split()]
+    # "~" before a part: a 450 ms pause before it, in both tempos (a hesitation inside a word).
+    parts, pause_next = [], False
+    for tok in strokes_text.split():
+        if tok == "~":
+            pause_next = True
+            continue
+        parts.append((tok[0], tok[2:], pause_next))
+        pause_next = False
     cases.append((group, ctx.strip(), parts, want))
 
 tempos = ["burst", "pause"] if args.tempo == "both" else [args.tempo]
@@ -98,11 +105,12 @@ for tempo in tempos:
             acc += len(w.replace("'", ""))
             boundaries.add(acc)
         strokes, t, letters_before = [], 0.0, 0
-        for i, (kind, letters) in enumerate(parts):
+        for i, (kind, letters, hesitate) in enumerate(parts):
             for j, ch in enumerate(letters if kind == "t" else [letters]):
                 if strokes:
                     new_word = letters_before in boundaries
-                    t = strokes[-1].points[-1][0] + (450 if tempo == "pause" and new_word else 50)
+                    long_gap = (tempo == "pause" and new_word) or (hesitate and j == 0)
+                    t = strokes[-1].points[-1][0] + (450 if long_gap else 50)
                 s = (finger.tap(rng, sess.layout, ch, p, t) if kind == "t"
                      else finger.swipe(rng, sess.layout, ch, p, t))
                 strokes.append(s)
@@ -126,7 +134,8 @@ for tempo in tempos:
         sess.field_text = after
         got = (after[len(before):] if after.lower().startswith(before.lower()) else after).strip()
         ok = got.lower() == want.lower()
-        seg = [e for e in events if e.get("type") in ("segment", "segment_commit", "auto_space")]
+        seg = [e for e in events if e.get("type") in ("segment", "segment_commit", "auto_space",
+                                                       "rejoin_check", "rejoin")]
         results.append({"tempo": tempo, "group": group, "want": want, "got": got, "ok": ok,
                         "segment": seg})
         last_seg = next((e for e in reversed(seg) if e.get("type") == "segment"), None)
