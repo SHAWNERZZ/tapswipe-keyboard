@@ -164,9 +164,25 @@ touch is recorded on the phone, so a problem can be replayed and fixed.
   tapped words get their space, a period from one space press.
 - Peck mode toolbar button; peck mode by pause; tap-only mode turns auto spacing off.
 - Backspace after a space removes the space first.
-- Fixes: contractions such as I'm, capitals after a split or a mid-word acronym, a quick tap right
-  after a swipe, undo bringing back the same word, a crash during long swipes.
 - Rebased on FUTO Keyboard 0.1.30 and later upstream changes.
+
+### Fixed since 0.8.0
+
+- **Words breaking mid-word.** A word you were still building could suddenly end and the next tap
+  start a new word. The keyboard misread its own edit as you moving the cursor.
+- **Taps ignored when typing fast.** A tap's re-read was skipped when the decoder was busy, so the
+  raw letters went in ("technoy", "understandd").
+- **Two-thumb order.** Overlapping thumbs could read in the wrong order: "form" became "from", and
+  a second thumb's tap was mixed into the other thumb's swipe ("then" became "the").
+- **Contractions.** A swipe through the apostrophe for I'm read as "in". Contractions also broke
+  the context for the next word ("He'll" was read as "He" and "ll").
+- **A quick tap right after a swipe** could replace the whole word with the tapped letter.
+- **Undo** of the last stroke could bring the same word back.
+- **Capitals.** A split at the start of a sentence lost its capital ("If not" became "if not"), and
+  a mid-word acronym reading made the rest of the word upper case ("NATIONAL").
+- **A space pressed right after a swipe** could lose the word.
+- **A crash** during long swipes, and **lag** of up to 0.7 s on long two-thumb words.
+
 
 ## Known limits
 

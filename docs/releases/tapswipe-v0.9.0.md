@@ -40,13 +40,20 @@ Also new:
 
 ## Fixed
 
-- Contractions: a swiped I'm no longer reads as "in".
-- Capitals: a split at the start of a sentence keeps its capital; a mid-word acronym reading no
-  longer makes the rest of the word upper case.
-- A quick tap right after a swipe could replace the whole word with the tapped letter.
-- Undoing the last stroke could bring the same word back.
-- A crash during long swipes.
-- Lag on long two-thumb words.
+- **Words breaking mid-word.** A word you were still building could suddenly end and the next tap
+  start a new word. The keyboard misread its own edit as you moving the cursor.
+- **Taps ignored when typing fast.** A tap's re-read was skipped when the decoder was busy, so the
+  raw letters went in ("technoy", "understandd").
+- **Two-thumb order.** Overlapping thumbs could read in the wrong order: "form" became "from", and
+  a second thumb's tap was mixed into the other thumb's swipe ("then" became "the").
+- **Contractions.** A swipe through the apostrophe for I'm read as "in". Contractions also broke
+  the context for the next word ("He'll" was read as "He" and "ll").
+- **A quick tap right after a swipe** could replace the whole word with the tapped letter.
+- **Undo** of the last stroke could bring the same word back.
+- **Capitals.** A split at the start of a sentence lost its capital ("If not" became "if not"), and
+  a mid-word acronym reading made the rest of the word upper case ("NATIONAL").
+- **A space pressed right after a swipe** could lose the word.
+- **A crash** during long swipes, and **lag** of up to 0.7 s on long two-thumb words.
 
 ## Under the hood
 
